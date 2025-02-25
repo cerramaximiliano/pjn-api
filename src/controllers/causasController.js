@@ -93,7 +93,6 @@ const causasController = {
     try {
       const { fuero } = req.params;
       const { number, year, userId, ...causeData } = req.body;
-
       // Validar datos requeridos
       if (!number || !year) {
         return res.status(400).json({
@@ -164,7 +163,6 @@ const causasController = {
         ...causeData,
         date: new Date()
       });
-
       // Guardar en la base de datos
       await newCause.save();
 
