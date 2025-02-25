@@ -1,6 +1,4 @@
-const CausasSegSoc = require('../models/causas-ss');
-const CausasTrabajo = require('../models/causas-trabajo');
-const { CausasCivil } = require("pjn-models")
+const { CausasCivil, CausasSegSoc, CausasTrabajo } = require("pjn-models")
 const { logger } = require('../config/pino');
 
 const getModel = (fuero) => {
