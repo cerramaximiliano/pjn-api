@@ -1,10 +1,10 @@
-const CausasCivil = require('../models/causas-civil');
 const CausasSegSoc = require('../models/causas-ss');
 const CausasTrabajo = require('../models/causas-trabajo');
+const { CausasCivil } = require("pjn-models")
 const { logger } = require('../config/pino');
 
 const getModel = (fuero) => {
-  switch(fuero) {
+  switch (fuero) {
     case 'CIV': return CausasCivil;
     case 'CSS': return CausasSegSoc;
     case 'CNT': return CausasTrabajo;
@@ -18,12 +18,12 @@ const causasController = {
     try {
       const { fuero, number, year } = req.params;
       const Model = getModel(fuero);
-      
+
       const causa = await Model.findOne({ number, year });
       if (!causa) {
         return res.status(404).json({ message: 'Causa no encontrada' });
       }
-      
+
       res.json(causa);
     } catch (error) {
       logger.error(`Error buscando causa: ${error}`);
@@ -37,11 +37,11 @@ const causasController = {
       const { fuero } = req.params;
       const { objeto } = req.query;
       const Model = getModel(fuero);
-      
-      const causas = await Model.find({ 
+
+      const causas = await Model.find({
         objeto: { $regex: objeto, $options: 'i' }
       }).sort({ year: -1, number: -1 });
-      
+
       res.json(causas);
     } catch (error) {
       logger.error(`Error buscando por objeto: ${error}`);
@@ -54,11 +54,11 @@ const causasController = {
     try {
       const { fuero } = req.params;
       const Model = getModel(fuero);
-      
-      const objetos = await Model.distinct('objeto', { 
-        objeto: { $ne: null } 
+
+      const objetos = await Model.distinct('objeto', {
+        objeto: { $ne: null }
       });
-      
+
       res.json(objetos);
     } catch (error) {
       logger.error(`Error listando objetos: ${error}`);
@@ -72,18 +72,18 @@ const causasController = {
       const { fuero } = req.params;
       const { year, caratula, juzgado, objeto } = req.query;
       const Model = getModel(fuero);
-      
+
       let query = {};
-      
+
       if (year) query.year = year;
       if (juzgado) query.juzgado = juzgado;
       if (caratula) query.caratula = { $regex: caratula, $options: 'i' };
       if (objeto) query.objeto = { $regex: objeto, $options: 'i' };
-      
+
       const causas = await Model.find(query)
         .sort({ year: -1, number: -1 })
         .limit(100);
-      
+
       res.json(causas);
     } catch (error) {
       logger.error(`Error en búsqueda avanzada: ${error}`);
@@ -95,32 +95,32 @@ const causasController = {
     try {
       const { fuero } = req.params;
       const { number, year, userId, ...causeData } = req.body;
-  
+
       // Validar datos requeridos
       if (!number || !year) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Número y año son campos obligatorios' 
+        return res.status(400).json({
+          success: false,
+          message: 'Número y año son campos obligatorios'
         });
       }
-  
+
       // Usar la función getModel existente
       let Model;
       try {
         Model = getModel(fuero.toUpperCase());
       } catch (error) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Fuero no válido. Debe ser CIV, CSS o CNT' 
+        return res.status(400).json({
+          success: false,
+          message: 'Fuero no válido. Debe ser CIV, CSS o CNT'
         });
       }
-  
+
       // Verificar si ya existe una causa con el mismo número y año
-      const existingCause = await Model.findOne({ 
-        number: number.toString(), 
-        year: year.toString() 
+      const existingCause = await Model.findOne({
+        number: number.toString(),
+        year: year.toString()
       });
-  
+
       if (existingCause) {
         // Si la causa existe y se proporcionó un userId, agregarlo al array
         if (userId) {
@@ -130,11 +130,11 @@ const causasController = {
             if (!existingCause.userCausaIds) {
               existingCause.userCausaIds = [];
             }
-            
+
             // Agregar el nuevo userId al array
             existingCause.userCausaIds.push(userId);
             await existingCause.save();
-            
+
             return res.status(200).json({
               success: true,
               message: 'Usuario agregado a la causa existente',
@@ -156,7 +156,7 @@ const causasController = {
           });
         }
       }
-  
+
       // Si no existe, crear una nueva causa
       const newCause = new Model({
         number: number.toString(),
@@ -166,22 +166,22 @@ const causasController = {
         ...causeData,
         date: new Date()
       });
-  
+
       // Guardar en la base de datos
       await newCause.save();
-  
+
       res.status(201).json({
         success: true,
         message: 'Causa agregada correctamente',
         data: newCause
       });
-  
+
     } catch (error) {
       logger.error(`Error al agregar causa: ${error}`);
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         message: 'Error al agregar la causa',
-        error: error.message 
+        error: error.message
       });
     }
   }
