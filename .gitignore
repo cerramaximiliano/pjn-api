@@ -1,0 +1,141 @@
+# Dependencias
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Archivos de entorno
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Archivos de compilación/distribución
+dist/
+build/
+out/
+.next/
+
+# Archivos de logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+.directory
+
+# Archivos de herramientas de desarrollo
+.idea/
+.vscode/
+*.swp
+*.swo
+.history/
+.project
+.classpath
+.c9/
+*.launch
+*.sublime-workspace
+
+# Archivos temporales
+tmp/
+temp/
+.tmp/
+.temp/
+coverage/
+.nyc_output/
+
+# Archivos de base de datos local
+*.sqlite
+*.db
+*.sql
+
+# Archivos de certificados
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+
+# Archivos específicos del proyecto
+.aws/
+secrets.json
+config.json
+credentials.json
+
+# Dependencias
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Archivos de entorno
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Archivos de compilación/distribución
+dist/
+build/
+out/
+.next/
+
+# Archivos de logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+.directory
+
+# Archivos de herramientas de desarrollo
+.idea/
+.vscode/
+*.swp
+*.swo
+.history/
+.project
+.classpath
+.c9/
+*.launch
+*.sublime-workspace
+
+# Archivos temporales
+tmp/
+temp/
+.tmp/
+.temp/
+coverage/
+.nyc_output/
+
+# Archivos de base de datos local
+*.sqlite
+*.db
+*.sql
+
+# Archivos de certificados
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+
+# Archivos específicos del proyecto
+.aws/
+secrets.json
+config.json
+credentials.jso
