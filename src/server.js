@@ -31,6 +31,7 @@ async function initializeServer() {
             logger.info(`Server listening on PORT ${port}`);
 
         });
+        
         const URLDB = process.env.URLDB;
         await mongoose.connect(URLDB);
         logger.info("Conexión a MongoDB establecida");
