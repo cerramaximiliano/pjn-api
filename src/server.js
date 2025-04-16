@@ -20,6 +20,14 @@ app.use(bodyParser.json());
 app.use(express.static("public"));
 app.use('/api', indexRoutes);
 
+// Capturar rutas 404 - debe ir después de todas las demás rutas
+app.use((req, res) => {
+  res.status(404).json({ 
+    status: 'error',
+    message: 'Ruta no encontrada'
+  });
+});
+
 async function initializeServer() {
     try {
         const secretsString = await retrieveSecrets();
