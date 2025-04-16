@@ -1,128 +1,188 @@
-# pjn-models
+# API del Poder Judicial de la Nación (PJN)
 
-📦 **pjn-models** es un paquete de modelos de **Mongoose** reutilizable para múltiples proyectos relacionados con el manejo de datos judiciales en Argentina. Permite centralizar los esquemas de base de datos y mantenerlos actualizados de manera uniforme en todas las aplicaciones que lo utilicen.
+API RESTful para acceder y gestionar datos judiciales del Poder Judicial de la Nación Argentina.
+
+## 📋 Tabla de contenidos
+
+- [Descripción](#descripción)
+- [Instalación](#instalación)
+- [Configuración](#configuración)
+- [Uso](#uso)
+- [Endpoints](#endpoints)
+- [Modelos](#modelos)
+- [Estructura del proyecto](#estructura-del-proyecto)
+
+## 📝 Descripción
+
+Esta API proporciona acceso a datos de causas judiciales de diferentes fueros del Poder Judicial de la Nación Argentina. Permite consultar, buscar y gestionar causas judiciales de los fueros Civil (CIV), Seguridad Social (CSS) y Trabajo (CNT).
 
 ## 🚀 Instalación
 
-Para agregar este paquete a tu proyecto, instala directamente desde GitHub:
-
-```bash
-npm install git+https://github.com/cerramaximiliano/pjn-models.git
-```
-
-Si el paquete ya está definido en `package.json`, simplemente usa:
-
-```bash
-npm install
-```
-
-## 📌 Uso
-
-Importa los modelos en cualquier parte de tu código y utilízalos como cualquier modelo de **Mongoose**:
-
-```javascript
-const { User, Causa } = require('pjn-models');
-```
-
-### 🔗 **Ejemplo: Conectar a MongoDB y consultar usuarios**
-
-Asegúrate de establecer una conexión con **MongoDB** antes de usar los modelos:
-
-```javascript
-const mongoose = require('mongoose');
-const { User } = require('pjn-models');
-
-const conectarDB = async () => {
-    try {
-        await mongoose.connect(process.env.MONGO_URI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-        });
-        console.log("✅ Conectado a MongoDB");
-    } catch (error) {
-        console.error("❌ Error al conectar a MongoDB:", error);
-        process.exit(1);
-    }
-};
-
-conectarDB();
-
-User.find().then(users => console.log(users));
-```
-
-## 🛠 Modelos Disponibles
-
-| Modelo | Descripción |
-|--------|------------|
-| **User** | Almacena información de los usuarios (nombre, email, contraseña). |
-| **Causa** | Representa causas judiciales con detalles como fuero, número y año. |
-
-### 🔍 **Ejemplo: Crear un nuevo usuario**
-
-```javascript
-const { User } = require('pjn-models');
-
-async function crearUsuario() {
-    const nuevoUsuario = new User({
-        name: "Maxi",
-        email: "maxi@example.com",
-        password: "123456"
-    });
-    await nuevoUsuario.save();
-    console.log("✅ Usuario creado:", nuevoUsuario);
-}
-
-crearUsuario();
-```
-
-### 🔍 **Ejemplo: Buscar una causa por número y año**
-
-```javascript
-const { Causa } = require('pjn-models');
-
-async function obtenerCausa() {
-    const causa = await Causa.findOne({ numero: "12345", anio: 2024 });
-    console.log("📄 Causa encontrada:", causa);
-}
-
-obtenerCausa();
-```
-
-## 🔄 Actualización del Paquete
-
-Si `pjn-models` ya está instalado en tu proyecto y quieres asegurarte de que tienes la última versión, ejecuta:
-
-```bash
-npm install --force git+https://github.com/cerramaximiliano/pjn-models.git
-```
-
-Si el paquete ya está en `package.json`, simplemente ejecuta:
-
-```bash
-npm install
-```
-
-## 🛠 Desarrollo y Contribución
-
-Si necesitas modificar los modelos:
-
-1. Clona el repositorio:
+1. Clonar el repositorio:
    ```bash
-   git clone https://github.com/cerramaximiliano/pjn-models.git
-   cd pjn-models
+   git clone <repositorio>
+   cd pjn-api
    ```
-2. Realiza las modificaciones necesarias en `src/models/`.
-3. Confirma y sube los cambios:
-   ```bash
-   git add .
-   git commit -m "🔄 Actualización de modelos"
-   git push origin main
-   ```
-4. Actualiza los proyectos que usen el paquete:
+
+2. Instalar dependencias:
    ```bash
    npm install
    ```
 
-## 📜 Licencia
+## ⚙️ Configuración
 
-Este proyecto está bajo la **Licencia MIT** - ver el archivo `LICENSE` para más detalles.
+La aplicación utiliza variables de entorno para su configuración. Estas se cargan desde AWS Secrets Manager pero también pueden configurarse localmente:
+
+```bash
+# Crear archivo .env local
+touch .env
+
+# Editar archivo y agregar variables
+PORT=8083
+URLDB=mongodb://localhost:27017/pjn
+```
+
+Variables de entorno requeridas:
+- `PORT`: Puerto en el que se ejecutará el servidor (por defecto: 8083)
+- `URLDB`: URL de conexión a MongoDB
+
+## 🏁 Uso
+
+Para iniciar el servidor:
+
+```bash
+node src/server.js
+```
+
+La API estará disponible en `http://localhost:8083/api`
+
+## 🌐 Endpoints
+
+### Test de conexión
+- **GET** `/api/causas/test`
+  - Verifica que el router de causas esté funcionando
+  - Respuesta: `{ message: 'Router de causas funcionando' }`
+
+### Causas judiciales
+
+Todos los endpoints de causas utilizan el parámetro `fuero` que puede ser:
+- `CIV`: Fuero Civil
+- `CSS`: Fuero de Seguridad Social
+- `CNT`: Fuero del Trabajo
+
+#### Consulta por número y año
+- **GET** `/api/causas/:fuero/:number/:year`
+  - Busca una causa específica por su número y año
+  - Parámetros de ruta:
+    - `fuero`: Fuero judicial (CIV, CSS, CNT)
+    - `number`: Número de causa
+    - `year`: Año de la causa
+  - Respuesta: Objeto con los datos de la causa o error 404 si no existe
+
+#### Listado de objetos judiciales
+- **GET** `/api/causas/:fuero/objetos`
+  - Obtiene la lista de objetos judiciales disponibles para un fuero
+  - Parámetros de ruta:
+    - `fuero`: Fuero judicial (CIV, CSS, CNT)
+  - Respuesta: Array de strings con los nombres de objetos judiciales
+
+#### Búsqueda por objeto judicial
+- **GET** `/api/causas/:fuero/buscar/objeto`
+  - Busca causas por tipo de objeto judicial
+  - Parámetros de ruta:
+    - `fuero`: Fuero judicial (CIV, CSS, CNT)
+  - Parámetros de consulta:
+    - `objeto`: Texto del objeto judicial a buscar (parcial o completo)
+  - Respuesta: Array de causas que coinciden con el objeto
+
+#### Búsqueda avanzada
+- **GET** `/api/causas/:fuero/buscar`
+  - Realiza una búsqueda avanzada de causas con múltiples criterios
+  - Parámetros de ruta:
+    - `fuero`: Fuero judicial (CIV, CSS, CNT)
+  - Parámetros de consulta:
+    - `year`: Año de la causa (opcional)
+    - `caratula`: Texto en la carátula (opcional)
+    - `juzgado`: Juzgado asignado (opcional)
+    - `objeto`: Objeto de la causa (opcional)
+  - Respuesta: Array de causas que cumplen con los criterios (máximo 100 resultados)
+
+#### Agregar causa
+- **POST** `/api/causas/:fuero/agregar`
+  - Agrega una nueva causa o asocia un usuario a una causa existente
+  - Parámetros de ruta:
+    - `fuero`: Fuero judicial (CIV, CSS, CNT)
+  - Cuerpo de la solicitud (JSON):
+    - `number`: Número de causa (requerido)
+    - `year`: Año de la causa (requerido)
+    - `userId`: ID del usuario para asociar (opcional)
+    - Otros datos de la causa (opcionales)
+  - Respuesta: 
+    - Si la causa existe y se proporciona userId: Asocia el usuario
+    - Si la causa existe y no se proporciona userId: Devuelve los datos de la causa
+    - Si la causa no existe: Crea una nueva causa
+
+## 📊 Modelos
+
+La API utiliza el paquete `pjn-models` que proporciona los siguientes modelos:
+
+- **CausasCivil**: Causas del fuero civil
+- **CausasSegSoc**: Causas del fuero de seguridad social
+- **CausasTrabajo**: Causas del fuero laboral
+
+Los modelos contienen campos como:
+- `number`: Número de causa
+- `year`: Año de la causa
+- `fuero`: Fuero judicial (CIV, CSS, CNT)
+- `caratula`: Nombre de la causa
+- `objeto`: Objeto judicial
+- `juzgado`: Juzgado asignado
+- `userCausaIds`: Array de IDs de usuarios asociados
+- `date`: Fecha de creación
+
+## 📁 Estructura del proyecto
+
+```
+/pjn-api
+├── README.md
+├── ecosystem.config.js
+├── package.json
+├── src/
+│   ├── config/
+│   │   ├── aws.js
+│   │   ├── env.js
+│   │   └── pino.js
+│   ├── controllers/
+│   │   ├── aws-ses.js
+│   │   └── causasController.js
+│   ├── logs/
+│   ├── models/
+│   │   ├── causas-civil.js
+│   │   ├── causas-ss.js
+│   │   └── causas-trabajo.js
+│   ├── routes/
+│   │   ├── causasRoutes.js
+│   │   └── index.js
+│   ├── server.js
+│   └── utils/
+```
+
+## 📧 Envío de correos
+
+La API incluye funcionalidad para enviar correos electrónicos mediante AWS SES:
+
+```javascript
+const { sendEmailController } = require('./controllers/aws-ses');
+
+// Ejemplo de uso
+const result = await sendEmailController(
+  'destinatario@ejemplo.com',
+  'Contenido del correo',
+  'Asunto del correo',
+  []  // Archivos adjuntos (opcional)
+);
+```
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia ISC.

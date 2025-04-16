@@ -8,9 +8,9 @@ router.get('/test', (req, res) => {
 });
 
 // Rutas principales
+router.get('/:fuero/buscar/objeto', causasController.findByObjeto);
 router.get('/:fuero/:number/:year', causasController.findByNumberAndYear);
 router.get('/:fuero/objetos', causasController.listObjetos);
-router.get('/:fuero/buscar/objeto', causasController.findByObjeto);
 router.get('/:fuero/buscar', causasController.searchAdvanced);
 router.post('/:fuero/agregar', causasController.addCausa);
 

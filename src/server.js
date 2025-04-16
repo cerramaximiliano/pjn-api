@@ -26,7 +26,7 @@ async function initializeServer() {
         await fsPromises.writeFile(".env", secretsString);
         dotenv.config();
 
-        const port = process.env.PORT || 8082;
+        const port = process.env.PORT || 8083;
         app.listen(port, async () => {
             logger.info(`Server listening on PORT ${port}`);
 

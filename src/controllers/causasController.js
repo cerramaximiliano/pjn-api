@@ -19,13 +19,29 @@ const causasController = {
 
       const causa = await Model.findOne({ number, year });
       if (!causa) {
-        return res.status(404).json({ message: 'Causa no encontrada' });
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          count: 0,
+          data: null
+        });
       }
 
-      res.json(causa);
+      res.json({
+        success: true,
+        message: 'Causa encontrada',
+        count: 1,
+        data: causa
+      });
     } catch (error) {
       logger.error(`Error buscando causa: ${error}`);
-      res.status(500).json({ message: 'Error interno del servidor' });
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: null
+      });
     }
   },
 
@@ -34,16 +50,37 @@ const causasController = {
     try {
       const { fuero } = req.params;
       const { objeto } = req.query;
+      
+      if (!objeto || typeof objeto !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'El parámetro objeto es requerido y debe ser un texto',
+          count: 0,
+          data: []
+        });
+      }
+      
       const Model = getModel(fuero);
 
       const causas = await Model.find({
         objeto: { $regex: objeto, $options: 'i' }
       }).sort({ year: -1, number: -1 });
 
-      res.json(causas);
+      res.json({
+        success: true,
+        message: `Se encontraron ${causas.length} causas con objeto similar a "${objeto}"`,
+        count: causas.length,
+        data: causas
+      });
     } catch (error) {
       logger.error(`Error buscando por objeto: ${error}`);
-      res.status(500).json({ message: 'Error interno del servidor' });
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
     }
   },
 
@@ -57,10 +94,21 @@ const causasController = {
         objeto: { $ne: null }
       });
 
-      res.json(objetos);
+      res.json({
+        success: true,
+        message: `Se encontraron ${objetos.length} objetos únicos`,
+        count: objetos.length,
+        data: objetos
+      });
     } catch (error) {
       logger.error(`Error listando objetos: ${error}`);
-      res.status(500).json({ message: 'Error interno del servidor' });
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
     }
   },
 
@@ -72,20 +120,50 @@ const causasController = {
       const Model = getModel(fuero);
 
       let query = {};
+      let criteria = [];
 
-      if (year) query.year = year;
-      if (juzgado) query.juzgado = juzgado;
-      if (caratula) query.caratula = { $regex: caratula, $options: 'i' };
-      if (objeto) query.objeto = { $regex: objeto, $options: 'i' };
+      if (year) {
+        query.year = year;
+        criteria.push(`año ${year}`);
+      }
+      if (juzgado) {
+        query.juzgado = juzgado;
+        criteria.push(`juzgado ${juzgado}`);
+      }
+      if (caratula) {
+        query.caratula = { $regex: caratula, $options: 'i' };
+        criteria.push(`carátula que contiene "${caratula}"`);
+      }
+      if (objeto && typeof objeto === 'string') {
+        query.objeto = { $regex: objeto, $options: 'i' };
+        criteria.push(`objeto similar a "${objeto}"`);
+      }
 
       const causas = await Model.find(query)
         .sort({ year: -1, number: -1 })
         .limit(100);
 
-      res.json(causas);
+      const criteriaText = criteria.length > 0 ? 
+        `Búsqueda por: ${criteria.join(', ')}` : 
+        'Búsqueda sin criterios específicos';
+
+      res.json({
+        success: true,
+        message: `Se encontraron ${causas.length} causas. ${criteriaText}${causas.length === 100 ? ' (limitado a 100 resultados)' : ''}`,
+        count: causas.length,
+        criteria: criteria,
+        limitApplied: causas.length === 100,
+        data: causas
+      });
     } catch (error) {
       logger.error(`Error en búsqueda avanzada: ${error}`);
-      res.status(500).json({ message: 'Error interno del servidor' });
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
     }
   },
 
