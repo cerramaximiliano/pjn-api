@@ -58,7 +58,7 @@ const { verifyToken, verifyAdmin } = require('../middleware/auth');
  *       500:
  *         description: Error del servidor
  */
-router.patch('/update-status', verifyToken, async (req, res) => {
+router.patch('/update-status', async (req, res) => {
   try {
     const { userId, updateValue } = req.body;
     
@@ -121,7 +121,7 @@ router.patch('/update-status', verifyToken, async (req, res) => {
  *       500:
  *         description: Error del servidor
  */
-router.patch('/update-by-subscriptions', verifyToken, verifyAdmin, async (req, res) => {
+router.patch('/update-by-subscriptions', async (req, res) => {
   try {
     const { userIds } = req.body;
     
@@ -165,7 +165,7 @@ router.patch('/update-by-subscriptions', verifyToken, verifyAdmin, async (req, r
  *       500:
  *         description: Error del servidor
  */
-router.post('/initialize-updates', verifyToken, verifyAdmin, async (req, res) => {
+router.post('/initialize-updates', async (req, res) => {
   try {
     const result = await causaService.initializeUserUpdatesEnabled();
     
@@ -316,10 +316,10 @@ router.post('/associate-folder', async (req, res) => {
  *       500:
  *         description: Error del servidor
  */
-router.delete('/dissociate-folder', verifyToken, async (req, res) => {
+router.delete('/dissociate-folder', async (req, res) => {
   try {
     const { causaType, causaId, folderId, userId } = req.body;
-    
+    console.log(causaType, causaId, folderId, userId)
     if (!causaType || !causaId || !folderId || !userId) {
       return res.status(400).json({ 
         success: false, 
@@ -384,7 +384,7 @@ router.delete('/dissociate-folder', verifyToken, async (req, res) => {
  *       500:
  *         description: Error del servidor
  */
-router.get('/find-by-folder/:causaType/:folderId', verifyToken, async (req, res) => {
+router.get('/find-by-folder/:causaType/:folderId', async (req, res) => {
   try {
     const { causaType, folderId } = req.params;
     
