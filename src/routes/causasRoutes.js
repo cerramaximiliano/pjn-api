@@ -13,10 +13,10 @@ router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
 
 // Rutas principales - todas protegidas con verifyToken
 router.get('/:fuero/buscar/objeto', verifyToken, causasController.findByObjeto);
-router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAndYear);
-router.get('/:fuero/:id/movimientos', verifyToken, causasController.getMovimientosByDocumentId);
 router.get('/:fuero/objetos', verifyToken, causasController.listObjetos);
 router.get('/:fuero/buscar', verifyToken, causasController.searchAdvanced);
+router.get('/:fuero/:id/movimientos', verifyToken, causasController.getMovimientosByDocumentId);
+router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAndYear);
 
 // Ruta para agregar causas - requiere autenticación y rol de administrador
 router.post('/:fuero/agregar', verifyToken, verifyAdmin, causasController.addCausa);
