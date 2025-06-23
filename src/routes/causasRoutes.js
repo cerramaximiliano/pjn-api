@@ -8,6 +8,9 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Router de causas funcionando' });
 });
 
+// Ruta para obtener todas las causas verificadas
+router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
+
 // Rutas principales - todas protegidas con verifyToken
 router.get('/:fuero/buscar/objeto', verifyToken, causasController.findByObjeto);
 router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAndYear);

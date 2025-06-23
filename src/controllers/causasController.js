@@ -258,6 +258,52 @@ const causasController = {
         error: error.message
       });
     }
+  },
+
+  // Obtener todas las causas verificadas de los tres modelos
+  async getAllVerifiedCausas(req, res) {
+    try {
+      // Consultar los tres modelos en paralelo
+      const [causasCivil, causasSegSoc, causasTrabajo] = await Promise.all([
+        CausasCivil.find({ verified: true }).sort({ year: -1, number: -1 }),
+        CausasSegSoc.find({ verified: true }).sort({ year: -1, number: -1 }),
+        CausasTrabajo.find({ verified: true }).sort({ year: -1, number: -1 })
+      ]);
+
+      // Combinar todos los resultados
+      const allCausas = [
+        ...causasCivil.map(causa => ({ ...causa.toObject(), fuero: 'CIV' })),
+        ...causasSegSoc.map(causa => ({ ...causa.toObject(), fuero: 'CSS' })),
+        ...causasTrabajo.map(causa => ({ ...causa.toObject(), fuero: 'CNT' }))
+      ];
+
+      // Ordenar por año y número descendente
+      allCausas.sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.number - a.number;
+      });
+
+      res.json({
+        success: true,
+        message: `Se encontraron ${allCausas.length} causas verificadas`,
+        count: allCausas.length,
+        breakdown: {
+          civil: causasCivil.length,
+          seguridad_social: causasSegSoc.length,
+          trabajo: causasTrabajo.length
+        },
+        data: allCausas
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo causas verificadas: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
+    }
   }
 
 };
