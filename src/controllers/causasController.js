@@ -265,9 +265,9 @@ const causasController = {
     try {
       // Consultar los tres modelos en paralelo
       const [causasCivil, causasSegSoc, causasTrabajo] = await Promise.all([
-        CausasCivil.find({ verified: true }).sort({ year: -1, number: -1 }),
-        CausasSegSoc.find({ verified: true }).sort({ year: -1, number: -1 }),
-        CausasTrabajo.find({ verified: true }).sort({ year: -1, number: -1 })
+        CausasCivil.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }),
+        CausasSegSoc.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }),
+        CausasTrabajo.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 })
       ]);
 
       // Combinar todos los resultados
@@ -285,7 +285,7 @@ const causasController = {
 
       res.json({
         success: true,
-        message: `Se encontraron ${allCausas.length} causas verificadas`,
+        message: `Se encontraron ${allCausas.length} causas verificadas y válidas`,
         count: allCausas.length,
         breakdown: {
           civil: causasCivil.length,
