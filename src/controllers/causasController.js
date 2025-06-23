@@ -304,6 +304,52 @@ const causasController = {
         data: []
       });
     }
+  },
+
+  // Obtener movimientos de una causa por ID
+  async getMovimientosByDocumentId(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const Model = getModel(fuero);
+
+      // Buscar el documento por ID
+      const causa = await Model.findById(id).select('number year caratula movimiento movimientosCount');
+      
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          count: 0,
+          data: null
+        });
+      }
+
+      // Extraer los movimientos
+      const movimientos = causa.movimiento || [];
+
+      res.json({
+        success: true,
+        message: `Se encontraron ${movimientos.length} movimientos`,
+        count: movimientos.length,
+        causa: {
+          id: causa._id,
+          number: causa.number,
+          year: causa.year,
+          caratula: causa.caratula,
+          movimientosCount: causa.movimientosCount
+        },
+        data: movimientos
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo movimientos: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
+    }
   }
 
 };
