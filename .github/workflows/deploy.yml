@@ -62,14 +62,14 @@ jobs:
           sudo bash -l -c "cd /var/www/pjn-api && npm ci --production"
           
           echo "🔄 Reloading PM2 application..."
-          sudo bash -l -c "cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
-          sudo bash -l -c "pm2 save"
+          sudo -s bash -c "cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
+          sudo -s bash -c "pm2 save"
           
           echo "📊 PM2 Status:"
-          sudo bash -l -c "pm2 status"
+          sudo -s bash -c "pm2 status"
           
           echo "📋 Application logs (last 20 lines):"
-          sudo bash -l -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+          sudo -s bash -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
           
           echo "✅ Deployment completed!"
         ENDSSH
@@ -93,16 +93,16 @@ jobs:
         # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
           echo "📊 PM2 Status:"
-          sudo bash -l -c "pm2 status"
+          sudo -s bash -c "pm2 status"
           
           echo ""
           echo "🔍 Checking pjn/api process:"
-          if sudo bash -l -c "pm2 status" | grep -q 'pjn/api.*online'; then
+          if sudo -s bash -c "pm2 status" | grep -q 'pjn/api.*online'; then
             echo "✅ Application is running!"
             
             echo ""
             echo "📋 Recent logs:"
-            sudo bash -l -c "pm2 logs 'pjn/api' --lines 10 --nostream" || true
+            sudo -s bash -c "pm2 logs 'pjn/api' --lines 10 --nostream" || true
             
             exit 0
           else
@@ -110,14 +110,15 @@ jobs:
             
             echo ""
             echo "📋 Error logs:"
-            sudo bash -l -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+            sudo -s bash -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
             
             echo ""
             echo "🔍 Debugging info:"
             echo "Current user: $(whoami)"
-            sudo bash -l -c "echo 'PM2 location: \$(which pm2 || echo not found)'"
-            sudo bash -l -c "echo 'Node location: \$(which node || echo not found)'"
-            sudo bash -l -c "echo 'PATH: \$PATH'"
+            echo "Checking with sudo -s:"
+            sudo -s bash -c "which pm2" || echo "PM2 not found"
+            sudo -s bash -c "which node" || echo "Node not found"
+            sudo -s bash -c "echo PATH=\$PATH"
             
             exit 1
           fi
