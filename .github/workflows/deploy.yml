@@ -55,23 +55,25 @@ jobs:
           sudo rsync -av --delete ~/pjn-api-temp/ /var/www/pjn-api/
           rm -rf ~/pjn-api-temp
           
-          # Change to the correct directory
-          cd /var/www/pjn-api
-          
-          echo "📦 Installing dependencies..."
-          sudo bash -l -c "cd /var/www/pjn-api && npm ci --production"
-          
-          echo "🔄 Reloading PM2 application..."
-          sudo -s bash -c "cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
-          sudo -s bash -c "pm2 save"
-          
-          echo "📊 PM2 Status:"
-          sudo -s bash -c "pm2 status"
-          
-          echo "📋 Application logs (last 20 lines):"
-          sudo -s bash -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
-          
-          echo "✅ Deployment completed!"
+          # Execute all PM2 commands as root in a single session
+          sudo -s << 'ROOTCOMMANDS'
+            cd /var/www/pjn-api
+            
+            echo "📦 Installing dependencies..."
+            npm ci --production
+            
+            echo "🔄 Reloading PM2 application..."
+            pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
+            pm2 save
+            
+            echo "📊 PM2 Status:"
+            pm2 status
+            
+            echo "📋 Application logs (last 20 lines):"
+            pm2 logs 'pjn/api' --lines 20 --nostream || true
+            
+            echo "✅ Deployment completed!"
+          ROOTCOMMANDS
         ENDSSH
         
         # Clean up
@@ -92,36 +94,38 @@ jobs:
         
         # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-          echo "📊 PM2 Status:"
-          sudo -s bash -c "pm2 status"
-          
-          echo ""
-          echo "🔍 Checking pjn/api process:"
-          if sudo -s bash -c "pm2 status" | grep -q 'pjn/api.*online'; then
-            echo "✅ Application is running!"
+          # Run all health check commands as root in a single session
+          sudo -s << 'ROOTCHECK'
+            echo "📊 PM2 Status:"
+            pm2 status
             
             echo ""
-            echo "📋 Recent logs:"
-            sudo -s bash -c "pm2 logs 'pjn/api' --lines 10 --nostream" || true
-            
-            exit 0
-          else
-            echo "❌ Application is not running or not in 'online' status"
-            
-            echo ""
-            echo "📋 Error logs:"
-            sudo -s bash -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
-            
-            echo ""
-            echo "🔍 Debugging info:"
-            echo "Current user: $(whoami)"
-            echo "Checking with sudo -s:"
-            sudo -s bash -c "which pm2" || echo "PM2 not found"
-            sudo -s bash -c "which node" || echo "Node not found"
-            sudo -s bash -c "echo PATH=\$PATH"
-            
-            exit 1
-          fi
+            echo "🔍 Checking pjn/api process:"
+            if pm2 status | grep -q 'pjn/api.*online'; then
+              echo "✅ Application is running!"
+              
+              echo ""
+              echo "📋 Recent logs:"
+              pm2 logs 'pjn/api' --lines 10 --nostream || true
+              
+              exit 0
+            else
+              echo "❌ Application is not running or not in 'online' status"
+              
+              echo ""
+              echo "📋 Error logs:"
+              pm2 logs 'pjn/api' --lines 20 --nostream || true
+              
+              echo ""
+              echo "🔍 Debugging info:"
+              echo "User in root shell: $(whoami)"
+              echo "PM2 location: $(which pm2 || echo 'not found')"
+              echo "Node location: $(which node || echo 'not found')"
+              echo "PATH: $PATH"
+              
+              exit 1
+            fi
+          ROOTCHECK
         ENDSSH
         
         # Clean up
