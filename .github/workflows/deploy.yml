@@ -54,18 +54,18 @@ jobs:
           
           echo "📦 Installing dependencies..."
           # Run npm as root with its environment
-          sudo su - root -c "cd $(pwd) && npm ci --production"
+          sudo -s - root -c "cd $(pwd) && npm ci --production"
           
           echo "🔄 Reloading PM2 application..."
           # Run PM2 commands as root
-          sudo su - root -c "cd $(pwd) && pm2 reload ecosystem.config.js --env production"
-          sudo su - root -c "pm2 save"
+          sudo -s - root -c "cd $(pwd) && pm2 reload ecosystem.config.js --env production"
+          sudo -s - root -c "pm2 save"
           
           echo "📊 PM2 Status:"
-          sudo su - root -c "pm2 status"
+          sudo -s - root -c "pm2 status"
           
           echo "📋 Application logs (last 20 lines):"
-          sudo su - root -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+          sudo -s - root -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
           
           echo "✅ Deployment completed!"
         ENDSSH
