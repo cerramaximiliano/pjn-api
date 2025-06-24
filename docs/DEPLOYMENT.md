@@ -43,6 +43,19 @@ Agrega los siguientes secrets:
 
 ## Preparación del Servidor EC2
 
+### Opción 1: Script Automático (Recomendado)
+
+Copia y ejecuta el script de configuración en tu servidor EC2:
+
+```bash
+# Descargar y ejecutar el script de setup
+curl -o setup-ec2.sh https://raw.githubusercontent.com/tu-usuario/pjn-api/main/scripts/setup-ec2.sh
+chmod +x setup-ec2.sh
+./setup-ec2.sh
+```
+
+### Opción 2: Instalación Manual
+
 1. **Instalar Node.js y PM2**:
    ```bash
    # Instalar Node.js 18
@@ -66,6 +79,15 @@ Agrega los siguientes secrets:
    - Las variables de entorno se manejan a través del servicio de AWS Secrets Manager
    - Asegúrate de que la instancia EC2 tenga los permisos IAM necesarios
 
+### Verificar la instalación
+
+```bash
+# Verificar versiones
+node --version  # Debe mostrar v18.x.x
+npm --version   # Debe mostrar 9.x.x o superior
+pm2 --version   # Debe mostrar la versión de PM2
+```
+
 ## Flujo de Deployment
 
 1. **Push a main**: Cualquier push a la rama `main` activa el deployment automático
@@ -83,14 +105,20 @@ El pipeline:
 
 ### Ver logs en EC2:
 ```bash
-# Logs de PM2
+# Logs de PM2 (usar sudo si es necesario)
 pm2 logs "pjn/api"
+# o
+sudo pm2 logs "pjn/api"
 
 # Status de la aplicación
 pm2 status
+# o
+sudo pm2 status
 
 # Monitoreo en tiempo real
 pm2 monit
+# o
+sudo pm2 monit
 ```
 
 ### Ver logs de GitHub Actions:
@@ -100,7 +128,7 @@ pm2 monit
 ## Troubleshooting
 
 ### La aplicación no responde después del deployment
-1. Verifica los logs de PM2: `pm2 logs "pjn/api"`
+1. Verifica los logs de PM2: `pm2 logs "pjn/api"` o `sudo pm2 logs "pjn/api"`
 2. Verifica que MongoDB esté accesible desde EC2
 3. Verifica las variables de entorno
 
@@ -111,8 +139,18 @@ pm2 monit
 
 ### Health check falla
 1. Verifica que el puerto esté abierto en el Security Group de EC2
-2. Verifica que la aplicación esté corriendo: `pm2 status`
+2. Verifica que la aplicación esté corriendo: `pm2 status` o `sudo pm2 status`
 3. Prueba manualmente: `curl http://localhost:8083/api/causas/test`
+
+### PM2 no encontrado o requiere sudo
+Si PM2 fue instalado con sudo, todos los comandos PM2 necesitan sudo:
+```bash
+sudo pm2 status
+sudo pm2 logs
+sudo pm2 reload ecosystem.config.js --env production
+```
+
+El workflow de GitHub Actions detecta automáticamente si PM2 necesita sudo.
 
 ## Rollback
 
@@ -124,4 +162,6 @@ git log --oneline -5  # Ver últimos commits
 git checkout <commit-anterior>
 npm ci --production
 pm2 reload ecosystem.config.js --env production
+# o si PM2 requiere sudo:
+# sudo pm2 reload ecosystem.config.js --env production
 ```

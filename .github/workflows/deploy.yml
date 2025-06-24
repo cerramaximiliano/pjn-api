@@ -55,14 +55,22 @@ jobs:
           # Install dependencies
           npm ci --production
           
-          # Reload PM2 with the ecosystem config
-          pm2 reload ecosystem.config.js --env production
-          
-          # Save PM2 configuration
-          pm2 save
-          
-          # Show status
-          pm2 status
+          # Reload PM2 with the ecosystem config (using sudo if needed)
+          if command -v pm2 &> /dev/null; then
+            # PM2 is in user path
+            pm2 reload ecosystem.config.js --env production
+            pm2 save
+            pm2 status
+          elif sudo -n command -v pm2 &> /dev/null 2>&1; then
+            # PM2 needs sudo
+            sudo pm2 reload ecosystem.config.js --env production
+            sudo pm2 save
+            sudo pm2 status
+          else
+            echo "Error: PM2 not found. Please install PM2 on the server."
+            echo "Run: sudo npm install -g pm2"
+            exit 1
+          fi
         ENDSSH
         
         # Clean up
