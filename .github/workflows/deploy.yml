@@ -50,30 +50,42 @@ jobs:
         
         # Run deployment commands on EC2
         ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
+          # Try to load .bashrc and .profile for PATH
+          [ -f ~/.bashrc ] && source ~/.bashrc
+          [ -f ~/.profile ] && source ~/.profile
+          
+          # Add common paths where node might be installed
+          export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+          
           cd ~/pjn-api
           
-          # Check if Node.js is installed
-          if ! command -v node &> /dev/null; then
-            echo "❌ Error: Node.js is not installed on this server!"
+          # Check if Node.js is available (with or without sudo)
+          if command -v node &> /dev/null; then
+            NODE_CMD="node"
+            NPM_CMD="npm"
+          elif sudo -n command -v node &> /dev/null 2>&1; then
+            NODE_CMD="sudo node"
+            NPM_CMD="sudo npm"
+          else
+            echo "❌ Error: Node.js is not installed or not in PATH!"
             echo ""
-            echo "Please install Node.js first by running these commands on your EC2 server:"
+            echo "Node.js is installed but not accessible to user $USER"
+            echo "Please run this fix script on your EC2 server:"
             echo ""
-            echo "curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -"
-            echo "sudo apt-get install -y nodejs"
-            echo "sudo npm install -g pm2"
+            echo "bash ~/pjn-api/scripts/fix-nodejs-path.sh"
             echo ""
-            echo "Or run the setup script:"
-            echo "bash ~/pjn-api/scripts/setup-ec2.sh"
+            echo "Then logout and login again, or run: source ~/.bashrc"
             exit 1
           fi
           
           # Install dependencies
-          npm ci --production
+          echo "Installing dependencies with: $NPM_CMD"
+          $NPM_CMD ci --production
           
           # Check for PM2 and install if needed
           if ! command -v pm2 &> /dev/null && ! sudo -n command -v pm2 &> /dev/null 2>&1; then
             echo "PM2 not found, installing..."
-            sudo npm install -g pm2
+            $NPM_CMD install -g pm2 || sudo npm install -g pm2
           fi
           
           # Reload PM2 with the ecosystem config
