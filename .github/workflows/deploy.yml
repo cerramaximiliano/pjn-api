@@ -50,27 +50,61 @@ jobs:
         
         # Run deployment commands on EC2
         ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
+          # Add common Node.js paths
+          export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+          
+          # Check for node/npm in common locations
+          if [ -f /usr/bin/node ]; then
+            export PATH="/usr/bin:$PATH"
+          fi
+          
+          # Try to source .bashrc or .profile for PATH
+          if [ -f ~/.bashrc ]; then
+            source ~/.bashrc
+          elif [ -f ~/.profile ]; then
+            source ~/.profile
+          fi
+          
           cd ~/pjn-api
+          
+          # Check if npm is available
+          if ! command -v npm &> /dev/null; then
+            echo "Error: npm not found in PATH"
+            echo "Current PATH: $PATH"
+            echo "Trying to find npm..."
+            find /usr -name npm -type f 2>/dev/null | head -5
+            exit 1
+          fi
           
           # Install dependencies
           npm ci --production
           
-          # Reload PM2 with the ecosystem config (using sudo if needed)
+          # Check for PM2
+          PM2_CMD=""
           if command -v pm2 &> /dev/null; then
-            # PM2 is in user path
-            pm2 reload ecosystem.config.js --env production
-            pm2 save
-            pm2 status
+            PM2_CMD="pm2"
           elif sudo -n command -v pm2 &> /dev/null 2>&1; then
-            # PM2 needs sudo
-            sudo pm2 reload ecosystem.config.js --env production
-            sudo pm2 save
-            sudo pm2 status
+            PM2_CMD="sudo pm2"
           else
-            echo "Error: PM2 not found. Please install PM2 on the server."
-            echo "Run: sudo npm install -g pm2"
-            exit 1
+            # Try to find PM2 in common locations
+            if [ -f /usr/local/bin/pm2 ]; then
+              PM2_CMD="/usr/local/bin/pm2"
+            elif [ -f /usr/bin/pm2 ]; then
+              PM2_CMD="/usr/bin/pm2"
+            elif sudo -n test -f /usr/local/bin/pm2 2>&1; then
+              PM2_CMD="sudo /usr/local/bin/pm2"
+            else
+              echo "Error: PM2 not found. Installing PM2..."
+              sudo npm install -g pm2
+              PM2_CMD="sudo pm2"
+            fi
           fi
+          
+          # Reload PM2 with the ecosystem config
+          echo "Using PM2 command: $PM2_CMD"
+          $PM2_CMD reload ecosystem.config.js --env production
+          $PM2_CMD save
+          $PM2_CMD status
         ENDSSH
         
         # Clean up
