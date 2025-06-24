@@ -1,0 +1,95 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci --production
+    
+    - name: Deploy to EC2
+      env:
+        HOST: ${{ secrets.EC2_HOST }}
+        USERNAME: ${{ secrets.EC2_USERNAME }}
+        KEY: ${{ secrets.EC2_SSH_KEY }}
+        PORT: ${{ secrets.EC2_SSH_PORT }}
+      run: |
+        echo "$KEY" > private_key
+        chmod 600 private_key
+        
+        # Create deployment directory on EC2 if it doesn't exist
+        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} "mkdir -p ~/pjn-api"
+        
+        # Sync files to EC2 (excluding unnecessary files)
+        rsync -avz --delete \
+          --exclude 'node_modules' \
+          --exclude '.git' \
+          --exclude '.env' \
+          --exclude 'private_key' \
+          --exclude '.github' \
+          --exclude 'logs' \
+          --exclude '*.log' \
+          -e "ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22}" \
+          ./ ${USERNAME}@${HOST}:~/pjn-api/
+        
+        # Run deployment commands on EC2
+        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'EOF'
+          cd ~/pjn-api
+          
+          # Install dependencies
+          npm ci --production
+          
+          # Reload PM2 with the ecosystem config
+          pm2 reload ecosystem.config.js --env production
+          
+          # Save PM2 configuration
+          pm2 save
+          
+          # Show status
+          pm2 status
+EOF
+        
+        # Clean up
+        rm -f private_key
+    
+    - name: Health Check
+      env:
+        HOST: ${{ secrets.EC2_HOST }}
+        APP_PORT: ${{ secrets.APP_PORT }}
+      run: |
+        echo "Waiting for application to start..."
+        sleep 10
+        
+        # Check if the API is responding
+        MAX_ATTEMPTS=30
+        ATTEMPT=0
+        
+        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+          if curl -f -s -o /dev/null "http://${HOST}:${APP_PORT:-8083}/api/test" || curl -f -s -o /dev/null "http://${HOST}:${APP_PORT:-8083}/api/causas/test"; then
+            echo "✅ Application is running successfully!"
+            exit 0
+          fi
+          
+          ATTEMPT=$((ATTEMPT + 1))
+          echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Application not ready yet..."
+          sleep 2
+        done
+        
+        echo "❌ Application failed to start or respond"
+        exit 1
