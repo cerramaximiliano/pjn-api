@@ -34,9 +34,10 @@ jobs:
         chmod 600 private_key
         
         # Create deployment directory on EC2 if it doesn't exist
-        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} "mkdir -p ~/pjn-api"
+        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} "sudo mkdir -p /var/www/pjn-api"
         
         # Sync files to EC2 (excluding unnecessary files)
+        # First sync to temp location, then move to final location
         rsync -avz --delete \
           --exclude 'node_modules' \
           --exclude '.git' \
@@ -46,38 +47,31 @@ jobs:
           --exclude 'logs' \
           --exclude '*.log' \
           -e "ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22}" \
-          ./ ${USERNAME}@${HOST}:~/pjn-api/
+          ./ ${USERNAME}@${HOST}:~/pjn-api-temp/
         
-        # Create deployment script on the server
+        # Run deployment commands on EC2
         ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-          cat > /tmp/deploy_pjn_api.sh << 'DEPLOY_SCRIPT'
-#!/bin/bash
-cd /home/ubuntu/pjn-api
-
-echo "📦 Installing dependencies..."
-npm ci --production
-
-echo "🔄 Reloading PM2 application..."
-pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
-pm2 save
-
-echo "📊 PM2 Status:"
-pm2 status
-
-echo "📋 Application logs (last 20 lines):"
-pm2 logs 'pjn/api' --lines 20 --nostream || true
-
-echo "✅ Deployment completed!"
-DEPLOY_SCRIPT
-
-          chmod +x /tmp/deploy_pjn_api.sh
+          # Move files to correct location with sudo
+          sudo rsync -av --delete ~/pjn-api-temp/ /var/www/pjn-api/
+          rm -rf ~/pjn-api-temp
           
-          # Execute the script as root
-          echo "🚀 Running deployment script as root..."
-          sudo bash -l /tmp/deploy_pjn_api.sh
+          # Change to the correct directory
+          cd /var/www/pjn-api
           
-          # Clean up
-          rm -f /tmp/deploy_pjn_api.sh
+          echo "📦 Installing dependencies..."
+          sudo bash -l -c "cd /var/www/pjn-api && npm ci --production"
+          
+          echo "🔄 Reloading PM2 application..."
+          sudo bash -l -c "cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
+          sudo bash -l -c "pm2 save"
+          
+          echo "📊 PM2 Status:"
+          sudo bash -l -c "pm2 status"
+          
+          echo "📋 Application logs (last 20 lines):"
+          sudo bash -l -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+          
+          echo "✅ Deployment completed!"
         ENDSSH
         
         # Clean up
@@ -96,53 +90,37 @@ DEPLOY_SCRIPT
         echo "$KEY" > private_key_health
         chmod 600 private_key_health
         
-        # Create health check script on the server
+        # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-          cat > /tmp/health_check_pjn.sh << 'HEALTH_SCRIPT'
-#!/bin/bash
-echo "📊 PM2 Status:"
-pm2 status
-
-echo ""
-echo "🔍 Checking pjn/api process:"
-if pm2 status | grep -q 'pjn/api.*online'; then
-  echo "✅ Application is running!"
-  
-  echo ""
-  echo "📋 Recent logs:"
-  pm2 logs 'pjn/api' --lines 10 --nostream || true
-  
-  exit 0
-else
-  echo "❌ Application is not running or not in 'online' status"
-  
-  echo ""
-  echo "📋 Error logs:"
-  pm2 logs 'pjn/api' --lines 20 --nostream || true
-  
-  # Show more debugging info
-  echo ""
-  echo "🔍 Debugging info:"
-  echo "Current user: $(whoami)"
-  echo "PM2 location: $(which pm2 || echo 'not found in PATH')"
-  echo "Node location: $(which node || echo 'not found in PATH')"
-  echo "PATH: $PATH"
-  
-  exit 1
-fi
-HEALTH_SCRIPT
-
-          chmod +x /tmp/health_check_pjn.sh
+          echo "📊 PM2 Status:"
+          sudo bash -l -c "pm2 status"
           
-          # Execute the health check as root
-          echo "🏥 Running health check as root..."
-          sudo bash -l /tmp/health_check_pjn.sh
-          RESULT=$?
-          
-          # Clean up
-          rm -f /tmp/health_check_pjn.sh
-          
-          exit $RESULT
+          echo ""
+          echo "🔍 Checking pjn/api process:"
+          if sudo bash -l -c "pm2 status" | grep -q 'pjn/api.*online'; then
+            echo "✅ Application is running!"
+            
+            echo ""
+            echo "📋 Recent logs:"
+            sudo bash -l -c "pm2 logs 'pjn/api' --lines 10 --nostream" || true
+            
+            exit 0
+          else
+            echo "❌ Application is not running or not in 'online' status"
+            
+            echo ""
+            echo "📋 Error logs:"
+            sudo bash -l -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+            
+            echo ""
+            echo "🔍 Debugging info:"
+            echo "Current user: $(whoami)"
+            sudo bash -l -c "echo 'PM2 location: \$(which pm2 || echo not found)'"
+            sudo bash -l -c "echo 'Node location: \$(which node || echo not found)'"
+            sudo bash -l -c "echo 'PATH: \$PATH'"
+            
+            exit 1
+          fi
         ENDSSH
         
         # Clean up
