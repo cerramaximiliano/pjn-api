@@ -9,104 +9,108 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci --production
-
-      - name: Deploy to EC2
-        env:
-          HOST: ${{ secrets.EC2_HOST }}
-          USERNAME: ${{ secrets.EC2_USERNAME }}
-          KEY: ${{ secrets.EC2_SSH_KEY }}
-          PORT: ${{ secrets.EC2_SSH_PORT }}
-        run: |
-          echo "$KEY" > private_key
-          chmod 600 private_key
-
-          ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} "mkdir -p ~/pjn-api"
-
-          rsync -avz --delete \
-            --exclude 'node_modules' \
-            --exclude '.git' \
-            --exclude '.env' \
-            --exclude 'private_key' \
-            --exclude '.github' \
-            --exclude 'logs' \
-            --exclude '*.log' \
-            -e "ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22}" \
-            ./ ${USERNAME}@${HOST}:~/pjn-api/
-
-          ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-            sudo -s <<'ENDROOT'
-              cd ~/pjn-api
-
-              echo "📦 Installing dependencies..."
-              npm ci --production
-
-              echo "📦 Installing PM2 globally..."
-              npm i -g pm2
-
-              echo "🔄 Reloading PM2 application..."
-              pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
-              pm2 save
-
-              echo "📊 PM2 Status:"
-              pm2 status
-
-              echo "📋 Application logs (last 20 lines):"
-              pm2 logs "pjn/api" --lines 20 --nostream || true
-
-              echo "✅ Deployment completed!"
-            ENDROOT
-          ENDSSH
-
-          rm -f private_key
-
-      - name: Health Check via SSH
-        env:
-          HOST: ${{ secrets.EC2_HOST }}
-          USERNAME: ${{ secrets.EC2_USERNAME }}
-          KEY: ${{ secrets.EC2_SSH_KEY }}
-          SSH_PORT: ${{ secrets.EC2_SSH_PORT }}
-        run: |
-          echo "$KEY" > private_key_health
-          chmod 600 private_key_health
-
-          ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} <<'ENDSSH'
-            sudo -s <<'ENDROOT'
-              echo "📊 PM2 Status:"
-              pm2 status
-
-              echo ""
-              echo "🔍 Checking pjn/api process:"
-              if pm2 status | grep -q 'pjn/api.*online'; then
-                echo "✅ Application is running!"
-
-                echo ""
-                echo "📋 Recent logs:"
-                pm2 logs "pjn/api" --lines 10 --nostream || true
-
-                exit 0
-              else
-                echo "❌ Application is not running or not in 'online' status"
-
-                echo ""
-                echo "📋 Error logs:"
-                pm2 logs "pjn/api" --lines 20 --nostream || true
-
-                exit 1
-              fi
-            ENDROOT
-          ENDSSH
-
-          rm -f private_key_health
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci --production
+    
+    - name: Deploy to EC2
+      env:
+        HOST: ${{ secrets.EC2_HOST }}
+        USERNAME: ${{ secrets.EC2_USERNAME }}
+        KEY: ${{ secrets.EC2_SSH_KEY }}
+        PORT: ${{ secrets.EC2_SSH_PORT }}
+      run: |
+        echo "$KEY" > private_key
+        chmod 600 private_key
+        
+        # Create deployment directory on EC2 if it doesn't exist
+        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} "mkdir -p ~/pjn-api"
+        
+        # Sync files to EC2 (excluding unnecessary files)
+        rsync -avz --delete \
+          --exclude 'node_modules' \
+          --exclude '.git' \
+          --exclude '.env' \
+          --exclude 'private_key' \
+          --exclude '.github' \
+          --exclude 'logs' \
+          --exclude '*.log' \
+          -e "ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22}" \
+          ./ ${USERNAME}@${HOST}:~/pjn-api/
+        
+        # Run deployment commands on EC2
+        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
+          cd ~/pjn-api
+          
+          echo "📦 Installing dependencies..."
+          # Run npm as root with its environment
+          sudo su - root -c "cd $(pwd) && npm ci --production"
+          
+          echo "🔄 Reloading PM2 application..."
+          # Run PM2 commands as root
+          sudo su - root -c "cd $(pwd) && pm2 reload ecosystem.config.js --env production"
+          sudo su - root -c "pm2 save"
+          
+          echo "📊 PM2 Status:"
+          sudo su - root -c "pm2 status"
+          
+          echo "📋 Application logs (last 20 lines):"
+          sudo su - root -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+          
+          echo "✅ Deployment completed!"
+        ENDSSH
+        
+        # Clean up
+        rm -f private_key
+    
+    - name: Health Check via SSH
+      env:
+        HOST: ${{ secrets.EC2_HOST }}
+        USERNAME: ${{ secrets.EC2_USERNAME }}
+        KEY: ${{ secrets.EC2_SSH_KEY }}
+        SSH_PORT: ${{ secrets.EC2_SSH_PORT }}
+      run: |
+        echo "🔍 Checking application status via SSH..."
+        
+        # Setup SSH key
+        echo "$KEY" > private_key_health
+        chmod 600 private_key_health
+        
+        # Check if the app is running on the server
+        ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
+          echo "📊 PM2 Status:"
+          sudo su - root -c "pm2 status"
+          
+          echo ""
+          echo "🔍 Checking pjn/api process:"
+          if sudo su - root -c "pm2 status" | grep -q 'pjn/api.*online'; then
+            echo "✅ Application is running!"
+            
+            echo ""
+            echo "📋 Recent logs:"
+            sudo su - root -c "pm2 logs 'pjn/api' --lines 10 --nostream" || true
+            
+            exit 0
+          else
+            echo "❌ Application is not running or not in 'online' status"
+            
+            echo ""
+            echo "📋 Error logs:"
+            sudo su - root -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+            
+            exit 1
+          fi
+        ENDSSH
+        
+        # Clean up
+        rm -f private_key_health
