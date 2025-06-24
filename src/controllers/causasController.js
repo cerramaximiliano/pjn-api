@@ -306,14 +306,19 @@ const causasController = {
     }
   },
 
-  // Obtener movimientos de una causa por ID
+  // Obtener movimientos de una causa por ID con paginación
   async getMovimientosByDocumentId(req, res) {
     try {
       const { fuero, id } = req.params;
+      // Obtener parámetros de paginación con valores por defecto
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 20; // 20 movimientos por página por defecto
+      const skip = (page - 1) * limit;
+
       const Model = getModel(fuero);
 
       // Buscar el documento por ID
-      const causa = await Model.findById(id).select('number year caratula movimiento movimientosCount');
+      const causa = await Model.findById(id).select('number year caratula movimiento movimientosCount userUpdatesEnabled folderIds userCausaIds');
       
       if (!causa) {
         return res.status(404).json({
@@ -330,18 +335,33 @@ const causasController = {
         return new Date(b.fecha) - new Date(a.fecha);
       });
 
+      // Aplicar paginación
+      const totalMovimientos = movimientosOrdenados.length;
+      const totalPages = Math.ceil(totalMovimientos / limit);
+      const movimientosPaginados = movimientosOrdenados.slice(skip, skip + limit);
+
       res.json({
         success: true,
-        message: `Se encontraron ${movimientosOrdenados.length} movimientos`,
-        count: movimientosOrdenados.length,
+        message: `Mostrando ${movimientosPaginados.length} de ${totalMovimientos} movimientos`,
+        count: totalMovimientos,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          limit: limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        },
         causa: {
           id: causa._id,
           number: causa.number,
           year: causa.year,
           caratula: causa.caratula,
-          movimientosCount: causa.movimientosCount
+          movimientosCount: causa.movimientosCount,
+          userUpdatesEnabled: causa.userUpdatesEnabled || [],
+          folderIds: causa.folderIds || [],
+          userCausaIds: causa.userCausaIds || []
         },
-        data: movimientosOrdenados
+        data: movimientosPaginados
       });
     } catch (error) {
       logger.error(`Error obteniendo movimientos: ${error}`);
@@ -351,6 +371,45 @@ const causasController = {
         error: error.message,
         count: 0,
         data: []
+      });
+    }
+  },
+
+  // Eliminar una causa por ID
+  async deleteCausaById(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const Model = getModel(fuero);
+
+      // Buscar y eliminar el documento
+      const causaEliminada = await Model.findByIdAndDelete(id);
+      
+      if (!causaEliminada) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Causa eliminada correctamente',
+        data: {
+          id: causaEliminada._id,
+          number: causaEliminada.number,
+          year: causaEliminada.year,
+          caratula: causaEliminada.caratula,
+          fuero: fuero
+        }
+      });
+    } catch (error) {
+      logger.error(`Error eliminando causa: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
       });
     }
   }

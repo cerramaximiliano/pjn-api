@@ -21,4 +21,7 @@ router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAn
 // Ruta para agregar causas - requiere autenticación y rol de administrador
 router.post('/:fuero/agregar', verifyToken, verifyAdmin, causasController.addCausa);
 
+// Ruta para eliminar una causa por ID - requiere autenticación y rol de administrador
+router.delete('/:fuero/:id', verifyToken, verifyAdmin, causasController.deleteCausaById);
+
 module.exports = router;
