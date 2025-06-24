@@ -55,19 +55,22 @@ jobs:
           sudo rsync -av --delete ~/pjn-api-temp/ /var/www/pjn-api/
           rm -rf ~/pjn-api-temp
           
-          # Run commands as root
+          # Find npm and pm2 paths first
+          NPM_PATH=$(which npm || echo "/usr/bin/npm")
+          PM2_PATH=$(which pm2 || echo "/usr/bin/pm2")
+          
           echo "📦 Installing dependencies..."
-          sudo /bin/bash -c "cd /var/www/pjn-api && npm ci --production"
+          sudo /bin/bash -c "cd /var/www/pjn-api && $NPM_PATH ci --production"
           
           echo "🔄 Reloading PM2 application..."
-          sudo /bin/bash -c "cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
-          sudo /bin/bash -c "pm2 save"
+          sudo /bin/bash -c "cd /var/www/pjn-api && $PM2_PATH reload ecosystem.config.js --env production || $PM2_PATH start ecosystem.config.js --env production"
+          sudo /bin/bash -c "$PM2_PATH save"
           
           echo "📊 PM2 Status:"
-          sudo /bin/bash -c "pm2 status"
+          sudo /bin/bash -c "$PM2_PATH status"
           
           echo "📋 Application logs (last 20 lines):"
-          sudo /bin/bash -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
+          sudo /bin/bash -c "$PM2_PATH logs 'pjn/api' --lines 20 --nostream" || true
           
           echo "✅ Deployment completed!"
         ENDSSH
@@ -90,20 +93,22 @@ jobs:
         
         # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
+          # Find PM2 path
+          PM2_PATH=$(which pm2 || echo "/usr/bin/pm2")
+          
           echo "📊 PM2 Status:"
-          sudo /bin/bash -c "pm2 status"
+          sudo /bin/bash -c "$PM2_PATH status"
           
           echo ""
           echo "🔍 Checking pjn/api process:"
-          PM2_OUTPUT=$(sudo /bin/bash -c "pm2 status" 2>&1)
-          echo "$PM2_OUTPUT"
+          PM2_OUTPUT=$(sudo /bin/bash -c "$PM2_PATH status" 2>&1)
           
           if echo "$PM2_OUTPUT" | grep -q 'pjn/api.*online'; then
             echo "✅ Application is running!"
             
             echo ""
             echo "📋 Recent logs:"
-            sudo /bin/bash -c "pm2 logs 'pjn/api' --lines 10 --nostream" || true
+            sudo /bin/bash -c "$PM2_PATH logs 'pjn/api' --lines 10 --nostream" || true
             
             exit 0
           else
@@ -111,20 +116,7 @@ jobs:
             
             echo ""
             echo "📋 Error logs:"
-            sudo /bin/bash -c "pm2 logs 'pjn/api' --lines 20 --nostream" || true
-            
-            echo ""
-            echo "🔍 Debugging info:"
-            echo "Current user: $(whoami)"
-            echo "Root PATH check:"
-            sudo /bin/bash -c "echo PATH=\$PATH"
-            sudo /bin/bash -c "which pm2 || echo 'PM2 not found in PATH'"
-            sudo /bin/bash -c "which node || echo 'Node not found in PATH'"
-            
-            echo ""
-            echo "Looking for PM2 installation:"
-            sudo find /usr -name pm2 -type f 2>/dev/null | head -5
-            sudo find /root -name pm2 -type f 2>/dev/null | head -5
+            sudo /bin/bash -c "$PM2_PATH logs 'pjn/api' --lines 20 --nostream" || true
             
             exit 1
           fi
