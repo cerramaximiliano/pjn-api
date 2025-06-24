@@ -324,13 +324,16 @@ const causasController = {
         });
       }
 
-      // Extraer los movimientos
+      // Extraer los movimientos y ordenarlos por fecha descendente
       const movimientos = causa.movimiento || [];
+      const movimientosOrdenados = movimientos.sort((a, b) => {
+        return new Date(b.fecha) - new Date(a.fecha);
+      });
 
       res.json({
         success: true,
-        message: `Se encontraron ${movimientos.length} movimientos`,
-        count: movimientos.length,
+        message: `Se encontraron ${movimientosOrdenados.length} movimientos`,
+        count: movimientosOrdenados.length,
         causa: {
           id: causa._id,
           number: causa.number,
@@ -338,7 +341,7 @@ const causasController = {
           caratula: causa.caratula,
           movimientosCount: causa.movimientosCount
         },
-        data: movimientos
+        data: movimientosOrdenados
       });
     } catch (error) {
       logger.error(`Error obteniendo movimientos: ${error}`);
