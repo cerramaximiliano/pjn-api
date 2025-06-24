@@ -55,9 +55,10 @@ jobs:
           sudo rsync -av --delete ~/pjn-api-temp/ /var/www/pjn-api/
           rm -rf ~/pjn-api-temp
           
-          # Find npm and pm2 paths first
-          NPM_PATH=$(which npm || echo "/usr/bin/npm")
-          PM2_PATH=$(which pm2 || echo "/usr/bin/pm2")
+          # Use NVM paths for root user
+          NPM_PATH="/root/.nvm/versions/node/v18.18.2/bin/npm"
+          PM2_PATH="/root/.nvm/versions/node/v18.18.2/bin/pm2"
+          NODE_PATH="/root/.nvm/versions/node/v18.18.2/bin/node"
           
           echo "📦 Installing dependencies..."
           sudo /bin/bash -c "cd /var/www/pjn-api && $NPM_PATH ci --production"
@@ -93,8 +94,8 @@ jobs:
         
         # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-          # Find PM2 path
-          PM2_PATH=$(which pm2 || echo "/usr/bin/pm2")
+          # Use NVM path for PM2
+          PM2_PATH="/root/.nvm/versions/node/v18.18.2/bin/pm2"
           
           echo "📊 PM2 Status:"
           sudo /bin/bash -c "$PM2_PATH status"
