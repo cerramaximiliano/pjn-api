@@ -52,20 +52,59 @@ jobs:
         ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
           cd ~/pjn-api
           
+          echo "🔍 Finding Node.js and PM2 paths..."
+          # Find the actual paths as root
+          NODE_PATH=$(sudo -s which node 2>/dev/null || echo "")
+          NPM_PATH=$(sudo -s which npm 2>/dev/null || echo "")
+          PM2_PATH=$(sudo -s which pm2 2>/dev/null || echo "")
+          
+          echo "Node path: ${NODE_PATH:-not found}"
+          echo "NPM path: ${NPM_PATH:-not found}"
+          echo "PM2 path: ${PM2_PATH:-not found}"
+          
+          # If paths are empty, try common locations
+          if [ -z "$NPM_PATH" ]; then
+            if [ -f "/usr/bin/npm" ]; then
+              NPM_PATH="/usr/bin/npm"
+            elif [ -f "/usr/local/bin/npm" ]; then
+              NPM_PATH="/usr/local/bin/npm"
+            fi
+          fi
+          
+          if [ -z "$PM2_PATH" ]; then
+            if [ -f "/usr/bin/pm2" ]; then
+              PM2_PATH="/usr/bin/pm2"
+            elif [ -f "/usr/local/bin/pm2" ]; then
+              PM2_PATH="/usr/local/bin/pm2"
+            fi
+          fi
+          
+          # Check if we found the binaries
+          if [ -z "$NPM_PATH" ]; then
+            echo "❌ Error: npm not found!"
+            echo "Try running: sudo which npm"
+            exit 1
+          fi
+          
           echo "📦 Installing dependencies..."
-          # Execute as root using sudo -s
-          sudo -s bash -c "cd $PWD && npm ci --production"
+          sudo $NPM_PATH ci --production
           
           echo "🔄 Reloading PM2 application..."
-          # PM2 commands need to be run as root since the app is running under root
-          sudo -s bash -c "cd $PWD && pm2 reload ecosystem.config.js --env production"
-          sudo -s bash -c "pm2 save"
-          
-          echo "📊 PM2 Status:"
-          sudo -s bash -c "pm2 status"
-          
-          echo "📋 Application logs (last 20 lines):"
-          sudo -s bash -c "pm2 logs 'pjn/api' --lines 20 --nostream"
+          if [ -n "$PM2_PATH" ]; then
+            sudo $PM2_PATH reload ecosystem.config.js --env production
+            sudo $PM2_PATH save
+            
+            echo "📊 PM2 Status:"
+            sudo $PM2_PATH status
+            
+            echo "📋 Application logs (last 20 lines):"
+            sudo $PM2_PATH logs 'pjn/api' --lines 20 --nostream || true
+          else
+            echo "⚠️  PM2 not found, trying to install it..."
+            sudo $NPM_PATH install -g pm2
+            PM2_PATH=$(sudo -s which pm2 2>/dev/null || echo "/usr/bin/pm2")
+            sudo $PM2_PATH reload ecosystem.config.js --env production
+          fi
         ENDSSH
         
         # Clean up
