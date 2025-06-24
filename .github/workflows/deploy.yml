@@ -49,7 +49,7 @@ jobs:
           ./ ${USERNAME}@${HOST}:~/pjn-api/
         
         # Run deployment commands on EC2
-        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'EOF'
+        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
           cd ~/pjn-api
           
           # Install dependencies
@@ -63,7 +63,7 @@ jobs:
           
           # Show status
           pm2 status
-EOF
+        ENDSSH
         
         # Clean up
         rm -f private_key
