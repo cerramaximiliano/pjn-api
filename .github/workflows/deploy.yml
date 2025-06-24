@@ -52,25 +52,20 @@ jobs:
         ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
           cd ~/pjn-api
           
-          # For now, we'll use sudo to access Node.js since it's already installed
-          echo "Using sudo to access Node.js..."
+          echo "📦 Installing dependencies..."
+          # Execute as root using sudo -s
+          sudo -s bash -c "cd $PWD && npm ci --production"
           
-          # Install dependencies
-          sudo npm ci --production
+          echo "🔄 Reloading PM2 application..."
+          # PM2 commands need to be run as root since the app is running under root
+          sudo -s bash -c "cd $PWD && pm2 reload ecosystem.config.js --env production"
+          sudo -s bash -c "pm2 save"
           
-          # Check for PM2 and install if needed
-          if ! sudo command -v pm2 &> /dev/null 2>&1; then
-            echo "PM2 not found, installing..."
-            sudo npm install -g pm2
-          fi
+          echo "📊 PM2 Status:"
+          sudo -s bash -c "pm2 status"
           
-          # Reload PM2 with the ecosystem config
-          sudo pm2 reload ecosystem.config.js --env production
-          sudo pm2 save
-          
-          # Show status
-          echo "PM2 Status:"
-          sudo pm2 status
+          echo "📋 Application logs (last 20 lines):"
+          sudo -s bash -c "pm2 logs 'pjn/api' --lines 20 --nostream"
         ENDSSH
         
         # Clean up
