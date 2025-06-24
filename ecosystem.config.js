@@ -3,7 +3,6 @@ module.exports = {
         {
             name: "pjn/api",
             script: "src/server.js",
-            cwd: "/var/www/pjn-api",
             exec_mode: "fork", 
             instances: 1,
             autorestart: true,
