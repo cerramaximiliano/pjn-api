@@ -15,13 +15,13 @@ PM2_APP_NAME="pjn/api"
 cd "$APP_DIR"
 
 echo "📦 Installing dependencies..."
-sudo -s bash -c "cd $PWD && npm ci --production"
+sudo su - root -c "cd $PWD && npm ci --production"
 
 echo "🔄 Reloading PM2..."
-sudo -s bash -c "cd $PWD && pm2 reload ecosystem.config.js --env production"
-sudo -s bash -c "pm2 save"
+sudo su - root -c "cd $PWD && pm2 reload ecosystem.config.js --env production"
+sudo su - root -c "pm2 save"
 
 echo "📊 PM2 Status:"
-sudo -s bash -c "pm2 status"
+sudo su - root -c "pm2 status"
 
 echo "✅ Deployment completed successfully!"
