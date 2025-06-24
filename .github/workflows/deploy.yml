@@ -88,42 +88,28 @@ jobs:
         
         # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-          # Create a script to run as root
-          cat > /tmp/check_pm2.sh << 'SCRIPT'
-#!/bin/bash
-echo "📊 PM2 Status:"
-pm2 status
-
-echo ""
-echo "🔍 Checking pjn/api process:"
-if pm2 status | grep -q 'pjn/api.*online'; then
-  echo "✅ Application is running!"
-  
-  echo ""
-  echo "📋 Recent logs:"
-  pm2 logs 'pjn/api' --lines 10 --nostream || true
-  
-  exit 0
-else
-  echo "❌ Application is not running or not in 'online' status"
-  
-  echo ""
-  echo "📋 Error logs:"
-  pm2 logs 'pjn/api' --lines 20 --nostream || true
-  
-  exit 1
-fi
-SCRIPT
+          echo "📊 PM2 Status:"
+          sudo bash -c 'source /root/.bashrc && pm2 status'
           
-          # Make it executable and run as root
-          chmod +x /tmp/check_pm2.sh
-          sudo -s /tmp/check_pm2.sh
-          RESULT=$?
-          
-          # Clean up
-          rm -f /tmp/check_pm2.sh
-          
-          exit $RESULT
+          echo ""
+          echo "🔍 Checking pjn/api process:"
+          if sudo bash -c 'source /root/.bashrc && pm2 status' | grep -q 'pjn/api.*online'; then
+            echo "✅ Application is running!"
+            
+            echo ""
+            echo "📋 Recent logs:"
+            sudo bash -c 'source /root/.bashrc && pm2 logs "pjn/api" --lines 10 --nostream' || true
+            
+            exit 0
+          else
+            echo "❌ Application is not running or not in 'online' status"
+            
+            echo ""
+            echo "📋 Error logs:"
+            sudo bash -c 'source /root/.bashrc && pm2 logs "pjn/api" --lines 20 --nostream' || true
+            
+            exit 1
+          fi
         ENDSSH
         
         # Clean up
