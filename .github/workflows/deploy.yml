@@ -55,23 +55,18 @@ jobs:
           sudo rsync -av --delete ~/pjn-api-temp/ /var/www/pjn-api/
           rm -rf ~/pjn-api-temp
           
-          # Use NVM paths for root user
-          NPM_PATH="/root/.nvm/versions/node/v18.18.2/bin/npm"
-          PM2_PATH="/root/.nvm/versions/node/v18.18.2/bin/pm2"
-          NODE_PATH="/root/.nvm/versions/node/v18.18.2/bin/node"
-          
           echo "📦 Installing dependencies..."
-          sudo /bin/bash -c "cd /var/www/pjn-api && $NPM_PATH ci --production"
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && cd /var/www/pjn-api && npm ci --production"
           
           echo "🔄 Reloading PM2 application..."
-          sudo /bin/bash -c "cd /var/www/pjn-api && $PM2_PATH reload ecosystem.config.js --env production || $PM2_PATH start ecosystem.config.js --env production"
-          sudo /bin/bash -c "$PM2_PATH save"
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 save"
           
           echo "📊 PM2 Status:"
-          sudo /bin/bash -c "$PM2_PATH status"
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 status"
           
           echo "📋 Application logs (last 20 lines):"
-          sudo /bin/bash -c "$PM2_PATH logs 'pjn/api' --lines 20 --nostream" || true
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 logs 'pjn/api' --lines 20 --nostream" || true
           
           echo "✅ Deployment completed!"
         ENDSSH
@@ -94,22 +89,19 @@ jobs:
         
         # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-          # Use NVM path for PM2
-          PM2_PATH="/root/.nvm/versions/node/v18.18.2/bin/pm2"
-          
           echo "📊 PM2 Status:"
-          sudo /bin/bash -c "$PM2_PATH status"
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 status"
           
           echo ""
           echo "🔍 Checking pjn/api process:"
-          PM2_OUTPUT=$(sudo /bin/bash -c "$PM2_PATH status" 2>&1)
+          PM2_OUTPUT=$(sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 status" 2>&1)
           
           if echo "$PM2_OUTPUT" | grep -q 'pjn/api.*online'; then
             echo "✅ Application is running!"
             
             echo ""
             echo "📋 Recent logs:"
-            sudo /bin/bash -c "$PM2_PATH logs 'pjn/api' --lines 10 --nostream" || true
+            sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 logs 'pjn/api' --lines 10 --nostream" || true
             
             exit 0
           else
@@ -117,7 +109,7 @@ jobs:
             
             echo ""
             echo "📋 Error logs:"
-            sudo /bin/bash -c "$PM2_PATH logs 'pjn/api' --lines 20 --nostream" || true
+            sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 logs 'pjn/api' --lines 20 --nostream" || true
             
             exit 1
           fi
