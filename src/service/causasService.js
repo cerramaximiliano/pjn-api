@@ -339,9 +339,29 @@ const causaService = {
                 console.log(`Nueva causa ${causaType} creada con folderIds:`, causa.folderIds);
             }
 
+            // Calcular fecha más antigua si la causa está verificada y válida
+            let fechaInicio = null;
+            if (causa.verified && causa.isValid && causa.movimiento && Array.isArray(causa.movimiento) && causa.movimiento.length > 0) {
+                const fechas = causa.movimiento
+                    .filter(mov => mov.fecha)
+                    .map(mov => new Date(mov.fecha))
+                    .filter(fecha => !isNaN(fecha.getTime()));
+                
+                if (fechas.length > 0) {
+                    fechaInicio = new Date(Math.min(...fechas));
+                }
+            }
+
             return {
                 causaId: causa._id,
-                causaType: causaType
+                causaType: causaType,
+                verified: causa.verified || false,
+                ...(causa.verified && { isValid: causa.isValid || false }),
+                ...(causa.caratula && { caratula: causa.caratula }),
+                ...(causa.objeto && { objeto: causa.objeto }),
+                ...(causa.juzgado && { juzgado: causa.juzgado }),
+                ...(causa.secretaria && { secretaria: causa.secretaria }),
+                ...(fechaInicio && { fechaInicio: fechaInicio })
             };
         } catch (error) {
             console.error(`Error al procesar ${causaType}:`, error);
