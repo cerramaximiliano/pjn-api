@@ -412,6 +412,73 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  // Buscar causas con filtros
+  async findByFilters(req, res) {
+    try {
+      const { fuero } = req.params;
+      const { verified, isValid, update, source } = req.query;
+      const Model = getModel(fuero);
+
+      // Construir query dinámicamente
+      let query = {};
+      let criteria = [];
+
+      // Agregar filtros solo si están presentes
+      if (verified !== undefined) {
+        query.verified = verified === 'true';
+        criteria.push(`verified: ${verified}`);
+      }
+
+      if (isValid !== undefined) {
+        query.isValid = isValid === 'true';
+        criteria.push(`isValid: ${isValid}`);
+      }
+
+      if (update !== undefined) {
+        query.update = update === 'true';
+        criteria.push(`update: ${update}`);
+      }
+
+      if (source) {
+        query.source = source;
+        criteria.push(`source: ${source}`);
+      }
+
+      // Ejecutar búsqueda
+      const causas = await Model.find(query)
+        .sort({ year: -1, number: -1 })
+        .limit(100);
+
+      const criteriaText = criteria.length > 0 ? 
+        `Filtros aplicados: ${criteria.join(', ')}` : 
+        'Sin filtros aplicados';
+
+      res.json({
+        success: true,
+        message: `Se encontraron ${causas.length} causas en ${fuero}. ${criteriaText}${causas.length === 100 ? ' (limitado a 100 resultados)' : ''}`,
+        count: causas.length,
+        filters: {
+          fuero,
+          verified: verified !== undefined ? verified === 'true' : undefined,
+          isValid: isValid !== undefined ? isValid === 'true' : undefined,
+          update: update !== undefined ? update === 'true' : undefined,
+          source: source || undefined
+        },
+        limitApplied: causas.length === 100,
+        data: causas
+      });
+    } catch (error) {
+      logger.error(`Error buscando causas con filtros: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
+    }
   }
 
 };

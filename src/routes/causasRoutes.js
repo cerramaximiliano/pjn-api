@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const causasController = require('../controllers/causasController');
-const { verifyToken, verifyAdmin } = require('../middleware/auth');
+const { verifyToken, verifyAdmin, verifyApiKey } = require('../middleware/auth');
 
 // Añadir una ruta de prueba para verificar que el router funciona
 router.get('/test', (req, res) => {
@@ -15,6 +15,7 @@ router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
 router.get('/:fuero/buscar/objeto', verifyToken, causasController.findByObjeto);
 router.get('/:fuero/objetos', verifyToken, causasController.listObjetos);
 router.get('/:fuero/buscar', verifyToken, causasController.searchAdvanced);
+router.get('/:fuero/filtros', verifyApiKey, causasController.findByFilters);
 router.get('/:fuero/:id/movimientos', verifyToken, causasController.getMovimientosByDocumentId);
 router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAndYear);
 

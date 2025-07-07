@@ -361,7 +361,7 @@ const causaService = {
                 ...(causa.objeto && { objeto: causa.objeto }),
                 ...(causa.juzgado && { juzgado: causa.juzgado }),
                 ...(causa.secretaria && { secretaria: causa.secretaria }),
-                ...(fechaInicio && { fechaInicio: fechaInicio })
+                ...(fechaInicio && { fechaInicio: fechaInicio, initialDateMovement: fechaInicio.toISOString().split('T')[0] })
             };
         } catch (error) {
             console.error(`Error al procesar ${causaType}:`, error);

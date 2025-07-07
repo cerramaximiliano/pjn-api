@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const causaService = require('../service/causasService');
+const juzgadosController = require('../controllers/juzgadosController');
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 
 /**
@@ -512,5 +513,137 @@ router.post('/migrate-array-fields/:causaType', verifyToken, verifyAdmin, async 
     });
   }
 });
+
+/**
+ * @swagger
+ * /causas-service/juzgados/codigo/{codigo}:
+ *   get:
+ *     summary: Busca juzgados por código con filtros opcionales
+ *     tags: [CausaService]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: codigo
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Código del juzgado (obligatorio)
+ *       - in: query
+ *         name: jurisdiccion
+ *         schema:
+ *           type: string
+ *         description: Filtrar por jurisdicción
+ *       - in: query
+ *         name: ciudad
+ *         schema:
+ *           type: string
+ *         description: Filtrar por ciudad
+ *       - in: query
+ *         name: organismo
+ *         schema:
+ *           type: string
+ *         description: Filtrar por organismo
+ *       - in: query
+ *         name: datosCompletos
+ *         schema:
+ *           type: boolean
+ *         description: Filtrar por juzgados con datos completos
+ *     responses:
+ *       200:
+ *         description: Juzgados encontrados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 count:
+ *                   type: number
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: Código es obligatorio
+ *       404:
+ *         description: No se encontraron juzgados
+ *       500:
+ *         description: Error del servidor
+ */
+router.get('/juzgados/codigo/:codigo', verifyToken, juzgadosController.findByCodigo);
+
+/**
+ * @swagger
+ * /causas-service/juzgados:
+ *   get:
+ *     summary: Obtiene todos los juzgados con filtros y paginación
+ *     tags: [CausaService]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: jurisdiccion
+ *         schema:
+ *           type: string
+ *         description: Filtrar por jurisdicción
+ *       - in: query
+ *         name: ciudad
+ *         schema:
+ *           type: string
+ *         description: Filtrar por ciudad
+ *       - in: query
+ *         name: organismo
+ *         schema:
+ *           type: string
+ *         description: Filtrar por organismo
+ *       - in: query
+ *         name: datosCompletos
+ *         schema:
+ *           type: boolean
+ *         description: Filtrar por juzgados con datos completos
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: number
+ *           default: 1
+ *         description: Número de página
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: number
+ *           default: 20
+ *         description: Cantidad de resultados por página
+ *     responses:
+ *       200:
+ *         description: Juzgados encontrados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 count:
+ *                   type: number
+ *                 total:
+ *                   type: number
+ *                 page:
+ *                   type: number
+ *                 pages:
+ *                   type: number
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: Error del servidor
+ */
+router.get('/juzgados', verifyToken, juzgadosController.findAll);
 
 module.exports = router;

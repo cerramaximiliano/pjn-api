@@ -94,7 +94,51 @@ const verifyAdmin = (req, res, next) => {
   next();
 };
 
+// Middleware para verificar API KEY
+const verifyApiKey = (req, res, next) => {
+  // Obtener API key del header, query param o body
+  const apiKeyFromHeader = req.headers['x-api-key'] || req.headers['api-key'];
+  const apiKeyFromQuery = req.query?.apiKey;
+  const apiKeyFromBody = req.body?.apiKey;
+
+  const apiKey = apiKeyFromHeader || apiKeyFromQuery || apiKeyFromBody;
+
+  if (!apiKey) {
+    logger.warn(`Middleware auth: API Key no encontrada para ruta ${req.originalUrl}`);
+    return res.status(401).json({
+      success: false,
+      message: "API Key no proporcionada",
+      error: "Authentication required"
+    });
+  }
+
+  // Verificar que la API key coincida con la configurada
+  const validApiKey = process.env.API_KEY;
+  
+  if (!validApiKey) {
+    logger.error('API_KEY no configurada en las variables de entorno');
+    return res.status(500).json({
+      success: false,
+      message: "Error de configuración del servidor",
+      error: "Internal server error"
+    });
+  }
+
+  if (apiKey !== validApiKey) {
+    logger.warn(`Middleware auth: API Key inválida proporcionada: ${apiKey.substring(0, 10)}...`);
+    return res.status(401).json({
+      success: false,
+      message: "API Key inválida",
+      error: "Invalid authentication"
+    });
+  }
+
+  logger.info(`Middleware auth: API Key verificada correctamente para ruta ${req.originalUrl}`);
+  next();
+};
+
 module.exports = {
   verifyToken,
-  verifyAdmin
+  verifyAdmin,
+  verifyApiKey
 };
