@@ -446,10 +446,18 @@ const causasController = {
         criteria.push(`source: ${source}`);
       }
 
-      // Ejecutar búsqueda
+      // Ejecutar búsqueda con proyección para obtener solo los campos necesarios
       const causas = await Model.find(query)
+        .select('number year')
         .sort({ year: -1, number: -1 })
         .limit(100);
+
+      // Mapear los resultados para incluir el fuero y solo los campos solicitados
+      const causasFormateadas = causas.map(causa => ({
+        fuero: fuero,
+        number: causa.number,
+        year: causa.year
+      }));
 
       const criteriaText = criteria.length > 0 ? 
         `Filtros aplicados: ${criteria.join(', ')}` : 
@@ -467,7 +475,7 @@ const causasController = {
           source: source || undefined
         },
         limitApplied: causas.length === 100,
-        data: causas
+        data: causasFormateadas
       });
     } catch (error) {
       logger.error(`Error buscando causas con filtros: ${error}`);
