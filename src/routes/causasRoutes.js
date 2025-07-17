@@ -16,6 +16,7 @@ router.get('/:fuero/buscar/objeto', verifyToken, causasController.findByObjeto);
 router.get('/:fuero/objetos', verifyToken, causasController.listObjetos);
 router.get('/:fuero/buscar', verifyToken, causasController.searchAdvanced);
 router.get('/:fuero/filtros', verifyApiKey, causasController.findByFilters);
+router.get('/:fuero/folders', verifyToken, causasController.getCausasWithFolders);
 router.get('/:fuero/:id/movimientos', verifyToken, causasController.getMovimientosByDocumentId);
 router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAndYear);
 

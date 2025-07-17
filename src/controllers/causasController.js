@@ -267,43 +267,64 @@ const causasController = {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 50;
       const skip = (page - 1) * limit;
+      
+      // Filtro por fuero si se especifica
+      const fuero = req.query.fuero ? req.query.fuero.toUpperCase() : null;
 
       // Obtener conteos totales reales en paralelo
       const [totalCivil, totalSegSoc, totalTrabajo] = await Promise.all([
-        CausasCivil.countDocuments({ verified: true, isValid: true }),
-        CausasSegSoc.countDocuments({ verified: true, isValid: true }),
-        CausasTrabajo.countDocuments({ verified: true, isValid: true })
+        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments({ verified: true, isValid: true }),
+        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments({ verified: true, isValid: true }),
+        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments({ verified: true, isValid: true })
       ]);
 
       const totalCausasReal = totalCivil + totalSegSoc + totalTrabajo;
       const totalPages = Math.ceil(totalCausasReal / limit);
 
-      // Consultar los tres modelos en paralelo con límite reducido y allowDiskUse
+      // Estrategia optimizada: consultar solo los documentos necesarios por página
+      let causasPaginadas = [];
+      
+      // Calcular cuántos documentos tomar de cada colección
+      const limitPerCollection = Math.ceil(limit / 3) + 10; // Un poco más para asegurar que tengamos suficientes
+      
+      // Consultar con skip y limit directamente en MongoDB
       const [causasCivil, causasSegSoc, causasTrabajo] = await Promise.all([
-        CausasCivil.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(500).allowDiskUse(true),
-        CausasSegSoc.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(500).allowDiskUse(true),
-        CausasTrabajo.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(500).allowDiskUse(true)
+        fuero && fuero !== 'CIV' ? [] : CausasCivil.find({ verified: true, isValid: true })
+          .sort({ year: -1, number: -1 })
+          .skip(Math.floor(skip / 3))
+          .limit(limitPerCollection)
+          .lean(),
+        fuero && fuero !== 'CSS' ? [] : CausasSegSoc.find({ verified: true, isValid: true })
+          .sort({ year: -1, number: -1 })
+          .skip(Math.floor(skip / 3))
+          .limit(limitPerCollection)
+          .lean(),
+        fuero && fuero !== 'CNT' ? [] : CausasTrabajo.find({ verified: true, isValid: true })
+          .sort({ year: -1, number: -1 })
+          .skip(Math.floor(skip / 3))
+          .limit(limitPerCollection)
+          .lean()
       ]);
 
-      // Combinar todos los resultados
+      // Combinar y agregar fuero
       const allCausas = [
-        ...causasCivil.map(causa => ({ ...causa.toObject(), fuero: 'CIV' })),
-        ...causasSegSoc.map(causa => ({ ...causa.toObject(), fuero: 'CSS' })),
-        ...causasTrabajo.map(causa => ({ ...causa.toObject(), fuero: 'CNT' }))
+        ...causasCivil.map(causa => ({ ...causa, fuero: 'CIV' })),
+        ...causasSegSoc.map(causa => ({ ...causa, fuero: 'CSS' })),
+        ...causasTrabajo.map(causa => ({ ...causa, fuero: 'CNT' }))
       ];
 
-      // Ordenar por año y número descendente
+      // Ordenar solo los documentos necesarios
       allCausas.sort((a, b) => {
         if (a.year !== b.year) return b.year - a.year;
         return b.number - a.number;
       });
 
-      // Aplicar paginación
-      const causasPaginadas = allCausas.slice(skip, skip + limit);
+      // Tomar solo el límite necesario
+      causasPaginadas = allCausas.slice(0, limit);
 
       res.json({
         success: true,
-        message: `Mostrando ${causasPaginadas.length} de ${totalCausasReal} causas verificadas y válidas`,
+        message: `Mostrando ${causasPaginadas.length} de ${totalCausasReal} causas verificadas y válidas${fuero ? ` del fuero ${fuero}` : ''}`,
         count: totalCausasReal,
         pagination: {
           currentPage: page,
@@ -316,6 +337,9 @@ const causasController = {
           civil: totalCivil,
           seguridad_social: totalSegSoc,
           trabajo: totalTrabajo
+        },
+        filters: {
+          fuero: fuero || 'todos'
         },
         data: causasPaginadas
       });
@@ -504,6 +528,58 @@ const causasController = {
       });
     } catch (error) {
       logger.error(`Error buscando causas con filtros: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
+    }
+  },
+
+  // Obtener causas con folderIds vinculadas por fuero
+  async getCausasWithFolders(req, res) {
+    try {
+      const { fuero } = req.params;
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+      const skip = (page - 1) * limit;
+
+      const Model = getModel(fuero);
+
+      // Obtener total de causas con folderIds
+      const totalCount = await Model.countDocuments({
+        folderIds: { $exists: true, $ne: [], $not: { $size: 0 } }
+      });
+
+      // Obtener causas paginadas
+      const causas = await Model.find({
+        folderIds: { $exists: true, $ne: [], $not: { $size: 0 } }
+      })
+        .sort({ year: -1, number: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const totalPages = Math.ceil(totalCount / limit);
+
+      res.json({
+        success: true,
+        message: `Mostrando ${causas.length} de ${totalCount} causas con carpetas vinculadas en ${fuero}`,
+        count: totalCount,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          limit: limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        },
+        fuero: fuero,
+        data: causas
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo causas con folders: ${error}`);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
