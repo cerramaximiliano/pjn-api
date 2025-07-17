@@ -263,11 +263,16 @@ const causasController = {
   // Obtener todas las causas verificadas de los tres modelos
   async getAllVerifiedCausas(req, res) {
     try {
-      // Consultar los tres modelos en paralelo
+      // Obtener parámetros de paginación
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+      const skip = (page - 1) * limit;
+
+      // Consultar los tres modelos en paralelo con límite más alto para después paginar
       const [causasCivil, causasSegSoc, causasTrabajo] = await Promise.all([
-        CausasCivil.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }),
-        CausasSegSoc.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }),
-        CausasTrabajo.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 })
+        CausasCivil.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(2000),
+        CausasSegSoc.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(2000),
+        CausasTrabajo.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(2000)
       ]);
 
       // Combinar todos los resultados
@@ -283,16 +288,28 @@ const causasController = {
         return b.number - a.number;
       });
 
+      // Aplicar paginación
+      const totalCausas = allCausas.length;
+      const totalPages = Math.ceil(totalCausas / limit);
+      const causasPaginadas = allCausas.slice(skip, skip + limit);
+
       res.json({
         success: true,
-        message: `Se encontraron ${allCausas.length} causas verificadas y válidas`,
-        count: allCausas.length,
+        message: `Mostrando ${causasPaginadas.length} de ${totalCausas} causas verificadas y válidas`,
+        count: totalCausas,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          limit: limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        },
         breakdown: {
           civil: causasCivil.length,
           seguridad_social: causasSegSoc.length,
           trabajo: causasTrabajo.length
         },
-        data: allCausas
+        data: causasPaginadas
       });
     } catch (error) {
       logger.error(`Error obteniendo causas verificadas: ${error}`);
