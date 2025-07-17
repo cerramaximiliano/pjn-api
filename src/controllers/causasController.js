@@ -268,6 +268,16 @@ const causasController = {
       const limit = parseInt(req.query.limit) || 50;
       const skip = (page - 1) * limit;
 
+      // Obtener conteos totales reales en paralelo
+      const [totalCivil, totalSegSoc, totalTrabajo] = await Promise.all([
+        CausasCivil.countDocuments({ verified: true, isValid: true }),
+        CausasSegSoc.countDocuments({ verified: true, isValid: true }),
+        CausasTrabajo.countDocuments({ verified: true, isValid: true })
+      ]);
+
+      const totalCausasReal = totalCivil + totalSegSoc + totalTrabajo;
+      const totalPages = Math.ceil(totalCausasReal / limit);
+
       // Consultar los tres modelos en paralelo con límite reducido y allowDiskUse
       const [causasCivil, causasSegSoc, causasTrabajo] = await Promise.all([
         CausasCivil.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(500).allowDiskUse(true),
@@ -289,14 +299,12 @@ const causasController = {
       });
 
       // Aplicar paginación
-      const totalCausas = allCausas.length;
-      const totalPages = Math.ceil(totalCausas / limit);
       const causasPaginadas = allCausas.slice(skip, skip + limit);
 
       res.json({
         success: true,
-        message: `Mostrando ${causasPaginadas.length} de ${totalCausas} causas verificadas y válidas`,
-        count: totalCausas,
+        message: `Mostrando ${causasPaginadas.length} de ${totalCausasReal} causas verificadas y válidas`,
+        count: totalCausasReal,
         pagination: {
           currentPage: page,
           totalPages: totalPages,
@@ -305,9 +313,9 @@ const causasController = {
           hasPrevPage: page > 1
         },
         breakdown: {
-          civil: causasCivil.length,
-          seguridad_social: causasSegSoc.length,
-          trabajo: causasTrabajo.length
+          civil: totalCivil,
+          seguridad_social: totalSegSoc,
+          trabajo: totalTrabajo
         },
         data: causasPaginadas
       });
