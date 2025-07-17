@@ -268,11 +268,11 @@ const causasController = {
       const limit = parseInt(req.query.limit) || 50;
       const skip = (page - 1) * limit;
 
-      // Consultar los tres modelos en paralelo con límite más alto para después paginar
+      // Consultar los tres modelos en paralelo con límite reducido y allowDiskUse
       const [causasCivil, causasSegSoc, causasTrabajo] = await Promise.all([
-        CausasCivil.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(2000),
-        CausasSegSoc.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(2000),
-        CausasTrabajo.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(2000)
+        CausasCivil.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(500).allowDiskUse(true),
+        CausasSegSoc.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(500).allowDiskUse(true),
+        CausasTrabajo.find({ verified: true, isValid: true }).sort({ year: -1, number: -1 }).limit(500).allowDiskUse(true)
       ]);
 
       // Combinar todos los resultados
