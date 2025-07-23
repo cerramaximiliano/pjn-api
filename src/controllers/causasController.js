@@ -545,6 +545,7 @@ const causasController = {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 50;
       const skip = (page - 1) * limit;
+      const light = req.query.light === 'true';
 
       const Model = getModel(fuero);
 
@@ -554,9 +555,16 @@ const causasController = {
       });
 
       // Obtener causas paginadas
-      const causas = await Model.find({
+      const query = Model.find({
         folderIds: { $exists: true, $ne: [], $not: { $size: 0 } }
-      })
+      });
+
+      // Si light=true, solo seleccionar campos específicos
+      if (light) {
+        query.select('number year caratula juzgado objeto verified isValid folderIds userCausaIds movimientosCount lastUpdate');
+      }
+
+      const causas = await query
         .sort({ year: -1, number: -1 })
         .skip(skip)
         .limit(limit)
