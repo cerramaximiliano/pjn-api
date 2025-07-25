@@ -76,6 +76,7 @@ const verifyToken = async (req, res, next) => {
 
 // Middleware para verificar rol de administrador
 const verifyAdmin = (req, res, next) => {
+  console.log(req.user)
   if (!req.user) {
     return res.status(401).json({
       status: 'error',
