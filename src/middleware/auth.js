@@ -75,24 +75,45 @@ const verifyToken = async (req, res, next) => {
 };
 
 // Middleware para verificar rol de administrador
-const verifyAdmin = (req, res, next) => {
-  console.log(req)
-  if (!req.user) {
-    return res.status(401).json({
+const verifyAdmin = async (req, res, next) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Autenticación requerida',
+        needRefresh: true
+      });
+    }
+
+    // Buscar el usuario en la base de datos por _id
+    const user = await User.findById(req.userId).select('role');
+    
+    if (!user) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Usuario no encontrado',
+        needRefresh: true
+      });
+    }
+
+    // Verificar que el rol sea ADMIN_ROLE
+    if (user.role !== 'ADMIN_ROLE') {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Acceso denegado, se requiere rol de administrador'
+      });
+    }
+
+    // Agregar el usuario a la request para uso posterior
+    req.user = user;
+    next();
+  } catch (error) {
+    logger.error(`Error verificando rol de administrador: ${error.message}`);
+    return res.status(500).json({
       status: 'error',
-      message: 'Autenticación requerida',
-      needRefresh: true
+      message: 'Error interno del servidor'
     });
   }
-
-  if (req.user.role !== 'ADMIN') {
-    return res.status(403).json({
-      status: 'error',
-      message: 'Acceso denegado, se requiere rol de administrador'
-    });
-  }
-
-  next();
 };
 
 // Middleware para verificar API KEY
