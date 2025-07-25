@@ -33,27 +33,25 @@ jobs:
         echo "$KEY" > private_key
         chmod 600 private_key
         
-        # Create deployment directory on EC2 if it doesn't exist
-        ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} "sudo mkdir -p /var/www/pjn-api"
-        
-        # Sync files to EC2 (excluding unnecessary files)
-        # First sync to temp location, then move to final location
-        rsync -avz --delete \
-          --exclude 'node_modules' \
-          --exclude '.git' \
-          --exclude '.env' \
-          --exclude 'private_key' \
-          --exclude '.github' \
-          --exclude 'logs' \
-          --exclude '*.log' \
-          -e "ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22}" \
-          ./ ${USERNAME}@${HOST}:~/pjn-api-temp/
-        
         # Run deployment commands on EC2
         ssh -o StrictHostKeyChecking=no -i private_key -p ${PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
-          # Move files to correct location with sudo
-          sudo rsync -av --delete ~/pjn-api-temp/ /var/www/pjn-api/
-          rm -rf ~/pjn-api-temp
+          # Check if repository exists
+          if [ ! -d "/var/www/pjn-api/.git" ]; then
+            echo "🔧 Repository not found, cloning..."
+            sudo rm -rf /var/www/pjn-api
+            sudo mkdir -p /var/www
+            cd /var/www
+            sudo git clone https://github.com/cerramaximiliano/pjn-api.git
+          fi
+          
+          # Navigate to project directory
+          cd /var/www/pjn-api
+          
+          # Ensure we're on the main branch and pull latest changes
+          echo "📥 Pulling latest changes..."
+          sudo git fetch origin
+          sudo git reset --hard origin/main
+          sudo git clean -fd
           
           echo "📦 Installing dependencies..."
           sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && cd /var/www/pjn-api && npm ci --production"
