@@ -5,6 +5,8 @@ const { verifyToken, verifyAdmin } = require('../middleware/auth');
 
 router.get('/', verifyToken, configuracionScrapingController.findAll);
 
+router.post('/', verifyToken, verifyAdmin, configuracionScrapingController.create);
+
 router.put('/:id', verifyToken, verifyAdmin, configuracionScrapingController.updateById);
 
 router.put('/:id/range', verifyToken, verifyAdmin, configuracionScrapingController.updateRange);

@@ -46,6 +46,160 @@ const configuracionScrapingController = {
     }
   },
 
+  async create(req, res) {
+    try {
+      const { 
+        fuero, 
+        year, 
+        range_start, 
+        range_end,
+        nombre,
+        enabled = false,
+        number
+      } = req.body;
+
+      // Validaciones básicas
+      if (!fuero || !year || !range_start || !range_end) {
+        return res.status(400).json({
+          success: false,
+          message: 'Los campos fuero, year, range_start y range_end son obligatorios',
+          data: null
+        });
+      }
+
+      if (range_start >= range_end) {
+        return res.status(400).json({
+          success: false,
+          message: 'El range_start debe ser menor que range_end',
+          data: null
+        });
+      }
+
+      // Verificar si hay rangos superpuestos en el historial
+      const hasOverlappingHistory = await ConfiguracionScrapingHistory.hasOverlappingRange(
+        fuero,
+        year,
+        range_start,
+        range_end
+      );
+
+      if (hasOverlappingHistory) {
+        return res.status(400).json({
+          success: false,
+          message: 'El rango especificado se superpone con un rango existente en el historial',
+          data: null
+        });
+      }
+
+      // Buscar si existe exactamente el mismo rango en el historial
+      const duplicateInHistory = await ConfiguracionScrapingHistory.findOne({
+        fuero: fuero,
+        year: year,
+        range_start: range_start,
+        range_end: range_end
+      });
+
+      if (duplicateInHistory) {
+        return res.status(400).json({
+          success: false,
+          message: `Este rango ya fue procesado anteriormente (versión ${duplicateInHistory.version}, completado el ${duplicateInHistory.completedAt.toLocaleDateString()})`,
+          data: {
+            existingRange: {
+              version: duplicateInHistory.version,
+              completedAt: duplicateInHistory.completedAt,
+              documentsFound: duplicateInHistory.documentsFound,
+              documentsProcessed: duplicateInHistory.documentsProcessed
+            }
+          }
+        });
+      }
+
+      // Verificar si existe un documento de ConfiguracionScraping con rango superpuesto
+      const overlappingConfig = await ConfiguracionScraping.findOne({
+        fuero: fuero,
+        year: year,
+        $or: [
+          // El nuevo rango comienza dentro de un rango existente
+          { range_start: { $lte: range_start }, range_end: { $gte: range_start } },
+          // El nuevo rango termina dentro de un rango existente
+          { range_start: { $lte: range_end }, range_end: { $gte: range_end } },
+          // El nuevo rango contiene completamente un rango existente
+          { range_start: { $gte: range_start }, range_end: { $lte: range_end } }
+        ]
+      });
+
+      if (overlappingConfig) {
+        return res.status(400).json({
+          success: false,
+          message: `El rango se superpone con otra configuración activa: ${overlappingConfig.nombre || overlappingConfig._id}`,
+          data: {
+            conflictingConfig: {
+              id: overlappingConfig._id,
+              nombre: overlappingConfig.nombre,
+              range_start: overlappingConfig.range_start,
+              range_end: overlappingConfig.range_end,
+              enabled: overlappingConfig.enabled,
+              number: overlappingConfig.number
+            }
+          }
+        });
+      }
+
+      // Crear el nuevo documento
+      const nuevaConfiguracion = new ConfiguracionScraping({
+        fuero,
+        year,
+        range_start,
+        range_end,
+        nombre: nombre || `${fuero} ${year} (${range_start}-${range_end})`,
+        enabled: enabled,
+        number: number || range_start,
+        completionEmailSent: false,
+        documentsProcessed: 0,
+        documentsFound: 0,
+        activo: true,
+        createdAt: new Date(),
+        lastActivityAt: new Date()
+      });
+
+      const configuracionGuardada = await nuevaConfiguracion.save();
+
+      res.status(201).json({
+        success: true,
+        message: 'Configuración de scraping creada exitosamente',
+        data: configuracionGuardada
+      });
+
+    } catch (error) {
+      logger.error(`Error creando configuración de scraping: ${error}`);
+      
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({
+          success: false,
+          message: 'Error de validación',
+          error: error.message,
+          data: null
+        });
+      }
+
+      if (error.code === 11000) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ya existe una configuración con estos datos',
+          error: error.message,
+          data: null
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
   async updateById(req, res) {
     try {
       const { id } = req.params;
