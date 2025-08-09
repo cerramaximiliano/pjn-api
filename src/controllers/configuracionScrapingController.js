@@ -1,4 +1,5 @@
 const { ConfiguracionScraping } = require("pjn-models");
+const ConfiguracionScrapingHistory = require('../models/configuracionScrapingHistory');
 const { logger } = require('../config/pino');
 
 const configuracionScrapingController = {
@@ -165,12 +166,102 @@ const configuracionScrapingController = {
         });
       }
 
-      // Preparar datos para el historial
-      const historicalData = {
-        version: configuracion.rangeHistory ? configuracion.rangeHistory.length + 1 : 1,
+      // Verificar si el nuevo rango es igual al rango actual
+      if (configuracion.range_start === range_start && configuracion.range_end === range_end) {
+        return res.status(400).json({
+          success: false,
+          message: 'El nuevo rango es idéntico al rango actual',
+          data: null
+        });
+      }
+
+      // Verificar si hay rangos superpuestos en el historial
+      const hasOverlapping = await ConfiguracionScrapingHistory.hasOverlappingRange(
+        configuracion.fuero,
+        configuracion.year,
+        range_start,
+        range_end
+      );
+
+      if (hasOverlapping) {
+        return res.status(400).json({
+          success: false,
+          message: 'El rango especificado se superpone con un rango existente en el historial',
+          data: null
+        });
+      }
+
+      // Buscar si existe exactamente el mismo rango en el historial
+      const duplicateRange = await ConfiguracionScrapingHistory.findOne({
+        fuero: configuracion.fuero,
+        year: configuracion.year,
+        range_start: range_start,
+        range_end: range_end
+      });
+
+      if (duplicateRange) {
+        return res.status(400).json({
+          success: false,
+          message: `Este rango ya fue procesado anteriormente (versión ${duplicateRange.version}, completado el ${duplicateRange.completedAt.toLocaleDateString()})`,
+          data: {
+            existingRange: {
+              version: duplicateRange.version,
+              completedAt: duplicateRange.completedAt,
+              documentsFound: duplicateRange.documentsFound,
+              documentsProcessed: duplicateRange.documentsProcessed
+            }
+          }
+        });
+      }
+
+      // Verificar si otro documento de ConfiguracionScraping tiene un rango superpuesto
+      const overlappingConfig = await ConfiguracionScraping.findOne({
+        _id: { $ne: id }, // Excluir el documento actual
+        fuero: configuracion.fuero, // Mismo fuero
+        year: configuracion.year, // Mismo año
+        $or: [
+          // El nuevo rango comienza dentro de un rango existente
+          { range_start: { $lte: range_start }, range_end: { $gte: range_start } },
+          // El nuevo rango termina dentro de un rango existente
+          { range_start: { $lte: range_end }, range_end: { $gte: range_end } },
+          // El nuevo rango contiene completamente un rango existente
+          { range_start: { $gte: range_start }, range_end: { $lte: range_end } }
+        ]
+      });
+
+      if (overlappingConfig) {
+        return res.status(400).json({
+          success: false,
+          message: `El rango se superpone con otra configuración activa: ${overlappingConfig.nombre || overlappingConfig._id}`,
+          data: {
+            conflictingConfig: {
+              id: overlappingConfig._id,
+              nombre: overlappingConfig.nombre,
+              range_start: overlappingConfig.range_start,
+              range_end: overlappingConfig.range_end,
+              enabled: overlappingConfig.enabled,
+              number: overlappingConfig.number
+            }
+          }
+        });
+      }
+
+      // Obtener la versión más alta del historial
+      const lastHistory = await ConfiguracionScrapingHistory
+        .findOne({ configuracionScrapingId: id })
+        .sort({ version: -1 })
+        .lean();
+
+      const nextVersion = lastHistory ? lastHistory.version + 1 : 1;
+
+      // Crear registro en el historial
+      const historicalData = new ConfiguracionScrapingHistory({
+        configuracionScrapingId: id,
+        fuero: configuracion.fuero,
+        year: configuracion.year,
+        version: nextVersion,
         range_start: configuracion.range_start,
         range_end: configuracion.range_end,
-        year: configuracion.year,
         completedAt: new Date(),
         lastProcessedNumber: configuracion.number,
         documentsProcessed: configuracion.documentsProcessed || 0,
@@ -178,8 +269,11 @@ const configuracionScrapingController = {
         enabled: configuracion.enabled,
         completionEmailSent: configuracion.completionEmailSent,
         startedAt: configuracion.startedAt,
-        duration: configuracion.duration
-      };
+        duration: configuracion.duration,
+        errors: configuracion.errors || [],
+        lastError: configuracion.lastError,
+        retryCount: configuracion.retryCount || 0
+      });
 
       // Agregar captchaStats si existen
       if (configuracion.captchaStats) {
@@ -191,24 +285,34 @@ const configuracionScrapingController = {
         };
       }
 
-      // Preparar la actualización
+      // Agregar requestStats si existen
+      if (configuracion.requestStats) {
+        historicalData.requestStats = {
+          totalRequests: configuracion.requestStats.totalRequests,
+          successfulRequests: configuracion.requestStats.successfulRequests,
+          failedRequests: configuracion.requestStats.failedRequests
+        };
+      }
+
+      // Guardar el historial
+      await historicalData.save();
+
+      // Preparar la actualización del documento principal
       const updateData = {
         range_start: range_start,
         range_end: range_end,
         enabled: true,
         completionEmailSent: false,
         // Mantener number en el valor actual como solicitado
-        // Resetear campos que parecen apropiados para un nuevo ciclo
+        // Resetear campos para el nuevo ciclo
         documentsProcessed: 0,
         documentsFound: 0,
         startedAt: null,
         duration: null,
-        errors: [],  // Resetear array de errores
-        lastError: null,  // Limpiar último error
-        retryCount: 0,  // Resetear contador de reintentos
-        lastActivityAt: new Date(),  // Actualizar última actividad
-        // Agregar el historial
-        $push: { rangeHistory: historicalData }
+        errors: [],
+        lastError: null,
+        retryCount: 0,
+        lastActivityAt: new Date()
       };
 
       // Si existe captchaStats, resetear sus valores
@@ -237,8 +341,16 @@ const configuracionScrapingController = {
 
       res.json({
         success: true,
-        message: 'Rango actualizado exitosamente y datos anteriores archivados',
-        data: configuracionActualizada
+        message: 'Rango actualizado exitosamente y datos anteriores archivados en el historial',
+        data: {
+          configuracion: configuracionActualizada,
+          historialCreado: {
+            _id: historicalData._id,
+            version: historicalData.version,
+            range_start: historicalData.range_start,
+            range_end: historicalData.range_end
+          }
+        }
       });
 
     } catch (error) {

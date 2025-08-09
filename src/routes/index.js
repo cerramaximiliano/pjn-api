@@ -4,6 +4,7 @@ const causasRoutes = require('./causasRoutes');
 const causasServiceRoutes = require('./causasServiceRoutes');
 const configuracionVerificacionRoutes = require('./configuracionVerificacionRoutes');
 const configuracionScrapingRoutes = require('./configuracionScrapingRoutes');
+const configuracionScrapingHistoryRoutes = require('./configuracionScrapingHistoryRoutes');
 const configuracionAppUpdateRoutes = require('./configuracionAppUpdateRoutes');
 
 // Ruta para verificar el estado de la aplicación
@@ -23,6 +24,9 @@ router.use('/configuracion-verificacion', configuracionVerificacionRoutes);
 
 // Montar las rutas de configuración de scraping
 router.use('/configuracion-scraping', configuracionScrapingRoutes);
+
+// Montar las rutas del historial de configuración de scraping
+router.use('/configuracion-scraping-history', configuracionScrapingHistoryRoutes);
 
 // Montar las rutas de configuración de actualización de app
 router.use('/configuracion-app-update', configuracionAppUpdateRoutes);
