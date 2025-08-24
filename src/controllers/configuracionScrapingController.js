@@ -455,9 +455,9 @@ const configuracionScrapingController = {
       const updateData = {
         range_start: range_start,
         range_end: range_end,
+        number: range_start, // Actualizar number al inicio del nuevo rango
         enabled: true,
         completionEmailSent: false,
-        // Mantener number en el valor actual como solicitado
         // Resetear campos para el nuevo ciclo
         documentsProcessed: 0,
         documentsFound: 0,
