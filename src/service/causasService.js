@@ -237,7 +237,8 @@ const causaService = {
      * @param {string} params.userId - ID del usuario
      * @param {string} params.folderId - ID del folder
      * @param {boolean} [params.hasPaidSubscription] - Indica si el usuario tiene suscripción de pago
-     * @returns {Promise<{causaId: string, causaType: string}>} - ID y tipo de la causa creada/actualizada
+     * @returns {Promise<{causaId: string, causaType: string, created: boolean, update: boolean, lastUpdate: Date}>} - Datos de la causa creada/actualizada
+     * @throws {Error} DUPLICATE_FOLDER - Si el folder ya está asociado a la causa
      */
     async associateFolderToCausa(causaType, { number, year, userId, folderId, hasPaidSubscription = false }) {
         try {
@@ -262,28 +263,32 @@ const causaService = {
                 year: year
             });
 
+            let created = false;
+
             if (causa) {
                 // Asegurarnos de que folderIds y userCausaIds sean arrays
                 if (!Array.isArray(causa.folderIds)) {
                     causa.folderIds = [];
                 }
-                
+
                 if (!Array.isArray(causa.userCausaIds)) {
                     causa.userCausaIds = [];
                 }
-                
+
                 if (!Array.isArray(causa.userUpdatesEnabled)) {
                     causa.userUpdatesEnabled = [];
                 }
-                
+
                 // Verificar si ya existe el folderIds para evitar duplicados
-                const folderExists = causa.folderIds.some(id => 
+                const folderExists = causa.folderIds.some(id =>
                     id.toString() === folderIdObj.toString()
                 );
-                
-                if (!folderExists) {
-                    causa.folderIds.push(folderIdObj);
+
+                if (folderExists) {
+                    throw new Error(`DUPLICATE_FOLDER: Esta carpeta ya está asociada a la causa ${causaType}`);
                 }
+
+                causa.folderIds.push(folderIdObj);
                 
                 // Verificar si ya existe el userCausaIds para evitar duplicados
                 const userExists = causa.userCausaIds.some(id => 
@@ -314,13 +319,17 @@ const causaService = {
                 // Actualizar el campo update global basado en todos los usuarios
                 const alMenosUnUsuarioRequiereActualizacion = causa.userUpdatesEnabled.some(entry => entry.enabled);
                 causa.update = alMenosUnUsuarioRequiereActualizacion;
-                
+
                 causa.source = "app";
+
+                // Actualizar fecha de última modificación
+                causa.lastUpdate = new Date();
 
                 await causa.save();
                 
                 console.log(`Causa ${causaType} actualizada con folderIds:`, causa.folderIds);
             } else {
+                created = true;
                 // Crear nuevo documento asegurando que los arrays se inicialicen correctamente
                 causa = await CausaModel.create({
                     number: number,
@@ -333,7 +342,9 @@ const causaService = {
                     userUpdatesEnabled: [{
                         userId: userIdObj,
                         enabled: hasPaidSubscription
-                    }]
+                    }],
+                    date: new Date(),
+                    lastUpdate: new Date()
                 });
                 
                 console.log(`Nueva causa ${causaType} creada con folderIds:`, causa.folderIds);
@@ -355,13 +366,16 @@ const causaService = {
             return {
                 causaId: causa._id,
                 causaType: causaType,
+                created: created,
+                update: causa.update || false,
                 verified: causa.verified || false,
                 ...(causa.verified && { isValid: causa.isValid || false }),
                 ...(causa.caratula && { caratula: causa.caratula }),
                 ...(causa.objeto && { objeto: causa.objeto }),
                 ...(causa.juzgado && { juzgado: causa.juzgado }),
                 ...(causa.secretaria && { secretaria: causa.secretaria }),
-                ...(fechaInicio && { fechaInicio: fechaInicio, initialDateMovement: fechaInicio.toISOString().split('T')[0] })
+                ...(fechaInicio && { fechaInicio: fechaInicio, initialDateMovement: fechaInicio.toISOString().split('T')[0] }),
+                lastUpdate: causa.lastUpdate
             };
         } catch (error) {
             console.error(`Error al procesar ${causaType}:`, error);
@@ -371,12 +385,14 @@ const causaService = {
 
     /**
      * Desasocia un folder de un documento de causa
+     * Si el usuario no tiene más folders asociados a la causa, también se elimina el userId y userUpdatesEnabled
+     * Si no quedan folders asociados a la causa, el campo update se establece en false
      * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial)
      * @param {Object} params - Parámetros para la operación
      * @param {string} params.causaId - ID del documento de causa
      * @param {string} params.folderId - ID del folder a desasociar
      * @param {string} params.userId - ID del usuario
-     * @returns {Promise<boolean>} - true si la operación tuvo éxito
+     * @returns {Promise<boolean>} - true si la operación tuvo éxito, false si la causa no existe o el folder no está asociado
      */
     async dissociateFolderFromCausa(causaType, { causaId, folderId, userId }) {
         try {
@@ -426,25 +442,43 @@ const causaService = {
                 console.log(`Campo userUpdatesEnabled inicializado como array en causa ${causaType}`);
             }
             
+            // Verificar si el folderId está asociado
+            if (!causa.folderIds || !causa.folderIds.some(id => id.toString() === folderIdObj.toString())) {
+                console.log(`Folder ${folderId} no está asociado a la causa ${causaType}`);
+                return false;
+            }
+
             // Eliminamos solo la referencia específica del folder que coincide con folderIdObj
-            causa.folderIds = causa.folderIds.filter(id => 
+            causa.folderIds = causa.folderIds.filter(id =>
                 id.toString() !== folderIdObj.toString()
             );
-            
-            // Eliminamos solo la referencia específica del usuario que coincide con userIdObj
-            causa.userCausaIds = causa.userCausaIds.filter(id => 
-                id.toString() !== userIdObj.toString()
-            );
-            
-            // Eliminamos la entrada del usuario en userUpdatesEnabled
-            causa.userUpdatesEnabled = causa.userUpdatesEnabled.filter(entry => 
-                entry.userId && entry.userId.toString() !== userIdObj.toString()
-            );
-            
-            // Actualizar el campo update global basado en los usuarios restantes
-            const alMenosUnUsuarioRequiereActualizacion = causa.userUpdatesEnabled.some(entry => entry.enabled);
-            causa.update = alMenosUnUsuarioRequiereActualizacion;
-            
+
+            // Verificar si el usuario tiene otras carpetas asociadas
+            const hasOtherFolders = causa.folderIds.length > 0;
+
+            // Eliminamos el usuario SOLO si no tiene más carpetas asociadas
+            if (!hasOtherFolders) {
+                causa.userCausaIds = causa.userCausaIds.filter(id =>
+                    id.toString() !== userIdObj.toString()
+                );
+
+                // Eliminamos la entrada del usuario en userUpdatesEnabled solo si no quedan folders
+                causa.userUpdatesEnabled = causa.userUpdatesEnabled.filter(entry =>
+                    entry.userId && entry.userId.toString() !== userIdObj.toString()
+                );
+            }
+
+            // Actualizar el campo update: false si no quedan folders, sino basado en usuarios restantes
+            if (causa.folderIds.length === 0) {
+                causa.update = false;
+            } else {
+                const alMenosUnUsuarioRequiereActualizacion = causa.userUpdatesEnabled.some(entry => entry.enabled);
+                causa.update = alMenosUnUsuarioRequiereActualizacion;
+            }
+
+            // Actualizar fecha de última modificación
+            causa.lastUpdate = new Date();
+
             await causa.save();
             console.log(`Referencias específicas eliminadas de causa ${causaType}. FolderIds restantes:`, causa.folderIds);
 

@@ -230,22 +230,41 @@ router.post('/initialize-updates', async (req, res) => {
  *     responses:
  *       200:
  *         description: Folder asociado correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 created:
+ *                   type: boolean
+ *                   description: Indica si se creó una nueva causa (true) o se actualizó una existente (false)
+ *                 update:
+ *                   type: boolean
+ *                   description: Indica si la causa requiere actualización
+ *                 data:
+ *                   type: object
  *       400:
  *         description: Datos inválidos
+ *       409:
+ *         description: La carpeta ya está asociada a la causa
  *       500:
  *         description: Error del servidor
  */
 router.post('/associate-folder', async (req, res) => {
   try {
     const { causaType, number, year, userId, folderId, hasPaidSubscription } = req.body;
-    
+
     if (!causaType || !number || !year || !userId || !folderId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Todos los campos son requeridos: causaType, number, year, userId, folderId' 
+      return res.status(400).json({
+        success: false,
+        message: 'Todos los campos son requeridos: causaType, number, year, userId, folderId'
       });
     }
-    
+
     const result = await causaService.associateFolderToCausa(causaType, {
       number,
       year,
@@ -253,23 +272,37 @@ router.post('/associate-folder', async (req, res) => {
       folderId,
       hasPaidSubscription: !!hasPaidSubscription
     });
-    
+
     if (!result) {
       return res.status(500).json({
         success: false,
         message: 'Error al asociar folder a la causa'
       });
     }
-    
+
     res.json({
       success: true,
-      message: 'Folder asociado correctamente a la causa',
+      message: result.created
+        ? 'Nueva causa creada y folder asociado exitosamente'
+        : 'Folder asociado exitosamente a causa existente',
+      created: result.created,
+      update: result.update,
       data: result
     });
   } catch (error) {
     console.error('Error al asociar folder:', error);
-    res.status(500).json({ 
-      success: false, 
+
+    // Manejar error de duplicados específicamente
+    if (error.message && error.message.startsWith('DUPLICATE_FOLDER:')) {
+      return res.status(409).json({
+        success: false,
+        message: 'Esta carpeta ya está asociada a la causa',
+        error: error.message
+      });
+    }
+
+    res.status(500).json({
+      success: false,
       message: 'Error interno del servidor',
       error: error.message
     });
