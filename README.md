@@ -34,17 +34,18 @@ Esta API proporciona acceso a datos de causas judiciales de diferentes fueros de
 
 ## ⚙️ Configuración
 
-La aplicación utiliza variables de entorno para su configuración. Estas se cargan desde AWS Secrets Manager pero también pueden configurarse localmente:
+La aplicación utiliza variables de entorno para su configuración. Estas se cargan desde AWS Secrets Manager en ambientes production y local, o pueden configurarse localmente para desarrollo:
 
 ```bash
-# Crear archivo .env local
+# Crear archivo .env local (solo para desarrollo sin AWS)
 touch .env
 ```
 
-Variables de entorno requeridas:
+### Variables de entorno requeridas en AWS Secrets Manager:
 ```env
 PORT=8083
-URLDB=mongodb://localhost:27017/pjn
+URLDB=mongodb://url-production/database          # Base de datos para producción
+URLDB_LOCAL=mongodb://url-local-instance/database # Base de datos para instancia local
 SEED=tu_seed_jwt
 JWT_SECRET=tu_secreto_jwt
 API_KEY=tu_api_key_segura
@@ -53,12 +54,58 @@ AWS_SES_USER=tu_usuario_ses
 AWS_SES_PASS=tu_password_ses
 ```
 
+### Ambientes disponibles
+
+La aplicación soporta tres ambientes diferentes:
+
+1. **Production** (`NODE_ENV=production`): Ambiente de producción
+   - Usa `URLDB` para conectarse a MongoDB
+   - Configuración por defecto de PM2
+
+2. **Development** (`NODE_ENV=development`): Ambiente de desarrollo
+   - Usa `URLDB` para conectarse a MongoDB
+   - Puerto 3003
+   - Para desarrollo local sin AWS Secrets Manager
+
+3. **Local** (`NODE_ENV=local`): Instancia local con exposición a internet
+   - Usa `URLDB_LOCAL` para conectarse a MongoDB
+   - Puerto 8083
+   - Carga variables desde AWS Secrets Manager
+
 ## 🏁 Uso
 
-Para iniciar el servidor:
+### Usando PM2 (Recomendado para producción y local)
 
 ```bash
-# Desarrollo
+# Iniciar en ambiente PRODUCTION (puerto por defecto, usa URLDB)
+pm2 start ecosystem.config.js
+
+# Iniciar en ambiente DEVELOPMENT (puerto 3003, usa URLDB)
+pm2 start ecosystem.config.js --env development
+
+# Iniciar en ambiente LOCAL (puerto 8083, usa URLDB_LOCAL)
+pm2 start ecosystem.config.js --env local
+
+# Reiniciar con un ambiente específico
+pm2 restart "pjn/api" --env local
+
+# Ver logs
+pm2 logs "pjn/api"
+
+# Ver estado
+pm2 status
+
+# Detener la aplicación
+pm2 stop "pjn/api"
+
+# Eliminar la aplicación de PM2
+pm2 delete "pjn/api"
+```
+
+### Usando Node.js directamente
+
+```bash
+# Desarrollo (requiere archivo .env local)
 npm run dev
 
 # Producción
@@ -67,7 +114,12 @@ npm start
 node src/server.js
 ```
 
-La API estará disponible en `http://localhost:8083/api`
+### Acceso a la API
+
+Según el ambiente, la API estará disponible en:
+- **Production**: Puerto configurado en AWS Secrets Manager
+- **Development**: `http://localhost:3003/api`
+- **Local**: `http://localhost:8083/api`
 
 ## 🌐 Endpoints
 

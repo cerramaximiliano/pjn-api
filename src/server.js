@@ -59,9 +59,11 @@ async function initializeServer() {
 
     });
 
-    const URLDB = process.env.URLDB;
+    const URLDB = process.env.NODE_ENV === 'local'
+      ? process.env.URLDB_LOCAL
+      : process.env.URLDB;
     await mongoose.connect(URLDB);
-    logger.info("Conexión a MongoDB establecida");
+    logger.info(`Conexión a MongoDB establecida en ambiente ${process.env.NODE_ENV}`);
 
   } catch (err) {
     logger.error(`Error initializing server: ${err}`);

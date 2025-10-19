@@ -28,6 +28,10 @@ module.exports = {
             env_development: {
                 NODE_ENV: "development",
                 PORT: 3003
+            },
+            env_local: {
+                NODE_ENV: "local",
+                PORT: 8083
             }
         }
     ]
