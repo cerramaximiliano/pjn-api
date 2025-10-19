@@ -17,7 +17,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
     
     - name: Install dependencies
@@ -54,23 +54,23 @@ jobs:
           sudo git clean -fd
           
           echo "📦 Installing dependencies..."
-          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && cd /var/www/pjn-api && npm ci --production"
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && cd /var/www/pjn-api && npm ci --production"
 
           echo "🔍 Verifying PM2 installation..."
-          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && which pm2 && pm2 --version" || {
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && which pm2 && pm2 --version" || {
             echo "⚠️  PM2 not found, installing..."
-            sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && npm install -g pm2"
+            sudo su - root -c "export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && npm install -g pm2"
           }
 
           echo "🔄 Reloading PM2 application..."
-          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
-          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 save"
-          
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && cd /var/www/pjn-api && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production"
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && pm2 save"
+
           echo "📊 PM2 Status:"
-          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 status"
-          
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && pm2 status"
+
           echo "📋 Application logs (last 20 lines):"
-          sudo su - root -c "export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2 logs 'pjn/api' --lines 20 --nostream" || true
+          sudo su - root -c "export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && pm2 logs 'pjn/api' --lines 20 --nostream" || true
           
           echo "✅ Deployment completed!"
         ENDSSH
@@ -94,7 +94,7 @@ jobs:
         # Check if the app is running on the server
         ssh -o StrictHostKeyChecking=no -i private_key_health -p ${SSH_PORT:-22} ${USERNAME}@${HOST} << 'ENDSSH'
           # Define PM2 command with full path
-          PM2_CMD="export PATH=/root/.nvm/versions/node/v18.18.2/bin:\$PATH && pm2"
+          PM2_CMD="export PATH=/root/.nvm/versions/node/v20.19.0/bin:\$PATH && pm2"
 
           echo "📊 PM2 Status:"
           sudo su - root -c "$PM2_CMD status" || {
