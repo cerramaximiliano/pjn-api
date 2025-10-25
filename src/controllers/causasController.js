@@ -1,9 +1,10 @@
-const { CausasCivil, CausasSegSoc, CausasTrabajo } = require("pjn-models")
+const { CausasCivil, CausasComercial, CausasSegSoc, CausasTrabajo } = require("pjn-models")
 const { logger } = require('../config/pino');
 
 const getModel = (fuero) => {
   switch (fuero) {
     case 'CIV': return CausasCivil;
+    case 'COM': return CausasComercial;
     case 'CSS': return CausasSegSoc;
     case 'CNT': return CausasTrabajo;
     default: throw new Error('Fuero no válido');
@@ -272,36 +273,42 @@ const causasController = {
       const fuero = req.query.fuero ? req.query.fuero.toUpperCase() : null;
 
       // Obtener conteos totales reales en paralelo
-      const [totalCivil, totalSegSoc, totalTrabajo] = await Promise.all([
+      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo] = await Promise.all([
         fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments({ verified: true, isValid: true }),
+        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments({ verified: true, isValid: true }),
         fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments({ verified: true, isValid: true }),
         fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments({ verified: true, isValid: true })
       ]);
 
-      const totalCausasReal = totalCivil + totalSegSoc + totalTrabajo;
+      const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
       const totalPages = Math.ceil(totalCausasReal / limit);
 
       // Estrategia optimizada: consultar solo los documentos necesarios por página
       let causasPaginadas = [];
       
       // Calcular cuántos documentos tomar de cada colección
-      const limitPerCollection = Math.ceil(limit / 3) + 10; // Un poco más para asegurar que tengamos suficientes
-      
+      const limitPerCollection = Math.ceil(limit / 4) + 10; // Un poco más para asegurar que tengamos suficientes
+
       // Consultar con skip y limit directamente en MongoDB
-      const [causasCivil, causasSegSoc, causasTrabajo] = await Promise.all([
+      const [causasCivil, causasComercial, causasSegSoc, causasTrabajo] = await Promise.all([
         fuero && fuero !== 'CIV' ? [] : CausasCivil.find({ verified: true, isValid: true })
           .sort({ year: -1, number: -1 })
-          .skip(Math.floor(skip / 3))
+          .skip(Math.floor(skip / 4))
+          .limit(limitPerCollection)
+          .lean(),
+        fuero && fuero !== 'COM' ? [] : CausasComercial.find({ verified: true, isValid: true })
+          .sort({ year: -1, number: -1 })
+          .skip(Math.floor(skip / 4))
           .limit(limitPerCollection)
           .lean(),
         fuero && fuero !== 'CSS' ? [] : CausasSegSoc.find({ verified: true, isValid: true })
           .sort({ year: -1, number: -1 })
-          .skip(Math.floor(skip / 3))
+          .skip(Math.floor(skip / 4))
           .limit(limitPerCollection)
           .lean(),
         fuero && fuero !== 'CNT' ? [] : CausasTrabajo.find({ verified: true, isValid: true })
           .sort({ year: -1, number: -1 })
-          .skip(Math.floor(skip / 3))
+          .skip(Math.floor(skip / 4))
           .limit(limitPerCollection)
           .lean()
       ]);
@@ -309,6 +316,7 @@ const causasController = {
       // Combinar y agregar fuero
       const allCausas = [
         ...causasCivil.map(causa => ({ ...causa, fuero: 'CIV' })),
+        ...causasComercial.map(causa => ({ ...causa, fuero: 'COM' })),
         ...causasSegSoc.map(causa => ({ ...causa, fuero: 'CSS' })),
         ...causasTrabajo.map(causa => ({ ...causa, fuero: 'CNT' }))
       ];

@@ -210,7 +210,7 @@ router.post('/initialize-updates', async (req, res) => {
  *             properties:
  *               causaType:
  *                 type: string
- *                 enum: [CausasCivil, CausasTrabajo, CausasSegSocial]
+ *                 enum: [CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial]
  *                 description: Tipo de causa
  *               number:
  *                 type: string
@@ -331,7 +331,7 @@ router.post('/associate-folder', async (req, res) => {
  *             properties:
  *               causaType:
  *                 type: string
- *                 enum: [CausasCivil, CausasTrabajo, CausasSegSocial]
+ *                 enum: [CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial]
  *                 description: Tipo de causa
  *               causaId:
  *                 type: string
@@ -402,7 +402,7 @@ router.delete('/dissociate-folder', async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *           enum: [CausasCivil, CausasTrabajo, CausasSegSocial]
+ *           enum: [CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial]
  *         description: Tipo de causa
  *       - in: path
  *         name: folderId
@@ -507,7 +507,7 @@ router.get('/causa-type-by-code/:pjnCode', async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *           enum: [CausasCivil, CausasTrabajo, CausasSegSocial]
+ *           enum: [CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial]
  *         description: Tipo de causa
  *     responses:
  *       200:

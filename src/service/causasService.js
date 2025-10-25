@@ -16,13 +16,14 @@ const causaService = {
                 ? new mongoose.Types.ObjectId(userId) 
                 : userId;
             
-            const causaTypes = ['CausasCivil', 'CausasTrabajo', 'CausasSegSocial'];
+            const causaTypes = ['CausasCivil', 'CausasTrabajo', 'CausasSegSocial', 'CausasComercial'];
             const results = {
                 success: true,
                 updated: {
                     civil: 0,
                     trabajo: 0,
-                    segSocial: 0
+                    segSocial: 0,
+                    comercial: 0
                 }
             };
             
@@ -75,6 +76,9 @@ const causaService = {
                         case 'CausasSegSocial':
                             results.updated.segSocial = causasActualizadas;
                             break;
+                        case 'CausasComercial':
+                            results.updated.comercial = causasActualizadas;
+                            break;
                     }
                     
                     console.log(`Actualizado estado de actualización a ${updateValue} para ${causasActualizadas} causas de tipo ${causaType} del usuario ${userId}`);
@@ -87,7 +91,7 @@ const causaService = {
             return results;
         } catch (error) {
             console.error(`Error general al actualizar estado de update:`, error);
-            return { success: false, updated: { civil: 0, trabajo: 0, segSocial: 0 } };
+            return { success: false, updated: { civil: 0, trabajo: 0, segSocial: 0, comercial: 0 } };
         }
     },
     
@@ -98,9 +102,9 @@ const causaService = {
      */
     async updateCausasBasedOnSubscriptions(userIds) {
         try {
-            const causaTypes = ['CausasCivil', 'CausasTrabajo', 'CausasSegSocial'];
+            const causaTypes = ['CausasCivil', 'CausasTrabajo', 'CausasSegSocial', 'CausasComercial'];
             let totalUpdated = 0;
-            
+
             // Convertir IDs a ObjectId si es necesario
             const userObjectIds = userIds.map(id => 
                 mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id
@@ -182,9 +186,9 @@ const causaService = {
      */
     async initializeUserUpdatesEnabled() {
         try {
-            const causaTypes = ['CausasCivil', 'CausasTrabajo', 'CausasSegSocial'];
+            const causaTypes = ['CausasCivil', 'CausasTrabajo', 'CausasSegSocial', 'CausasComercial'];
             let totalUpdated = 0;
-            
+
             for (const causaType of causaTypes) {
                 try {
                     if (!mongoose.models[causaType]) {
@@ -230,7 +234,7 @@ const causaService = {
     
     /**
      * Asocia un folder a un documento de causa
-     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial)
+     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial)
      * @param {Object} params - Parámetros para la operación
      * @param {string} params.number - Número de expediente
      * @param {string} params.year - Año del expediente
@@ -330,10 +334,31 @@ const causaService = {
                 console.log(`Causa ${causaType} actualizada con folderIds:`, causa.folderIds);
             } else {
                 created = true;
+
+                // Determinar el fuero según el tipo de causa
+                let fuero;
+                switch (causaType) {
+                    case 'CausasCivil':
+                        fuero = 'CIV';
+                        break;
+                    case 'CausasTrabajo':
+                        fuero = 'CNT';
+                        break;
+                    case 'CausasSegSocial':
+                        fuero = 'CSS';
+                        break;
+                    case 'CausasComercial':
+                        fuero = 'COM';
+                        break;
+                    default:
+                        fuero = undefined; // Dejar que el modelo use su default
+                }
+
                 // Crear nuevo documento asegurando que los arrays se inicialicen correctamente
                 causa = await CausaModel.create({
                     number: number,
                     year: year,
+                    fuero: fuero,
                     userCausaIds: [userIdObj],
                     folderIds: [folderIdObj],
                     source: "app",
@@ -346,7 +371,7 @@ const causaService = {
                     date: new Date(),
                     lastUpdate: new Date()
                 });
-                
+
                 console.log(`Nueva causa ${causaType} creada con folderIds:`, causa.folderIds);
             }
 
@@ -387,7 +412,7 @@ const causaService = {
      * Desasocia un folder de un documento de causa
      * Si el usuario no tiene más folders asociados a la causa, también se elimina el userId y userUpdatesEnabled
      * Si no quedan folders asociados a la causa, el campo update se establece en false
-     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial)
+     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial)
      * @param {Object} params - Parámetros para la operación
      * @param {string} params.causaId - ID del documento de causa
      * @param {string} params.folderId - ID del folder a desasociar
@@ -493,7 +518,7 @@ const causaService = {
     
     /**
      * Busca una causa que contenga un folder específico
-     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial)
+     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial)
      * @param {string} folderId - ID del folder a buscar
      * @returns {Promise<Object|null>} - Documento de causa o null si no se encuentra
      */
@@ -553,6 +578,8 @@ const causaService = {
         switch (pjnCode) {
             case "1":
                 return "CausasCivil";
+            case "2":
+                return "CausasComercial";
             case "7":
                 return "CausasTrabajo";
             case "5":
@@ -564,7 +591,7 @@ const causaService = {
     
     /**
      * Migra documentos para asegurar que folderIds y userCausaIds sean arrays
-     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial)
+     * @param {string} causaType - Tipo de causa (CausasCivil, CausasTrabajo, CausasSegSocial, CausasComercial)
      * @returns {Promise<{success: boolean, count: number}>} - Resultado de la migración
      */
     async migrateArrayFields(causaType) {
