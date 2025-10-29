@@ -5,6 +5,35 @@ const juzgadosController = require('../controllers/juzgadosController');
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 
 /**
+ * Normaliza el causaType recibido a nombre de modelo correcto
+ * Acepta múltiples formatos: nombres descriptivos, códigos de fuero, nombres de modelo
+ * @param {string} causaType - Tipo de causa en cualquier formato
+ * @returns {string|null} - Nombre de modelo normalizado o null si es inválido
+ */
+function normalizeCausaType(causaType) {
+  const causaTypeNormalizationMap = {
+    // Nombres descriptivos
+    'Civil': 'CausasCivil',
+    'Comercial': 'CausasComercial',
+    'Seguridad Social': 'CausasSegSocial',
+    'Laboral': 'CausasTrabajo',
+    'Trabajo': 'CausasTrabajo',
+    // Códigos de fuero
+    'CIV': 'CausasCivil',
+    'COM': 'CausasComercial',
+    'CSS': 'CausasSegSocial',
+    'CNT': 'CausasTrabajo',
+    // Ya normalizados
+    'CausasCivil': 'CausasCivil',
+    'CausasComercial': 'CausasComercial',
+    'CausasSegSocial': 'CausasSegSocial',
+    'CausasTrabajo': 'CausasTrabajo'
+  };
+
+  return causaTypeNormalizationMap[causaType] || null;
+}
+
+/**
  * @swagger
  * tags:
  *   name: CausaService
@@ -256,7 +285,7 @@ router.post('/initialize-updates', async (req, res) => {
  */
 router.post('/associate-folder', async (req, res) => {
   try {
-    const { causaType, number, year, userId, folderId, hasPaidSubscription } = req.body;
+    let { causaType, number, year, userId, folderId, hasPaidSubscription } = req.body;
 
     if (!causaType || !number || !year || !userId || !folderId) {
       return res.status(400).json({
@@ -265,7 +294,17 @@ router.post('/associate-folder', async (req, res) => {
       });
     }
 
-    const result = await causaService.associateFolderToCausa(causaType, {
+    // Normalizar causaType
+    const normalizedCausaType = normalizeCausaType(causaType);
+
+    if (!normalizedCausaType) {
+      return res.status(400).json({
+        success: false,
+        message: `Tipo de causa inválido: ${causaType}. Valores aceptados: CIV, COM, CSS, CNT, Civil, Comercial, Seguridad Social, Laboral, Trabajo, CausasCivil, CausasComercial, CausasSegSocial, CausasTrabajo`
+      });
+    }
+
+    const result = await causaService.associateFolderToCausa(normalizedCausaType, {
       number,
       year,
       userId,
@@ -352,16 +391,26 @@ router.post('/associate-folder', async (req, res) => {
  */
 router.delete('/dissociate-folder', async (req, res) => {
   try {
-    const { causaType, causaId, folderId, userId } = req.body;
+    let { causaType, causaId, folderId, userId } = req.body;
     console.log(causaType, causaId, folderId, userId)
     if (!causaType || !causaId || !folderId || !userId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Todos los campos son requeridos: causaType, causaId, folderId, userId' 
+      return res.status(400).json({
+        success: false,
+        message: 'Todos los campos son requeridos: causaType, causaId, folderId, userId'
       });
     }
-    
-    const result = await causaService.dissociateFolderFromCausa(causaType, {
+
+    // Normalizar causaType
+    const normalizedCausaType = normalizeCausaType(causaType);
+
+    if (!normalizedCausaType) {
+      return res.status(400).json({
+        success: false,
+        message: `Tipo de causa inválido: ${causaType}. Valores aceptados: CIV, COM, CSS, CNT, Civil, Comercial, Seguridad Social, Laboral, Trabajo, CausasCivil, CausasComercial, CausasSegSocial, CausasTrabajo`
+      });
+    }
+
+    const result = await causaService.dissociateFolderFromCausa(normalizedCausaType, {
       causaId,
       folderId,
       userId
@@ -420,16 +469,26 @@ router.delete('/dissociate-folder', async (req, res) => {
  */
 router.get('/find-by-folder/:causaType/:folderId', async (req, res) => {
   try {
-    const { causaType, folderId } = req.params;
-    
+    let { causaType, folderId } = req.params;
+
     if (!causaType || !folderId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Tipo de causa y ID de folder son requeridos' 
+      return res.status(400).json({
+        success: false,
+        message: 'Tipo de causa y ID de folder son requeridos'
       });
     }
-    
-    const causa = await causaService.findCausaByFolderId(causaType, folderId);
+
+    // Normalizar causaType
+    const normalizedCausaType = normalizeCausaType(causaType);
+
+    if (!normalizedCausaType) {
+      return res.status(400).json({
+        success: false,
+        message: `Tipo de causa inválido: ${causaType}. Valores aceptados: CIV, COM, CSS, CNT, Civil, Comercial, Seguridad Social, Laboral, Trabajo, CausasCivil, CausasComercial, CausasSegSocial, CausasTrabajo`
+      });
+    }
+
+    const causa = await causaService.findCausaByFolderId(normalizedCausaType, folderId);
     
     res.json({
       success: true,
@@ -541,6 +600,112 @@ router.post('/migrate-array-fields/:causaType', verifyToken, verifyAdmin, async 
     console.error('Error al migrar documentos:', error);
     res.status(500).json({ 
       success: false, 
+      message: 'Error interno del servidor',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /causas-service/migrate-fuero-codes:
+ *   post:
+ *     summary: Migra el campo fuero de nombres descriptivos a códigos (CIV, COM, CSS, CNT)
+ *     tags: [CausaService]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Migración completada correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 updated:
+ *                   type: object
+ *                   properties:
+ *                     civil:
+ *                       type: number
+ *                     comercial:
+ *                       type: number
+ *                     segSocial:
+ *                       type: number
+ *                     trabajo:
+ *                       type: number
+ *                 total:
+ *                   type: number
+ *       500:
+ *         description: Error del servidor
+ */
+router.post('/migrate-fuero-codes', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+
+    const causaTypes = [
+      { model: 'CausasCivil', correctCode: 'CIV', wrongValues: ['Civil', 'civil', 'CIVIL'] },
+      { model: 'CausasComercial', correctCode: 'COM', wrongValues: ['Comercial', 'comercial', 'COMERCIAL'] },
+      { model: 'CausasSegSocial', correctCode: 'CSS', wrongValues: ['Seguridad Social', 'seguridad social', 'SEGURIDAD SOCIAL', 'SS', 'ss'] },
+      { model: 'CausasTrabajo', correctCode: 'CNT', wrongValues: ['Laboral', 'laboral', 'LABORAL', 'Trabajo', 'trabajo', 'TRABAJO'] }
+    ];
+
+    const results = {
+      civil: 0,
+      comercial: 0,
+      segSocial: 0,
+      trabajo: 0
+    };
+
+    for (const causaType of causaTypes) {
+      if (!mongoose.models[causaType.model]) {
+        console.error(`Modelo ${causaType.model} no encontrado`);
+        continue;
+      }
+
+      const CausaModel = mongoose.model(causaType.model);
+
+      // Actualizar documentos que tienen valores incorrectos
+      const updateResult = await CausaModel.updateMany(
+        { fuero: { $in: causaType.wrongValues } },
+        { $set: { fuero: causaType.correctCode } }
+      );
+
+      const count = updateResult.modifiedCount || 0;
+
+      switch (causaType.model) {
+        case 'CausasCivil':
+          results.civil = count;
+          break;
+        case 'CausasComercial':
+          results.comercial = count;
+          break;
+        case 'CausasSegSocial':
+          results.segSocial = count;
+          break;
+        case 'CausasTrabajo':
+          results.trabajo = count;
+          break;
+      }
+
+      console.log(`Migrados ${count} documentos de ${causaType.model} a fuero: ${causaType.correctCode}`);
+    }
+
+    const total = results.civil + results.comercial + results.segSocial + results.trabajo;
+
+    res.json({
+      success: true,
+      message: `Migración completada. Total de documentos actualizados: ${total}`,
+      updated: results,
+      total: total
+    });
+  } catch (error) {
+    console.error('Error al migrar códigos de fuero:', error);
+    res.status(500).json({
+      success: false,
       message: 'Error interno del servidor',
       error: error.message
     });
