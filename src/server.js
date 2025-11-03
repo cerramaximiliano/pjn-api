@@ -13,7 +13,7 @@ const morgan = require("morgan");
 
 
 const allowedOrigins = {
-  development: ["http://localhost:3000", "http://localhost:5000"],
+  development: ["http://localhost:3000", "http://localhost:5000", "http://localhost:5174"],
   production: ["https://www.lawanalytics.app", "https://lawanalytics.app"]
 };
 
