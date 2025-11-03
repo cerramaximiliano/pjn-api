@@ -5,7 +5,17 @@ const { logger } = require('../config/pino');
 const configuracionScrapingController = {
   async findAll(req, res) {
     try {
-      const { activo, fuero, includeTemporary = 'false', page = 1, limit = 20 } = req.query;
+      const {
+        activo,
+        fuero,
+        year,
+        progreso,
+        includeTemporary = 'false',
+        sortBy = 'nombre',
+        sortOrder = 'asc',
+        page = 1,
+        limit = 20
+      } = req.query;
 
       const filter = {};
 
@@ -25,16 +35,37 @@ const configuracionScrapingController = {
         filter.fuero = fuero;
       }
 
+      // Filtro por año
+      if (year && year !== 'TODOS') {
+        filter.year = Number(year);
+      }
+
+      // Filtro por progreso (completo/incompleto)
+      if (progreso === 'completo') {
+        // Progreso 100%: number >= range_end
+        filter.$expr = { $gte: ['$number', '$range_end'] };
+      } else if (progreso === 'incompleto') {
+        // Progreso < 100%: number < range_end
+        filter.$expr = { $lt: ['$number', '$range_end'] };
+      }
+
       const skip = (page - 1) * limit;
 
-      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, fuero=${fuero}, includeTemporary=${includeTemporary}`);
+      // Construir ordenamiento
+      const sortOptions = {};
+      const validSortFields = ['nombre', 'fuero', 'year', 'number', 'range_start', 'range_end', 'enabled', 'updatedAt', 'last_check'];
+      const sortField = validSortFields.includes(sortBy) ? sortBy : 'nombre';
+      sortOptions[sortField] = sortOrder === 'desc' ? -1 : 1;
+
+      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, fuero=${fuero}, year=${year}, progreso=${progreso}, sortBy=${sortBy}, sortOrder=${sortOrder}, includeTemporary=${includeTemporary}`);
       logger.info(`[findAll] Filter applied:`, JSON.stringify(filter));
+      logger.info(`[findAll] Sort applied:`, JSON.stringify(sortOptions));
       logger.info(`[findAll] Skip: ${skip}, Limit: ${Number(limit)}`);
 
       const [configuraciones, total] = await Promise.all([
         ConfiguracionScraping.find(filter)
           .select('-__v')
-          .sort({ nombre: 1 })
+          .sort(sortOptions)
           .skip(skip)
           .limit(Number(limit)),
         ConfiguracionScraping.countDocuments(filter)
