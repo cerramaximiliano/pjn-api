@@ -7,6 +7,7 @@ const configuracionScrapingController = {
     try {
       const {
         activo,
+        enabled,
         fuero,
         year,
         progreso,
@@ -28,6 +29,11 @@ const configuracionScrapingController = {
 
       if (activo !== undefined) {
         filter.activo = activo === 'true';
+      }
+
+      // Filtro por estado (enabled/disabled)
+      if (enabled !== undefined) {
+        filter.enabled = enabled === 'true';
       }
 
       // Filtro por fuero
@@ -57,7 +63,7 @@ const configuracionScrapingController = {
       const sortField = validSortFields.includes(sortBy) ? sortBy : 'nombre';
       sortOptions[sortField] = sortOrder === 'desc' ? -1 : 1;
 
-      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, fuero=${fuero}, year=${year}, progreso=${progreso}, sortBy=${sortBy}, sortOrder=${sortOrder}, includeTemporary=${includeTemporary}`);
+      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, enabled=${enabled}, fuero=${fuero}, year=${year}, progreso=${progreso}, sortBy=${sortBy}, sortOrder=${sortOrder}, includeTemporary=${includeTemporary}`);
       logger.info(`[findAll] Filter applied:`, JSON.stringify(filter));
       logger.info(`[findAll] Sort applied:`, JSON.stringify(sortOptions));
       logger.info(`[findAll] Skip: ${skip}, Limit: ${Number(limit)}`);
