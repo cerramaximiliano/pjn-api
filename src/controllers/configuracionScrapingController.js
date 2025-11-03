@@ -10,8 +10,10 @@ const configuracionScrapingController = {
       const filter = {};
 
       // Filtro por documentos temporales (por defecto solo mostrar permanentes)
+      // Excluir solo los que tienen isTemporary: true
+      // Incluir los que tienen isTemporary: false, undefined, null o sin el campo
       if (includeTemporary !== 'true') {
-        filter.isTemporary = false;
+        filter.isTemporary = { $ne: true };
       }
 
       if (activo !== undefined) {
