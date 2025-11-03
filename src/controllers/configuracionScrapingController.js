@@ -5,17 +5,27 @@ const { logger } = require('../config/pino');
 const configuracionScrapingController = {
   async findAll(req, res) {
     try {
-      const { activo, page = 1, limit = 20 } = req.query;
+      const { activo, fuero, includeTemporary = 'false', page = 1, limit = 20 } = req.query;
 
       const filter = {};
+
+      // Filtro por documentos temporales (por defecto solo mostrar permanentes)
+      if (includeTemporary !== 'true') {
+        filter.isTemporary = false;
+      }
 
       if (activo !== undefined) {
         filter.activo = activo === 'true';
       }
 
+      // Filtro por fuero
+      if (fuero && fuero !== 'TODOS') {
+        filter.fuero = fuero;
+      }
+
       const skip = (page - 1) * limit;
 
-      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}`);
+      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, fuero=${fuero}, includeTemporary=${includeTemporary}`);
       logger.info(`[findAll] Filter applied:`, JSON.stringify(filter));
       logger.info(`[findAll] Skip: ${skip}, Limit: ${Number(limit)}`);
 
@@ -29,6 +39,10 @@ const configuracionScrapingController = {
       ]);
 
       logger.info(`[findAll] Results: count=${configuraciones.length}, total=${total}, pages=${Math.ceil(total / limit)}`);
+
+      // Log de IDs para detectar qué documentos cambian
+      const ids = configuraciones.map(c => c._id.toString()).slice(0, 5).join(', ');
+      logger.info(`[findAll] First 5 Document IDs: ${ids}...`);
 
       res.json({
         success: true,
