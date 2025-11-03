@@ -8,12 +8,16 @@ const configuracionScrapingController = {
       const { activo, page = 1, limit = 20 } = req.query;
 
       const filter = {};
-      
+
       if (activo !== undefined) {
         filter.activo = activo === 'true';
       }
 
       const skip = (page - 1) * limit;
+
+      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}`);
+      logger.info(`[findAll] Filter applied:`, JSON.stringify(filter));
+      logger.info(`[findAll] Skip: ${skip}, Limit: ${Number(limit)}`);
 
       const [configuraciones, total] = await Promise.all([
         ConfiguracionScraping.find(filter)
@@ -23,6 +27,8 @@ const configuracionScrapingController = {
           .limit(Number(limit)),
         ConfiguracionScraping.countDocuments(filter)
       ]);
+
+      logger.info(`[findAll] Results: count=${configuraciones.length}, total=${total}, pages=${Math.ceil(total / limit)}`);
 
       res.json({
         success: true,
@@ -518,6 +524,74 @@ const configuracionScrapingController = {
           data: null
         });
       }
+
+      if (error.name === 'CastError') {
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido',
+          error: error.message,
+          data: null
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
+  async deleteById(req, res) {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'El parámetro id es obligatorio',
+          data: null
+        });
+      }
+
+      // Buscar la configuración antes de eliminarla
+      const configuracion = await ConfiguracionScraping.findById(id);
+
+      if (!configuracion) {
+        return res.status(404).json({
+          success: false,
+          message: 'Configuración de scraping no encontrada',
+          data: null
+        });
+      }
+
+      // Verificar si el worker está activo (enabled = true)
+      if (configuracion.enabled) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede eliminar una configuración activa. Desactívela primero.',
+          data: null
+        });
+      }
+
+      // Eliminar la configuración
+      await ConfiguracionScraping.findByIdAndDelete(id);
+
+      logger.info(`Configuración de scraping eliminada: ${id} - ${configuracion.nombre || configuracion.fuero}`);
+
+      res.json({
+        success: true,
+        message: 'Configuración de scraping eliminada exitosamente',
+        data: {
+          _id: id,
+          nombre: configuracion.nombre,
+          fuero: configuracion.fuero
+        }
+      });
+
+    } catch (error) {
+      logger.error(`Error eliminando configuración de scraping: ${error}`);
 
       if (error.name === 'CastError') {
         return res.status(400).json({

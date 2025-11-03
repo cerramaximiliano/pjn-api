@@ -11,4 +11,6 @@ router.put('/:id', verifyToken, verifyAdmin, configuracionScrapingController.upd
 
 router.put('/:id/range', verifyToken, verifyAdmin, configuracionScrapingController.updateRange);
 
+router.delete('/:id', verifyToken, verifyAdmin, configuracionScrapingController.deleteById);
+
 module.exports = router;
