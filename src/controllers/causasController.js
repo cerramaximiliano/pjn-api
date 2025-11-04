@@ -405,8 +405,16 @@ const causasController = {
       // Ordenar los documentos combinados usando el mismo criterio de sortOptions
       allCausas.sort((a, b) => {
         // Aplicar ordenamiento dinámico basado en sortBy
-        const fieldA = a[sortBy];
-        const fieldB = b[sortBy];
+        let fieldA = a[sortBy];
+        let fieldB = b[sortBy];
+
+        // Manejar valores undefined/null (colocarlos al final)
+        const aIsNull = fieldA === null || fieldA === undefined;
+        const bIsNull = fieldB === null || fieldB === undefined;
+
+        if (aIsNull && bIsNull) return 0;
+        if (aIsNull) return 1; // A va al final
+        if (bIsNull) return -1; // B va al final
 
         // Manejo especial para strings (case-insensitive)
         if (typeof fieldA === 'string' && typeof fieldB === 'string') {
