@@ -370,21 +370,33 @@ const causasController = {
       const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
       const totalPages = Math.ceil(totalCausasReal / limit);
 
-      // Estrategia: traer TODOS los documentos filtrados de cada colección
-      // y aplicar ordenamiento y paginación en memoria
-      // Esto es necesario porque tenemos múltiples colecciones y necesitamos
-      // ordenar correctamente a través de todas ellas
+      // Estrategia híbrida: traer suficientes documentos de cada colección
+      // para cubrir la página actual más un buffer, ordenar en memoria,
+      // y luego aplicar paginación exacta
       let causasPaginadas = [];
 
-      // Consultar TODOS los documentos que cumplen los filtros (sin skip/limit aún)
+      // Calcular cuántos documentos necesitamos traer de cada colección
+      // Traemos desde el inicio hasta skip + limit para asegurar que tenemos
+      // suficientes documentos después del ordenamiento global
+      const maxDocsToFetch = skip + limit;
+
+      // Consultar documentos con ordenamiento de MongoDB y límite razonable
       const [causasCivil, causasComercial, causasSegSoc, causasTrabajo] = await Promise.all([
         fuero && fuero !== 'CIV' ? [] : CausasCivil.find(searchFilters)
+          .sort(sortOptions)
+          .limit(maxDocsToFetch)
           .lean(),
         fuero && fuero !== 'COM' ? [] : CausasComercial.find(searchFilters)
+          .sort(sortOptions)
+          .limit(maxDocsToFetch)
           .lean(),
         fuero && fuero !== 'CSS' ? [] : CausasSegSoc.find(searchFilters)
+          .sort(sortOptions)
+          .limit(maxDocsToFetch)
           .lean(),
         fuero && fuero !== 'CNT' ? [] : CausasTrabajo.find(searchFilters)
+          .sort(sortOptions)
+          .limit(maxDocsToFetch)
           .lean()
       ]);
 
