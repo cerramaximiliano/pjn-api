@@ -46,6 +46,40 @@ const causasController = {
     }
   },
 
+  // Buscar por ID
+  async findById(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const Model = getModel(fuero);
+
+      const causa = await Model.findById(id);
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          count: 0,
+          data: null
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Causa encontrada',
+        count: 1,
+        data: causa
+      });
+    } catch (error) {
+      logger.error(`Error buscando causa por ID: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: null
+      });
+    }
+  },
+
   // Buscar por objeto
   async findByObjeto(req, res) {
     try {
@@ -268,16 +302,60 @@ const causasController = {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 50;
       const skip = (page - 1) * limit;
-      
+
       // Filtro por fuero si se especifica
       const fuero = req.query.fuero ? req.query.fuero.toUpperCase() : null;
 
-      // Obtener conteos totales reales en paralelo
+      // Filtros de búsqueda adicionales
+      const searchFilters = { verified: true, isValid: true };
+
+      if (req.query.number) {
+        searchFilters.number = parseInt(req.query.number);
+      }
+
+      if (req.query.year) {
+        searchFilters.year = parseInt(req.query.year);
+      }
+
+      if (req.query.objeto) {
+        searchFilters.objeto = { $regex: req.query.objeto, $options: 'i' };
+      }
+
+      if (req.query.caratula) {
+        searchFilters.caratula = { $regex: req.query.caratula, $options: 'i' };
+      }
+
+      // Parámetros de ordenamiento
+      const sortBy = req.query.sortBy || 'year'; // Campo por el cual ordenar
+      const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1; // Orden ascendente o descendente
+
+      // Construir objeto de sort para MongoDB
+      const sortOptions = {};
+
+      // Mapeo de campos permitidos para ordenar
+      const allowedSortFields = ['number', 'year', 'caratula', 'juzgado', 'objeto', 'movimientosCount'];
+
+      if (allowedSortFields.includes(sortBy)) {
+        sortOptions[sortBy] = sortOrder;
+        // Agregar ordenamiento secundario por year y number si no son el campo principal
+        if (sortBy !== 'year') {
+          sortOptions['year'] = -1;
+        }
+        if (sortBy !== 'number') {
+          sortOptions['number'] = -1;
+        }
+      } else {
+        // Ordenamiento por defecto
+        sortOptions.year = -1;
+        sortOptions.number = -1;
+      }
+
+      // Obtener conteos totales reales en paralelo con filtros aplicados
       const [totalCivil, totalComercial, totalSegSoc, totalTrabajo] = await Promise.all([
-        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments({ verified: true, isValid: true }),
-        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments({ verified: true, isValid: true }),
-        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments({ verified: true, isValid: true }),
-        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments({ verified: true, isValid: true })
+        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(searchFilters),
+        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(searchFilters),
+        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(searchFilters),
+        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters)
       ]);
 
       const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
@@ -285,29 +363,29 @@ const causasController = {
 
       // Estrategia optimizada: consultar solo los documentos necesarios por página
       let causasPaginadas = [];
-      
+
       // Calcular cuántos documentos tomar de cada colección
       const limitPerCollection = Math.ceil(limit / 4) + 10; // Un poco más para asegurar que tengamos suficientes
 
-      // Consultar con skip y limit directamente en MongoDB
+      // Consultar con skip y limit directamente en MongoDB aplicando filtros y ordenamiento
       const [causasCivil, causasComercial, causasSegSoc, causasTrabajo] = await Promise.all([
-        fuero && fuero !== 'CIV' ? [] : CausasCivil.find({ verified: true, isValid: true })
-          .sort({ year: -1, number: -1 })
+        fuero && fuero !== 'CIV' ? [] : CausasCivil.find(searchFilters)
+          .sort(sortOptions)
           .skip(Math.floor(skip / 4))
           .limit(limitPerCollection)
           .lean(),
-        fuero && fuero !== 'COM' ? [] : CausasComercial.find({ verified: true, isValid: true })
-          .sort({ year: -1, number: -1 })
+        fuero && fuero !== 'COM' ? [] : CausasComercial.find(searchFilters)
+          .sort(sortOptions)
           .skip(Math.floor(skip / 4))
           .limit(limitPerCollection)
           .lean(),
-        fuero && fuero !== 'CSS' ? [] : CausasSegSoc.find({ verified: true, isValid: true })
-          .sort({ year: -1, number: -1 })
+        fuero && fuero !== 'CSS' ? [] : CausasSegSoc.find(searchFilters)
+          .sort(sortOptions)
           .skip(Math.floor(skip / 4))
           .limit(limitPerCollection)
           .lean(),
-        fuero && fuero !== 'CNT' ? [] : CausasTrabajo.find({ verified: true, isValid: true })
-          .sort({ year: -1, number: -1 })
+        fuero && fuero !== 'CNT' ? [] : CausasTrabajo.find(searchFilters)
+          .sort(sortOptions)
           .skip(Math.floor(skip / 4))
           .limit(limitPerCollection)
           .lean()
@@ -321,10 +399,33 @@ const causasController = {
         ...causasTrabajo.map(causa => ({ ...causa, fuero: 'CNT' }))
       ];
 
-      // Ordenar solo los documentos necesarios
+      // Ordenar los documentos combinados usando el mismo criterio de sortOptions
       allCausas.sort((a, b) => {
-        if (a.year !== b.year) return b.year - a.year;
-        return b.number - a.number;
+        // Aplicar ordenamiento dinámico basado en sortBy
+        const fieldA = a[sortBy];
+        const fieldB = b[sortBy];
+
+        // Manejo especial para strings (case-insensitive)
+        if (typeof fieldA === 'string' && typeof fieldB === 'string') {
+          const comparison = fieldA.toLowerCase().localeCompare(fieldB.toLowerCase());
+          if (comparison !== 0) return comparison * sortOrder;
+        } else if (fieldA !== fieldB) {
+          // Para números y otros tipos
+          if (fieldA < fieldB) return -1 * sortOrder;
+          if (fieldA > fieldB) return 1 * sortOrder;
+        }
+
+        // Ordenamiento secundario por year si no es el campo principal
+        if (sortBy !== 'year' && a.year !== b.year) {
+          return b.year - a.year;
+        }
+
+        // Ordenamiento terciario por number si no es el campo principal
+        if (sortBy !== 'number' && a.number !== b.number) {
+          return b.number - a.number;
+        }
+
+        return 0;
       });
 
       // Tomar solo el límite necesario
