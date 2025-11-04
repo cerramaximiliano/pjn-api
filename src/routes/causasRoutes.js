@@ -27,4 +27,10 @@ router.post('/:fuero/agregar', verifyToken, verifyAdmin, causasController.addCau
 // Ruta para eliminar una causa por ID - requiere autenticación y rol de administrador
 router.delete('/:fuero/:id', verifyToken, verifyAdmin, causasController.deleteCausaById);
 
+// Ruta para actualizar una causa - requiere autenticación y rol de administrador
+router.patch('/:fuero/:id', verifyToken, verifyAdmin, causasController.updateCausa);
+
+// Ruta para eliminar un movimiento específico de una causa - requiere autenticación y rol de administrador
+router.delete('/:fuero/:id/movimientos/:movimientoIndex', verifyToken, verifyAdmin, causasController.deleteMovimiento);
+
 module.exports = router;

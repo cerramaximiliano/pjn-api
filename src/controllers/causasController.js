@@ -722,6 +722,144 @@ const causasController = {
         data: []
       });
     }
+  },
+
+  // Actualizar campos de una causa
+  async updateCausa(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const updateData = req.body;
+      const Model = getModel(fuero);
+
+      // Campos permitidos para actualizar
+      const allowedFields = [
+        'caratula', 'juzgado', 'objeto', 'lastUpdate',
+        'verified', 'isValid', 'update'
+      ];
+
+      // Filtrar solo campos permitidos
+      const filteredUpdate = {};
+      Object.keys(updateData).forEach(key => {
+        if (allowedFields.includes(key)) {
+          filteredUpdate[key] = updateData[key];
+        }
+      });
+
+      if (Object.keys(filteredUpdate).length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No hay campos válidos para actualizar',
+          data: null
+        });
+      }
+
+      // Buscar y actualizar el documento
+      const causaActualizada = await Model.findByIdAndUpdate(
+        id,
+        { $set: filteredUpdate },
+        { new: true, runValidators: true }
+      ).lean();
+
+      if (!causaActualizada) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Causa actualizada correctamente',
+        data: causaActualizada
+      });
+    } catch (error) {
+      logger.error(`Error actualizando causa: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
+  // Eliminar un movimiento específico de una causa
+  async deleteMovimiento(req, res) {
+    try {
+      const { fuero, id, movimientoIndex } = req.params;
+      const Model = getModel(fuero);
+
+      // Convertir el índice a número
+      const index = parseInt(movimientoIndex);
+      if (isNaN(index) || index < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Índice de movimiento inválido',
+          data: null
+        });
+      }
+
+      // Buscar la causa
+      const causa = await Model.findById(id);
+
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null
+        });
+      }
+
+      // Verificar que el array movimiento existe y tiene el índice
+      if (!causa.movimiento || !Array.isArray(causa.movimiento)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Esta causa no tiene movimientos',
+          data: null
+        });
+      }
+
+      if (index >= causa.movimiento.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'Movimiento no encontrado en el índice especificado',
+          data: null
+        });
+      }
+
+      // Guardar el movimiento que se va a eliminar para devolverlo
+      const movimientoEliminado = causa.movimiento[index];
+
+      // Eliminar el movimiento del array
+      causa.movimiento.splice(index, 1);
+
+      // Actualizar el contador de movimientos
+      if (causa.movimientosCount) {
+        causa.movimientosCount = causa.movimiento.length;
+      }
+
+      // Guardar los cambios
+      await causa.save();
+
+      res.json({
+        success: true,
+        message: 'Movimiento eliminado correctamente',
+        data: {
+          causaId: causa._id,
+          movimientoEliminado,
+          movimientosRestantes: causa.movimiento.length
+        }
+      });
+    } catch (error) {
+      logger.error(`Error eliminando movimiento: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
   }
 
 };
