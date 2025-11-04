@@ -52,7 +52,7 @@ const causasController = {
       const { fuero, id } = req.params;
       const Model = getModel(fuero);
 
-      const causa = await Model.findById(id);
+      const causa = await Model.findById(id).lean();
       if (!causa) {
         return res.status(404).json({
           success: false,
@@ -60,6 +60,12 @@ const causasController = {
           count: 0,
           data: null
         });
+      }
+
+      // Agregar el array de movimientos con el nombre esperado por el frontend
+      // El campo en la BD es "movimiento" pero el frontend espera "movimientos"
+      if (causa.movimiento && Array.isArray(causa.movimiento)) {
+        causa.movimientos = causa.movimiento;
       }
 
       res.json({
