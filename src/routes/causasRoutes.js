@@ -18,6 +18,7 @@ router.get('/:fuero/buscar', verifyToken, causasController.searchAdvanced);
 router.get('/:fuero/filtros', verifyApiKey, causasController.findByFilters);
 router.get('/:fuero/folders', verifyToken, causasController.getCausasWithFolders);
 router.get('/:fuero/:id/movimientos', verifyToken, causasController.getMovimientosByDocumentId);
+router.get('/:fuero/id/:id', verifyToken, causasController.findById);
 router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAndYear);
 
 // Ruta para agregar causas - requiere autenticación y rol de administrador
