@@ -329,6 +329,9 @@ const causasController = {
       const sortBy = req.query.sortBy || 'year'; // Campo por el cual ordenar
       const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1; // Orden ascendente o descendente
 
+      // Log para depuración
+      logger.info(`Ordenamiento recibido - sortBy: ${req.query.sortBy}, sortOrder: ${req.query.sortOrder}`);
+
       // Construir objeto de sort para MongoDB
       const sortOptions = {};
 
