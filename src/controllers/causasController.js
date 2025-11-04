@@ -370,33 +370,21 @@ const causasController = {
       const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
       const totalPages = Math.ceil(totalCausasReal / limit);
 
-      // Estrategia optimizada: consultar solo los documentos necesarios por página
+      // Estrategia: traer TODOS los documentos filtrados de cada colección
+      // y aplicar ordenamiento y paginación en memoria
+      // Esto es necesario porque tenemos múltiples colecciones y necesitamos
+      // ordenar correctamente a través de todas ellas
       let causasPaginadas = [];
 
-      // Calcular cuántos documentos tomar de cada colección
-      const limitPerCollection = Math.ceil(limit / 4) + 10; // Un poco más para asegurar que tengamos suficientes
-
-      // Consultar con skip y limit directamente en MongoDB aplicando filtros y ordenamiento
+      // Consultar TODOS los documentos que cumplen los filtros (sin skip/limit aún)
       const [causasCivil, causasComercial, causasSegSoc, causasTrabajo] = await Promise.all([
         fuero && fuero !== 'CIV' ? [] : CausasCivil.find(searchFilters)
-          .sort(sortOptions)
-          .skip(Math.floor(skip / 4))
-          .limit(limitPerCollection)
           .lean(),
         fuero && fuero !== 'COM' ? [] : CausasComercial.find(searchFilters)
-          .sort(sortOptions)
-          .skip(Math.floor(skip / 4))
-          .limit(limitPerCollection)
           .lean(),
         fuero && fuero !== 'CSS' ? [] : CausasSegSoc.find(searchFilters)
-          .sort(sortOptions)
-          .skip(Math.floor(skip / 4))
-          .limit(limitPerCollection)
           .lean(),
         fuero && fuero !== 'CNT' ? [] : CausasTrabajo.find(searchFilters)
-          .sort(sortOptions)
-          .skip(Math.floor(skip / 4))
-          .limit(limitPerCollection)
           .lean()
       ]);
 
@@ -445,8 +433,8 @@ const causasController = {
         return 0;
       });
 
-      // Tomar solo el límite necesario
-      causasPaginadas = allCausas.slice(0, limit);
+      // Aplicar paginación en memoria: skip y limit
+      causasPaginadas = allCausas.slice(skip, skip + limit);
 
       res.json({
         success: true,
