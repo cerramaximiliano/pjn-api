@@ -1,5 +1,6 @@
 const { CausasCivil, CausasComercial, CausasSegSoc, CausasTrabajo } = require("pjn-models")
-const { logger } = require('../config/pino');
+const { logger} = require('../config/pino');
+const axios = require('axios');
 
 const getModel = (fuero) => {
   switch (fuero) {
@@ -862,11 +863,61 @@ const causasController = {
     }
   },
 
+  // Función auxiliar para enviar notificación de movimiento
+  async sendMovementNotification(causa, movimiento, userId) {
+    const notificationServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://notifications.lawanalytics.app';
+    const serviceToken = process.env.INTERNAL_SERVICE_TOKEN;
+
+    if (!serviceToken) {
+      throw new Error('INTERNAL_SERVICE_TOKEN no configurado');
+    }
+
+    // Preparar payload según el formato esperado por la-notification
+    const payload = {
+      notificationTime: new Date().toISOString(),
+      movements: [{
+        userId: userId.toString(),
+        expediente: {
+          id: causa._id.toString(),
+          number: causa.number,
+          year: causa.year,
+          fuero: causa.fuero,
+          caratula: causa.caratula || '',
+          objeto: causa.objeto || ''
+        },
+        movimiento: {
+          fecha: movimiento.fecha,
+          tipo: movimiento.tipo || 'MOVIMIENTO',
+          detalle: movimiento.detalle,
+          url: movimiento.url || null
+        }
+      }]
+    };
+
+    const webhookUrl = `${notificationServiceUrl}/api/judicial-movements/webhook/daily-movements`;
+
+    logger.info(`Enviando notificación a: ${webhookUrl}`);
+    logger.info(`Payload: ${JSON.stringify(payload, null, 2)}`);
+
+    const response = await axios.post(webhookUrl, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceToken}`
+      },
+      timeout: 30000
+    });
+
+    return {
+      success: response.data.success !== false,
+      data: response.data
+    };
+  },
+
   // Agregar un movimiento a una causa
   async addMovimiento(req, res) {
     try {
       const { fuero, id } = req.params;
-      const { fecha, tipo, detalle, url } = req.body;
+      const { fecha, tipo, detalle, url, sendNotification, userId } = req.body;
       const Model = getModel(fuero);
 
       // Validar campos requeridos
@@ -874,6 +925,15 @@ const causasController = {
         return res.status(400).json({
           success: false,
           message: 'Los campos fecha, tipo y detalle son obligatorios',
+          data: null
+        });
+      }
+
+      // Validar userId si se solicita enviar notificación
+      if (sendNotification && !userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'El campo userId es requerido cuando sendNotification es true',
           data: null
         });
       }
@@ -956,6 +1016,18 @@ const causasController = {
       // Guardar los cambios
       await causa.save();
 
+      // Enviar notificación si está habilitada
+      let notificationResult = null;
+      if (sendNotification && userId) {
+        try {
+          notificationResult = await this.sendMovementNotification(causa, nuevoMovimiento, userId);
+          logger.info(`Notificación enviada para movimiento: ${notificationResult.success ? 'exitosa' : 'fallida'}`);
+        } catch (notifError) {
+          logger.error(`Error enviando notificación: ${notifError.message}`);
+          // No fallar la operación si falla la notificación
+        }
+      }
+
       res.json({
         success: true,
         message: 'Movimiento agregado correctamente',
@@ -964,7 +1036,8 @@ const causasController = {
           nuevoMovimiento,
           movimientosCount: causa.movimientosCount,
           fechaUltimoMovimiento: causa.fechaUltimoMovimiento,
-          lastUpdate: causa.lastUpdate
+          lastUpdate: causa.lastUpdate,
+          notificationSent: notificationResult ? notificationResult.success : false
         }
       });
     } catch (error) {
