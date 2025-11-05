@@ -33,4 +33,7 @@ router.patch('/:fuero/:id', verifyToken, verifyAdmin, causasController.updateCau
 // Ruta para eliminar un movimiento específico de una causa - requiere autenticación y rol de administrador
 router.delete('/:fuero/:id/movimientos/:movimientoIndex', verifyToken, verifyAdmin, causasController.deleteMovimiento);
 
+// Ruta para agregar un movimiento a una causa - requiere autenticación y rol de administrador
+router.post('/:fuero/:id/movimientos', verifyToken, verifyAdmin, causasController.addMovimiento);
+
 module.exports = router;

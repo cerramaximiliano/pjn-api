@@ -860,6 +860,104 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  // Agregar un movimiento a una causa
+  async addMovimiento(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const { fecha, tipo, detalle, url } = req.body;
+      const Model = getModel(fuero);
+
+      // Validar campos requeridos
+      if (!fecha || !tipo || !detalle) {
+        return res.status(400).json({
+          success: false,
+          message: 'Los campos fecha, tipo y detalle son obligatorios',
+          data: null
+        });
+      }
+
+      // Buscar la causa
+      const causa = await Model.findById(id);
+
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null
+        });
+      }
+
+      // Crear el nuevo movimiento
+      const nuevoMovimiento = {
+        fecha: new Date(fecha),
+        tipo,
+        detalle,
+        url: url || null
+      };
+
+      // Inicializar el array de movimientos si no existe
+      if (!causa.movimiento || !Array.isArray(causa.movimiento)) {
+        causa.movimiento = [];
+      }
+
+      // Agregar el nuevo movimiento al array
+      causa.movimiento.push(nuevoMovimiento);
+
+      // Actualizar el contador de movimientos
+      causa.movimientosCount = causa.movimiento.length;
+
+      // Actualizar lastUpdate con la fecha y hora actual (UTC)
+      const ahora = new Date();
+      causa.lastUpdate = ahora;
+
+      // Verificar si la fecha del nuevo movimiento es más reciente que fechaUltimoMovimiento
+      const fechaNuevoMovimiento = new Date(fecha);
+      if (!causa.fechaUltimoMovimiento || fechaNuevoMovimiento > causa.fechaUltimoMovimiento) {
+        causa.fechaUltimoMovimiento = fechaNuevoMovimiento;
+      }
+
+      // Inicializar updateHistory si no existe
+      if (!causa.updateHistory || !Array.isArray(causa.updateHistory)) {
+        causa.updateHistory = [];
+      }
+
+      // Agregar entrada al updateHistory
+      causa.updateHistory.push({
+        timestamp: ahora,
+        source: 'manual',
+        changes: {
+          movimientoAgregado: {
+            fecha: nuevoMovimiento.fecha,
+            tipo: nuevoMovimiento.tipo
+          }
+        }
+      });
+
+      // Guardar los cambios
+      await causa.save();
+
+      res.json({
+        success: true,
+        message: 'Movimiento agregado correctamente',
+        data: {
+          causaId: causa._id,
+          nuevoMovimiento,
+          movimientosCount: causa.movimientosCount,
+          fechaUltimoMovimiento: causa.fechaUltimoMovimiento,
+          lastUpdate: causa.lastUpdate
+        }
+      });
+    } catch (error) {
+      logger.error(`Error agregando movimiento: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
   }
 
 };
