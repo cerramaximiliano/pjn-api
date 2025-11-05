@@ -889,9 +889,12 @@ const causasController = {
         });
       }
 
+      // Convertir la fecha del nuevo movimiento
+      const fechaNuevoMovimiento = new Date(fecha);
+
       // Crear el nuevo movimiento
       const nuevoMovimiento = {
-        fecha: new Date(fecha),
+        fecha: fechaNuevoMovimiento,
         tipo,
         detalle,
         url: url || null
@@ -925,7 +928,6 @@ const causasController = {
       causa.lastUpdate = ahora;
 
       // Verificar si la fecha del nuevo movimiento es más reciente que fechaUltimoMovimiento
-      const fechaNuevoMovimiento = new Date(fecha);
       if (!causa.fechaUltimoMovimiento || fechaNuevoMovimiento > causa.fechaUltimoMovimiento) {
         causa.fechaUltimoMovimiento = fechaNuevoMovimiento;
       }
