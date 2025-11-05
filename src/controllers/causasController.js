@@ -1020,7 +1020,7 @@ const causasController = {
       let notificationResult = null;
       if (sendNotification && userId) {
         try {
-          notificationResult = await this.sendMovementNotification(causa, nuevoMovimiento, userId);
+          notificationResult = await causasController.sendMovementNotification(causa, nuevoMovimiento, userId);
           logger.info(`Notificación enviada para movimiento: ${notificationResult.success ? 'exitosa' : 'fallida'}`);
         } catch (notifError) {
           logger.error(`Error enviando notificación: ${notifError.message}`);
