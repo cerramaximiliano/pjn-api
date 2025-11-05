@@ -902,8 +902,20 @@ const causasController = {
         causa.movimiento = [];
       }
 
-      // Agregar el nuevo movimiento al array
-      causa.movimiento.push(nuevoMovimiento);
+      // Encontrar la posición correcta para insertar el movimiento (orden descendente por fecha)
+      // Posición 0 = más reciente, última posición = más antiguo
+      let insertIndex = causa.movimiento.length; // Por defecto, al final
+
+      for (let i = 0; i < causa.movimiento.length; i++) {
+        const movFecha = new Date(causa.movimiento[i].fecha);
+        if (fechaNuevoMovimiento > movFecha) {
+          insertIndex = i;
+          break;
+        }
+      }
+
+      // Insertar el movimiento en la posición correcta
+      causa.movimiento.splice(insertIndex, 0, nuevoMovimiento);
 
       // Actualizar el contador de movimientos
       causa.movimientosCount = causa.movimiento.length;
