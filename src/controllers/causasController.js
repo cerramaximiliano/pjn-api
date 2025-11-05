@@ -863,8 +863,30 @@ const causasController = {
     }
   },
 
+  // Función auxiliar para obtener usuarios con notificaciones habilitadas
+  getEnabledUsers(causa) {
+    const enabledUsers = [];
+
+    // Verificar userUpdatesEnabled
+    if (causa.userUpdatesEnabled && Array.isArray(causa.userUpdatesEnabled)) {
+      for (const userUpdate of causa.userUpdatesEnabled) {
+        if (userUpdate.enabled && userUpdate.userId) {
+          enabledUsers.push(userUpdate.userId);
+        }
+      }
+    }
+
+    // Si no hay userUpdatesEnabled, usar userCausaIds como fallback
+    if (enabledUsers.length === 0 && causa.userCausaIds && causa.userCausaIds.length > 0) {
+      // Por defecto, asumir que todos los usuarios quieren notificaciones
+      enabledUsers.push(...causa.userCausaIds);
+    }
+
+    return enabledUsers;
+  },
+
   // Función auxiliar para enviar notificación de movimiento
-  async sendMovementNotification(causa, movimiento, userId) {
+  async sendMovementNotification(causa, movimiento) {
     const notificationServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://notifications.lawanalytics.app';
     const serviceToken = process.env.INTERNAL_SERVICE_TOKEN;
 
@@ -872,10 +894,22 @@ const causasController = {
       throw new Error('INTERNAL_SERVICE_TOKEN no configurado');
     }
 
-    // Preparar payload según el formato esperado por la-notification
-    const payload = {
-      notificationTime: new Date().toISOString(),
-      movements: [{
+    // Obtener usuarios con notificaciones habilitadas
+    const enabledUsers = causasController.getEnabledUsers(causa);
+
+    if (enabledUsers.length === 0) {
+      logger.info(`No hay usuarios con notificaciones habilitadas para causa ${causa.number}/${causa.year}`);
+      return {
+        success: true,
+        usersNotified: 0,
+        reason: 'No hay usuarios habilitados'
+      };
+    }
+
+    // Preparar payload con un movimiento por cada usuario habilitado
+    const movements = [];
+    for (const userId of enabledUsers) {
+      movements.push({
         userId: userId.toString(),
         expediente: {
           id: causa._id.toString(),
@@ -891,12 +925,18 @@ const causasController = {
           detalle: movimiento.detalle,
           url: movimiento.url || null
         }
-      }]
+      });
+    }
+
+    const payload = {
+      notificationTime: new Date().toISOString(),
+      movements: movements
     };
 
     const webhookUrl = `${notificationServiceUrl}/api/judicial-movements/webhook/daily-movements`;
 
     logger.info(`Enviando notificación a: ${webhookUrl}`);
+    logger.info(`Usuarios a notificar: ${enabledUsers.length}`);
     logger.info(`Payload: ${JSON.stringify(payload, null, 2)}`);
 
     const response = await axios.post(webhookUrl, payload, {
@@ -909,6 +949,7 @@ const causasController = {
 
     return {
       success: response.data.success !== false,
+      usersNotified: enabledUsers.length,
       data: response.data
     };
   },
@@ -917,7 +958,7 @@ const causasController = {
   async addMovimiento(req, res) {
     try {
       const { fuero, id } = req.params;
-      const { fecha, tipo, detalle, url, sendNotification, userId } = req.body;
+      const { fecha, tipo, detalle, url, sendNotification } = req.body;
       const Model = getModel(fuero);
 
       // Validar campos requeridos
@@ -925,15 +966,6 @@ const causasController = {
         return res.status(400).json({
           success: false,
           message: 'Los campos fecha, tipo y detalle son obligatorios',
-          data: null
-        });
-      }
-
-      // Validar userId si se solicita enviar notificación
-      if (sendNotification && !userId) {
-        return res.status(400).json({
-          success: false,
-          message: 'El campo userId es requerido cuando sendNotification es true',
           data: null
         });
       }
@@ -1018,10 +1050,10 @@ const causasController = {
 
       // Enviar notificación si está habilitada
       let notificationResult = null;
-      if (sendNotification && userId) {
+      if (sendNotification) {
         try {
-          notificationResult = await causasController.sendMovementNotification(causa, nuevoMovimiento, userId);
-          logger.info(`Notificación enviada para movimiento: ${notificationResult.success ? 'exitosa' : 'fallida'}`);
+          notificationResult = await causasController.sendMovementNotification(causa, nuevoMovimiento);
+          logger.info(`Notificación enviada: ${notificationResult.success ? 'exitosa' : 'fallida'} - Usuarios notificados: ${notificationResult.usersNotified || 0}`);
         } catch (notifError) {
           logger.error(`Error enviando notificación: ${notifError.message}`);
           // No fallar la operación si falla la notificación
@@ -1037,7 +1069,8 @@ const causasController = {
           movimientosCount: causa.movimientosCount,
           fechaUltimoMovimiento: causa.fechaUltimoMovimiento,
           lastUpdate: causa.lastUpdate,
-          notificationSent: notificationResult ? notificationResult.success : false
+          notificationSent: notificationResult ? notificationResult.success : false,
+          usersNotified: notificationResult ? notificationResult.usersNotified : 0
         }
       });
     } catch (error) {
