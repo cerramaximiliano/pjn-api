@@ -927,7 +927,11 @@ const causasController = {
       causa.updateHistory.push({
         timestamp: ahora,
         source: 'manual',
-        changes: {
+        updateType: 'update',
+        success: true,
+        movimientosAdded: 1,
+        movimientosTotal: causa.movimiento.length,
+        details: {
           movimientoAgregado: {
             fecha: nuevoMovimiento.fecha,
             tipo: nuevoMovimiento.tipo
