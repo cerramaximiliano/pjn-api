@@ -734,7 +734,7 @@ const causasController = {
 
       // Campos permitidos para actualizar
       const allowedFields = [
-        'caratula', 'juzgado', 'objeto', 'lastUpdate',
+        'caratula', 'juzgado', 'objeto', 'lastUpdate', 'fechaUltimoMovimiento',
         'verified', 'isValid', 'update'
       ];
 
