@@ -1050,7 +1050,7 @@ const causasController = {
     }
 
     // Obtener usuarios con notificaciones habilitadas
-    const enabledUsers = causasController.getEnabledUsers(causa);
+    const enabledUsers = this.getEnabledUsers(causa);
 
     if (enabledUsers.length === 0) {
       logger.info(`No hay usuarios con notificaciones habilitadas para causa ${causa.number}/${causa.year}`);
@@ -1207,7 +1207,7 @@ const causasController = {
       let notificationResult = null;
       if (sendNotification) {
         try {
-          notificationResult = await causasController.sendMovementNotification(causa, nuevoMovimiento);
+          notificationResult = await this.sendMovementNotification(causa, nuevoMovimiento);
           logger.info(`Notificación enviada: ${notificationResult.success ? 'exitosa' : 'fallida'} - Usuarios notificados: ${notificationResult.usersNotified || 0}`);
         } catch (notifError) {
           logger.error(`Error enviando notificación: ${notifError.message}`);
@@ -1281,7 +1281,7 @@ const causasController = {
       // Enviar notificación usando la función auxiliar
       let notificationResult = null;
       try {
-        notificationResult = await causasController.sendMovementNotification(causa, movimiento);
+        notificationResult = await this.sendMovementNotification(causa, movimiento);
         logger.info(`Notificación de movimiento enviada: ${notificationResult.success ? 'exitosa' : 'fallida'} - Usuarios notificados: ${notificationResult.usersNotified || 0}`);
       } catch (notifError) {
         logger.error(`Error enviando notificación: ${notifError.message}`);
@@ -1337,7 +1337,7 @@ const causasController = {
       }
 
       // Obtener los IDs de usuarios habilitados
-      const enabledUserIds = causasController.getEnabledUsers(causa);
+      const enabledUserIds = this.getEnabledUsers(causa);
 
       if (enabledUserIds.length === 0) {
         return res.json({
