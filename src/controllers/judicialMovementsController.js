@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const mongoose = require('mongoose');
 
 /**
  * Controlador para manejar consultas a la colección judicialmovements
@@ -18,15 +18,9 @@ exports.getMovementsByExpedienteId = async (req, res) => {
 		});
 	}
 
-	let client;
-
 	try {
-		// Conectar a MongoDB
-		const uri = process.env.MONGODB_URI;
-		client = new MongoClient(uri);
-		await client.connect();
-
-		const db = client.db('lawanalytics');
+		// Usar la conexión existente de Mongoose
+		const db = mongoose.connection.db;
 		const collection = db.collection('judicialmovements');
 
 		// Buscar documentos donde expediente.id coincida con el expedienteId
@@ -48,9 +42,5 @@ exports.getMovementsByExpedienteId = async (req, res) => {
 			message: 'Error al obtener los movimientos judiciales',
 			error: error.message,
 		});
-	} finally {
-		if (client) {
-			await client.close();
-		}
 	}
 };
