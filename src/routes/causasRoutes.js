@@ -36,4 +36,7 @@ router.delete('/:fuero/:id/movimientos/:movimientoIndex', verifyToken, verifyAdm
 // Ruta para agregar un movimiento a una causa - requiere autenticación y rol de administrador
 router.post('/:fuero/:id/movimientos', verifyToken, verifyAdmin, causasController.addMovimiento);
 
+// Ruta para enviar notificación de un movimiento específico - requiere autenticación y rol de administrador
+router.post('/:fuero/:id/movimientos/:movimientoIndex/notify', verifyToken, verifyAdmin, causasController.sendMovimientoNotification);
+
 module.exports = router;

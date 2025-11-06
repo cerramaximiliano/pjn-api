@@ -1082,6 +1082,86 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  // Enviar notificación de un movimiento específico
+  async sendMovimientoNotification(req, res) {
+    try {
+      const { fuero, id, movimientoIndex } = req.params;
+      const Model = getModel(fuero);
+
+      // Convertir el índice a número
+      const index = parseInt(movimientoIndex);
+      if (isNaN(index) || index < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Índice de movimiento inválido',
+          data: null
+        });
+      }
+
+      // Buscar la causa
+      const causa = await Model.findById(id);
+
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null
+        });
+      }
+
+      // Verificar que el índice existe
+      if (index >= causa.movimiento.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'Movimiento no encontrado',
+          data: null
+        });
+      }
+
+      // Obtener el movimiento específico
+      const movimiento = causa.movimiento[index];
+
+      // Enviar notificación usando la función auxiliar
+      let notificationResult = null;
+      try {
+        notificationResult = await causasController.sendMovementNotification(causa, movimiento);
+        logger.info(`Notificación de movimiento enviada: ${notificationResult.success ? 'exitosa' : 'fallida'} - Usuarios notificados: ${notificationResult.usersNotified || 0}`);
+      } catch (notifError) {
+        logger.error(`Error enviando notificación: ${notifError.message}`);
+        return res.status(500).json({
+          success: false,
+          message: 'Error al enviar la notificación',
+          error: notifError.message,
+          data: null
+        });
+      }
+
+      res.json({
+        success: notificationResult.success,
+        message: notificationResult.usersNotified > 0
+          ? `Notificación enviada a ${notificationResult.usersNotified} usuario${notificationResult.usersNotified > 1 ? 's' : ''}`
+          : 'No hay usuarios habilitados para notificar',
+        data: {
+          usersNotified: notificationResult.usersNotified,
+          movimiento: {
+            index,
+            fecha: movimiento.fecha,
+            tipo: movimiento.tipo,
+            detalle: movimiento.detalle
+          }
+        }
+      });
+    } catch (error) {
+      logger.error(`Error enviando notificación de movimiento: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
   }
 
 };
