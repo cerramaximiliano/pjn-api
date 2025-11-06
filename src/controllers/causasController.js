@@ -1324,6 +1324,7 @@ const causasController = {
     try {
       const { fuero, id } = req.params;
       const Model = getModel(fuero);
+      const mongoose = require('mongoose');
 
       // Buscar la causa
       const causa = await Model.findById(id).select('userUpdatesEnabled userCausaIds');
@@ -1348,9 +1349,19 @@ const causasController = {
         });
       }
 
-      // Devolver solo los IDs - el frontend deberá consultar la API de auth para obtener los detalles
-      const usersData = enabledUserIds.map(userId => ({
-        id: userId.toString()
+      // Buscar información de los usuarios en la colección "usuarios"
+      const db = mongoose.connection.db;
+      const usuariosCollection = db.collection('usuarios');
+
+      const usuarios = await usuariosCollection.find({
+        _id: { $in: enabledUserIds.map(id => new mongoose.Types.ObjectId(id)) }
+      }).toArray();
+
+      // Formatear la respuesta
+      const usersData = usuarios.map(user => ({
+        id: user._id.toString(),
+        email: user.email || 'Sin email',
+        name: user.name || user.email || 'Usuario sin nombre'
       }));
 
       res.json({
