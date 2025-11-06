@@ -1025,7 +1025,8 @@ const causasController = {
         data: {
           causaId: causa._id,
           movimientoEliminado,
-          movimientosRestantes: causa.movimiento.length
+          movimientosRestantes: causa.movimiento.length,
+          updateHistory: causa.updateHistory || []
         }
       });
     } catch (error) {
@@ -1246,7 +1247,8 @@ const causasController = {
           fechaUltimoMovimiento: causa.fechaUltimoMovimiento,
           lastUpdate: causa.lastUpdate,
           notificationSent: notificationResult ? notificationResult.success : false,
-          usersNotified: notificationResult ? notificationResult.usersNotified : 0
+          usersNotified: notificationResult ? notificationResult.usersNotified : 0,
+          updateHistory: causa.updateHistory || []
         }
       });
     } catch (error) {
