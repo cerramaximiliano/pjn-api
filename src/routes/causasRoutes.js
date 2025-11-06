@@ -21,6 +21,8 @@ router.get('/:fuero/buscar', verifyToken, causasController.searchAdvanced);
 router.get('/:fuero/filtros', verifyApiKey, causasController.findByFilters);
 router.get('/:fuero/folders', verifyToken, causasController.getCausasWithFolders);
 router.get('/:fuero/:id/movimientos', verifyToken, causasController.getMovimientosByDocumentId);
+// IMPORTANTE: Rutas específicas deben ir ANTES de rutas genéricas
+router.get('/:fuero/:id/notification-users', verifyToken, causasController.getNotificationUsers);
 router.get('/:fuero/id/:id', verifyToken, causasController.findById);
 router.get('/:fuero/:number/:year', verifyToken, causasController.findByNumberAndYear);
 
@@ -41,8 +43,5 @@ router.post('/:fuero/:id/movimientos', verifyToken, verifyAdmin, causasControlle
 
 // Ruta para enviar notificación de un movimiento específico - requiere autenticación y rol de administrador
 router.post('/:fuero/:id/movimientos/:movimientoIndex/notify', verifyToken, verifyAdmin, causasController.sendMovimientoNotification);
-
-// Ruta para obtener usuarios con notificaciones habilitadas de una causa - requiere autenticación
-router.get('/:fuero/:id/notification-users', verifyToken, causasController.getNotificationUsers);
 
 module.exports = router;
