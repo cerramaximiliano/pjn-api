@@ -995,6 +995,27 @@ const causasController = {
         causa.movimientosCount = causa.movimiento.length;
       }
 
+      // Agregar entrada al updateHistory
+      const ahora = new Date();
+      if (!causa.updateHistory || !Array.isArray(causa.updateHistory)) {
+        causa.updateHistory = [];
+      }
+
+      causa.updateHistory.push({
+        timestamp: ahora,
+        source: 'manual',
+        updateType: 'delete',
+        success: true,
+        movimientosAdded: -1,
+        movimientosTotal: causa.movimiento.length,
+        details: {
+          movimientoEliminado: {
+            fecha: movimientoEliminado.fecha,
+            tipo: movimientoEliminado.tipo
+          }
+        }
+      });
+
       // Guardar los cambios
       await causa.save();
 
