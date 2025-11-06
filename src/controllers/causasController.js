@@ -1004,7 +1004,7 @@ const causasController = {
       causa.updateHistory.push({
         timestamp: ahora,
         source: 'manual',
-        updateType: 'delete',
+        updateType: 'update',
         success: true,
         movimientosAdded: -1,
         movimientosTotal: causa.movimiento.length,
