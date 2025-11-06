@@ -1379,6 +1379,117 @@ const causasController = {
         data: []
       });
     }
+  },
+
+  // Limpiar todo el historial de actualizaciones de una causa
+  async clearUpdateHistory(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const Model = getModel(fuero);
+
+      // Buscar la causa
+      const causa = await Model.findById(id);
+
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null
+        });
+      }
+
+      // Limpiar el array updateHistory
+      const historyCount = causa.updateHistory ? causa.updateHistory.length : 0;
+      causa.updateHistory = [];
+
+      await causa.save();
+
+      res.json({
+        success: true,
+        message: `Historial limpiado correctamente. ${historyCount} entrada${historyCount !== 1 ? 's' : ''} eliminada${historyCount !== 1 ? 's' : ''}`,
+        data: {
+          causaId: causa._id,
+          entriesDeleted: historyCount
+        }
+      });
+    } catch (error) {
+      logger.error(`Error limpiando historial de actualizaciones: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
+  // Eliminar una entrada específica del historial de actualizaciones
+  async deleteUpdateHistoryEntry(req, res) {
+    try {
+      const { fuero, id, entryIndex } = req.params;
+      const Model = getModel(fuero);
+
+      // Convertir el índice a número
+      const index = parseInt(entryIndex);
+      if (isNaN(index) || index < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Índice de entrada inválido',
+          data: null
+        });
+      }
+
+      // Buscar la causa
+      const causa = await Model.findById(id);
+
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null
+        });
+      }
+
+      // Verificar que el array updateHistory existe y tiene el índice
+      if (!causa.updateHistory || !Array.isArray(causa.updateHistory)) {
+        causa.updateHistory = [];
+      }
+
+      if (index >= causa.updateHistory.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'Entrada no encontrada en el historial',
+          data: null
+        });
+      }
+
+      // Eliminar la entrada del historial
+      const deletedEntry = causa.updateHistory.splice(index, 1)[0];
+
+      await causa.save();
+
+      res.json({
+        success: true,
+        message: 'Entrada eliminada correctamente',
+        data: {
+          causaId: causa._id,
+          deletedEntry: {
+            timestamp: deletedEntry.timestamp,
+            updateType: deletedEntry.updateType,
+            source: deletedEntry.source
+          },
+          remainingEntries: causa.updateHistory.length
+        }
+      });
+    } catch (error) {
+      logger.error(`Error eliminando entrada del historial: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
   }
 
 };

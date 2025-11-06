@@ -44,4 +44,10 @@ router.post('/:fuero/:id/movimientos', verifyToken, verifyAdmin, causasControlle
 // Ruta para enviar notificación de un movimiento específico - requiere autenticación y rol de administrador
 router.post('/:fuero/:id/movimientos/:movimientoIndex/notify', verifyToken, verifyAdmin, causasController.sendMovimientoNotification);
 
+// Ruta para limpiar todo el historial de actualizaciones de una causa - requiere autenticación y rol de administrador
+router.delete('/:fuero/:id/update-history', verifyToken, verifyAdmin, causasController.clearUpdateHistory);
+
+// Ruta para eliminar una entrada específica del historial de actualizaciones - requiere autenticación y rol de administrador
+router.delete('/:fuero/:id/update-history/:entryIndex', verifyToken, verifyAdmin, causasController.deleteUpdateHistoryEntry);
+
 module.exports = router;
