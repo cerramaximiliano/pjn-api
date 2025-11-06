@@ -1348,17 +1348,9 @@ const causasController = {
         });
       }
 
-      // Buscar información de los usuarios
-      const { User } = require('lawanalytics-models');
-      const users = await User.find({ _id: { $in: enabledUserIds } })
-        .select('email firstName lastName')
-        .lean();
-
-      // Formatear la respuesta
-      const usersData = users.map(user => ({
-        id: user._id.toString(),
-        email: user.email,
-        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email
+      // Devolver solo los IDs - el frontend deberá consultar la API de auth para obtener los detalles
+      const usersData = enabledUserIds.map(userId => ({
+        id: userId.toString()
       }));
 
       res.json({
