@@ -1337,7 +1337,7 @@ const causasController = {
       }
 
       // Obtener los IDs de usuarios habilitados
-      const enabledUserIds = this.getEnabledUsers(causa);
+      const enabledUserIds = causasController.getEnabledUsers(causa);
 
       if (enabledUserIds.length === 0) {
         return res.json({
