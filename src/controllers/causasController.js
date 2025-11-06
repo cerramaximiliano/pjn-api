@@ -1317,6 +1317,65 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  // Obtener usuarios con notificaciones habilitadas para una causa
+  async getNotificationUsers(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const Model = getModel(fuero);
+
+      // Buscar la causa
+      const causa = await Model.findById(id).select('userUpdatesEnabled userCausaIds');
+
+      if (!causa) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: []
+        });
+      }
+
+      // Obtener los IDs de usuarios habilitados
+      const enabledUserIds = causasController.getEnabledUsers(causa);
+
+      if (enabledUserIds.length === 0) {
+        return res.json({
+          success: true,
+          message: 'No hay usuarios con notificaciones habilitadas',
+          count: 0,
+          data: []
+        });
+      }
+
+      // Buscar información de los usuarios
+      const { User } = require('lawanalytics-models');
+      const users = await User.find({ _id: { $in: enabledUserIds } })
+        .select('email firstName lastName')
+        .lean();
+
+      // Formatear la respuesta
+      const usersData = users.map(user => ({
+        id: user._id.toString(),
+        email: user.email,
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email
+      }));
+
+      res.json({
+        success: true,
+        message: 'Usuarios obtenidos correctamente',
+        count: usersData.length,
+        data: usersData
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo usuarios para notificación: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: []
+      });
+    }
   }
 
 };

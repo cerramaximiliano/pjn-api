@@ -42,4 +42,7 @@ router.post('/:fuero/:id/movimientos', verifyToken, verifyAdmin, causasControlle
 // Ruta para enviar notificación de un movimiento específico - requiere autenticación y rol de administrador
 router.post('/:fuero/:id/movimientos/:movimientoIndex/notify', verifyToken, verifyAdmin, causasController.sendMovimientoNotification);
 
+// Ruta para obtener usuarios con notificaciones habilitadas de una causa - requiere autenticación
+router.get('/:fuero/:id/notification-users', verifyToken, causasController.getNotificationUsers);
+
 module.exports = router;
