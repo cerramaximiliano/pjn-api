@@ -11,6 +11,9 @@ router.get('/test', (req, res) => {
 // Ruta para obtener todas las causas verificadas
 router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
 
+// Ruta para obtener todas las causas no verificadas (verified: true, isValid: false)
+router.get('/non-verified', verifyToken, causasController.getAllNonVerifiedCausas);
+
 // Rutas principales - todas protegidas con verifyToken
 router.get('/:fuero/buscar/objeto', verifyToken, causasController.findByObjeto);
 router.get('/:fuero/objetos', verifyToken, causasController.listObjetos);

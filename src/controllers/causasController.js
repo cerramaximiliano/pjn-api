@@ -482,6 +482,161 @@ const causasController = {
     }
   },
 
+  // Obtener todas las causas no verificadas (verified: true, isValid: false)
+  async getAllNonVerifiedCausas(req, res) {
+    try {
+      // Obtener parámetros de paginación
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+      const skip = (page - 1) * limit;
+
+      // Filtro por fuero si se especifica
+      const fuero = req.query.fuero ? req.query.fuero.toUpperCase() : null;
+
+      // Filtros de búsqueda adicionales - verified: true, isValid: false
+      const searchFilters = { verified: true, isValid: false };
+
+      if (req.query.number) {
+        searchFilters.number = parseInt(req.query.number);
+      }
+
+      if (req.query.year) {
+        searchFilters.year = parseInt(req.query.year);
+      }
+
+      if (req.query.objeto) {
+        searchFilters.objeto = { $regex: req.query.objeto, $options: 'i' };
+      }
+
+      if (req.query.caratula) {
+        searchFilters.caratula = { $regex: req.query.caratula, $options: 'i' };
+      }
+
+      // Parámetros de ordenamiento
+      const sortBy = req.query.sortBy || 'year';
+      const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+
+      logger.info(`Ordenamiento recibido - sortBy: ${req.query.sortBy}, sortOrder: ${req.query.sortOrder}`);
+
+      // Construir objeto de sort para MongoDB
+      const sortOptions = {};
+
+      // Mapeo de campos permitidos para ordenar
+      const allowedSortFields = ['number', 'year', 'caratula', 'juzgado', 'objeto', 'movimientosCount', 'lastUpdate', 'fechaUltimoMovimiento'];
+
+      if (allowedSortFields.includes(sortBy)) {
+        sortOptions[sortBy] = sortOrder;
+        // Agregar ordenamiento secundario por year y number si no son el campo principal
+        if (sortBy !== 'year') {
+          sortOptions['year'] = -1;
+        }
+        if (sortBy !== 'number') {
+          sortOptions['number'] = -1;
+        }
+      } else {
+        // Ordenamiento por defecto
+        sortOptions.year = -1;
+        sortOptions.number = -1;
+      }
+
+      // Obtener conteos totales reales en paralelo con filtros aplicados
+      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo] = await Promise.all([
+        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(searchFilters),
+        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(searchFilters),
+        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(searchFilters),
+        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters)
+      ]);
+
+      const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
+      const totalPages = Math.ceil(totalCausasReal / limit);
+
+      logger.info(`Conteo total real de causas no verificadas: ${totalCausasReal} (Civil: ${totalCivil}, Comercial: ${totalComercial}, SegSoc: ${totalSegSoc}, Trabajo: ${totalTrabajo})`);
+
+      // Realizar búsquedas en paralelo en las colecciones necesarias
+      const promises = [];
+
+      if (!fuero || fuero === 'CIV') {
+        promises.push(CausasCivil.find(searchFilters).sort(sortOptions).lean());
+      }
+      if (!fuero || fuero === 'COM') {
+        promises.push(CausasComercial.find(searchFilters).sort(sortOptions).lean());
+      }
+      if (!fuero || fuero === 'CSS') {
+        promises.push(CausasSegSoc.find(searchFilters).sort(sortOptions).lean());
+      }
+      if (!fuero || fuero === 'CNT') {
+        promises.push(CausasTrabajo.find(searchFilters).sort(sortOptions).lean());
+      }
+
+      const results = await Promise.all(promises);
+
+      // Combinar todos los resultados y agregar el campo fuero
+      let allCausas = [];
+      let fueroIndex = 0;
+      const fueros = !fuero ? ['CIV', 'COM', 'CSS', 'CNT'] : [fuero];
+
+      results.forEach((causasArray, index) => {
+        const currentFuero = fueros[fueroIndex];
+        const causasWithFuero = causasArray.map(causa => ({
+          ...causa,
+          fuero: currentFuero
+        }));
+        allCausas = allCausas.concat(causasWithFuero);
+        fueroIndex++;
+      });
+
+      // Aplicar ordenamiento global si estamos consultando múltiples fueros
+      if (!fuero) {
+        allCausas.sort((a, b) => {
+          for (const key in sortOptions) {
+            const order = sortOptions[key];
+            if (a[key] !== b[key]) {
+              if (a[key] < b[key]) return -order;
+              if (a[key] > b[key]) return order;
+            }
+          }
+          return 0;
+        });
+      }
+
+      // Aplicar paginación manualmente después de combinar
+      let causasPaginadas;
+      causasPaginadas = allCausas.slice(skip, skip + limit);
+
+      res.json({
+        success: true,
+        message: `Mostrando ${causasPaginadas.length} de ${totalCausasReal} causas no verificadas${fuero ? ` del fuero ${fuero}` : ''}`,
+        count: totalCausasReal,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          limit: limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        },
+        breakdown: {
+          civil: totalCivil,
+          comercial: totalComercial,
+          seguridad_social: totalSegSoc,
+          trabajo: totalTrabajo
+        },
+        filters: {
+          fuero: fuero || 'todos'
+        },
+        data: causasPaginadas
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo causas no verificadas: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        count: 0,
+        data: []
+      });
+    }
+  },
+
   // Obtener movimientos de una causa por ID con paginación
   async getMovimientosByDocumentId(req, res) {
     try {
