@@ -332,6 +332,34 @@ const causasController = {
         searchFilters.caratula = { $regex: req.query.caratula, $options: 'i' };
       }
 
+      // Filtro por fechaUltimoMovimiento
+      if (req.query.fechaUltimoMovimiento) {
+        try {
+          const fechaBusqueda = new Date(req.query.fechaUltimoMovimiento);
+          // Buscar fechas que coincidan en día, mes y año (UTC)
+          const fechaInicio = new Date(Date.UTC(fechaBusqueda.getUTCFullYear(), fechaBusqueda.getUTCMonth(), fechaBusqueda.getUTCDate(), 0, 0, 0, 0));
+          const fechaFin = new Date(Date.UTC(fechaBusqueda.getUTCFullYear(), fechaBusqueda.getUTCMonth(), fechaBusqueda.getUTCDate(), 23, 59, 59, 999));
+          searchFilters.fechaUltimoMovimiento = { $gte: fechaInicio, $lte: fechaFin };
+          logger.info(`Filtro por fechaUltimoMovimiento: ${fechaInicio.toISOString()} - ${fechaFin.toISOString()}`);
+        } catch (error) {
+          logger.error(`Error parseando fechaUltimoMovimiento: ${error.message}`);
+        }
+      }
+
+      // Filtro por lastUpdate
+      if (req.query.lastUpdate) {
+        try {
+          const fechaBusqueda = new Date(req.query.lastUpdate);
+          // Buscar fechas que coincidan en día, mes y año (UTC)
+          const fechaInicio = new Date(Date.UTC(fechaBusqueda.getUTCFullYear(), fechaBusqueda.getUTCMonth(), fechaBusqueda.getUTCDate(), 0, 0, 0, 0));
+          const fechaFin = new Date(Date.UTC(fechaBusqueda.getUTCFullYear(), fechaBusqueda.getUTCMonth(), fechaBusqueda.getUTCDate(), 23, 59, 59, 999));
+          searchFilters.lastUpdate = { $gte: fechaInicio, $lte: fechaFin };
+          logger.info(`Filtro por lastUpdate: ${fechaInicio.toISOString()} - ${fechaFin.toISOString()}`);
+        } catch (error) {
+          logger.error(`Error parseando lastUpdate: ${error.message}`);
+        }
+      }
+
       // Parámetros de ordenamiento
       const sortBy = req.query.sortBy || 'year'; // Campo por el cual ordenar
       const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1; // Orden ascendente o descendente
@@ -343,7 +371,7 @@ const causasController = {
       const sortOptions = {};
 
       // Mapeo de campos permitidos para ordenar
-      const allowedSortFields = ['number', 'year', 'caratula', 'juzgado', 'objeto', 'movimientosCount'];
+      const allowedSortFields = ['number', 'year', 'caratula', 'juzgado', 'objeto', 'movimientosCount', 'lastUpdate', 'fechaUltimoMovimiento'];
 
       if (allowedSortFields.includes(sortBy)) {
         sortOptions[sortBy] = sortOrder;
