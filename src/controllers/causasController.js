@@ -388,15 +388,25 @@ const causasController = {
         sortOptions.number = -1;
       }
 
-      // Obtener conteos totales reales en paralelo con filtros aplicados
-      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo] = await Promise.all([
+      // Filtros base sin búsqueda para obtener total general de la base de datos
+      const baseFilters = { verified: true, isValid: true };
+
+      // Obtener conteos totales en paralelo: con filtros aplicados y total de la base de datos
+      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo, totalCivilDB, totalComercialDB, totalSegSocDB, totalTrabajoDB] = await Promise.all([
+        // Conteos con filtros de búsqueda aplicados
         fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(searchFilters),
         fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(searchFilters),
         fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(searchFilters),
-        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters)
+        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters),
+        // Conteos totales de la base de datos (sin filtros de búsqueda)
+        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(baseFilters),
+        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(baseFilters),
+        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(baseFilters),
+        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(baseFilters)
       ]);
 
       const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
+      const totalInDatabase = totalCivilDB + totalComercialDB + totalSegSocDB + totalTrabajoDB;
       const totalPages = Math.ceil(totalCausasReal / limit);
 
       // Estrategia híbrida: traer suficientes documentos de cada colección
@@ -481,6 +491,7 @@ const causasController = {
         success: true,
         message: `Mostrando ${causasPaginadas.length} de ${totalCausasReal} causas verificadas y válidas${fuero ? ` del fuero ${fuero}` : ''}`,
         count: totalCausasReal,
+        totalInDatabase: totalInDatabase,
         pagination: {
           currentPage: page,
           totalPages: totalPages,
@@ -567,15 +578,25 @@ const causasController = {
         sortOptions.number = -1;
       }
 
-      // Obtener conteos totales reales en paralelo con filtros aplicados
-      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo] = await Promise.all([
+      // Filtros base sin búsqueda para obtener total general de la base de datos
+      const baseFilters = { verified: true, isValid: true };
+
+      // Obtener conteos totales en paralelo: con filtros aplicados y total de la base de datos
+      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo, totalCivilDB, totalComercialDB, totalSegSocDB, totalTrabajoDB] = await Promise.all([
+        // Conteos con filtros de búsqueda aplicados
         fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(searchFilters),
         fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(searchFilters),
         fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(searchFilters),
-        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters)
+        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters),
+        // Conteos totales de la base de datos (sin filtros de búsqueda)
+        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(baseFilters),
+        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(baseFilters),
+        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(baseFilters),
+        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(baseFilters)
       ]);
 
       const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
+      const totalInDatabase = totalCivilDB + totalComercialDB + totalSegSocDB + totalTrabajoDB;
       const totalPages = Math.ceil(totalCausasReal / limit);
 
       logger.info(`Conteo total real de causas no verificadas: ${totalCausasReal} (Civil: ${totalCivil}, Comercial: ${totalComercial}, SegSoc: ${totalSegSoc}, Trabajo: ${totalTrabajo})`);
