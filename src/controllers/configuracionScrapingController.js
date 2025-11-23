@@ -206,13 +206,16 @@ const configuracionScrapingController = {
       }
 
       // Crear el nuevo documento
+      const workerNombre = nombre || `${fuero} ${year} (${range_start}-${range_end})`;
+
       const nuevaConfiguracion = new ConfiguracionScraping({
         fuero,
         year,
         range_start,
         range_end,
         max_number,
-        nombre: nombre || `${fuero} ${year} (${range_start}-${range_end})`,
+        nombre: workerNombre,
+        worker_id: workerNombre,
         enabled: enabled,
         number: number || range_start,
         completionEmailSent: false,
