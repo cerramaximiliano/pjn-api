@@ -107,21 +107,22 @@ const configuracionScrapingController = {
 
   async create(req, res) {
     try {
-      const { 
-        fuero, 
-        year, 
-        range_start, 
+      const {
+        fuero,
+        year,
+        range_start,
         range_end,
+        max_number,
         nombre,
         enabled = false,
         number
       } = req.body;
 
       // Validaciones básicas
-      if (!fuero || !year || !range_start || !range_end) {
+      if (!fuero || !year || !range_start || !range_end || !max_number) {
         return res.status(400).json({
           success: false,
-          message: 'Los campos fuero, year, range_start y range_end son obligatorios',
+          message: 'Los campos fuero, year, range_start, range_end y max_number son obligatorios',
           data: null
         });
       }
@@ -210,6 +211,7 @@ const configuracionScrapingController = {
         year,
         range_start,
         range_end,
+        max_number,
         nombre: nombre || `${fuero} ${year} (${range_start}-${range_end})`,
         enabled: enabled,
         number: number || range_start,
