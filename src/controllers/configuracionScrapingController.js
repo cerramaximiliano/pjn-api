@@ -333,9 +333,12 @@ const configuracionScrapingController = {
   async updateRange(req, res) {
     try {
       const { id } = req.params;
-      const { range_start, range_end } = req.body;
+      const { range_start, range_end, year } = req.body;
 
-      logger.info({ id, range_start, range_end, body: req.body }, 'updateRange: Inicio de petición');
+      logger.info({ id, range_start, range_end, year, body: req.body }, 'updateRange: Inicio de petición');
+
+      // Determinar el year a usar (el proporcionado o el actual del documento)
+      // Se resolverá después de obtener la configuración
 
       // Validaciones básicas
       if (!id) {
@@ -376,6 +379,9 @@ const configuracionScrapingController = {
         });
       }
 
+      // Determinar el year efectivo (el proporcionado o el actual)
+      const effectiveYear = year !== undefined ? year : configuracion.year;
+
       // Verificar si el worker está terminado
       const isCompleted = configuracion.enabled === false &&
                          configuracion.completionEmailSent === true &&
@@ -406,12 +412,12 @@ const configuracionScrapingController = {
         });
       }
 
-      // Verificar si el nuevo rango es igual al rango actual
-      if (configuracion.range_start === range_start && configuracion.range_end === range_end) {
-        logger.warn({ id, range_start, range_end }, 'updateRange: Rango idéntico al actual');
+      // Verificar si el nuevo rango y year son iguales al actual
+      if (configuracion.range_start === range_start && configuracion.range_end === range_end && configuracion.year === effectiveYear) {
+        logger.warn({ id, range_start, range_end, year: effectiveYear }, 'updateRange: Rango y year idénticos al actual');
         return res.status(400).json({
           success: false,
-          message: 'El nuevo rango es idéntico al rango actual',
+          message: 'El nuevo rango y year son idénticos a los actuales',
           data: null
         });
       }
@@ -419,13 +425,13 @@ const configuracionScrapingController = {
       // Verificar si hay rangos superpuestos en el historial
       const hasOverlapping = await ConfiguracionScrapingHistory.hasOverlappingRange(
         configuracion.fuero,
-        configuracion.year,
+        effectiveYear,
         range_start,
         range_end
       );
 
       if (hasOverlapping) {
-        logger.warn({ id, fuero: configuracion.fuero, year: configuracion.year, range_start, range_end }, 'updateRange: Rango superpuesto en historial');
+        logger.warn({ id, fuero: configuracion.fuero, year: effectiveYear, range_start, range_end }, 'updateRange: Rango superpuesto en historial');
         return res.status(400).json({
           success: false,
           message: 'El rango especificado se superpone con un rango existente en el historial',
@@ -436,7 +442,7 @@ const configuracionScrapingController = {
       // Buscar si existe exactamente el mismo rango en el historial
       const duplicateRange = await ConfiguracionScrapingHistory.findOne({
         fuero: configuracion.fuero,
-        year: configuracion.year,
+        year: effectiveYear,
         range_start: range_start,
         range_end: range_end
       });
@@ -462,7 +468,7 @@ const configuracionScrapingController = {
       const overlappingConfig = await ConfiguracionScraping.findOne({
         _id: { $ne: id }, // Excluir el documento actual
         fuero: configuracion.fuero, // Mismo fuero
-        year: configuracion.year, // Mismo año
+        year: effectiveYear, // Mismo año (usar el year efectivo)
         worker_id: { $not: /^retry_worker_temp/ }, // Excluir workers temporales de retry
         $or: [
           // El nuevo rango comienza dentro de un rango existente
@@ -572,8 +578,21 @@ const configuracionScrapingController = {
         errors: [],
         lastError: null,
         retryCount: 0,
-        lastActivityAt: new Date()
+        lastActivityAt: new Date(),
+        // Resetear campos de documentos no encontrados consecutivos
+        consecutive_not_found: 0,
+        not_found_range: {
+          start_number: null,
+          end_number: null,
+          started_at: null,
+          updated_at: null
+        }
       };
+
+      // Actualizar year solo si se proporcionó en el request
+      if (year !== undefined) {
+        updateData.year = year;
+      }
 
       // Si existe captchaStats, resetear sus valores
       if (configuracion.captchaStats) {
