@@ -473,7 +473,19 @@ const configuracionScrapingController = {
       });
 
       if (overlappingConfig) {
-        logger.warn({ id, overlappingConfigId: overlappingConfig._id, overlappingNombre: overlappingConfig.nombre }, 'updateRange: Rango superpuesto con otra configuración');
+        logger.warn({
+          id,
+          overlappingConfigId: overlappingConfig._id,
+          overlappingNombre: overlappingConfig.nombre,
+          overlappingFuero: overlappingConfig.fuero,
+          overlappingYear: overlappingConfig.year,
+          overlappingRangeStart: overlappingConfig.range_start,
+          overlappingRangeEnd: overlappingConfig.range_end,
+          overlappingEnabled: overlappingConfig.enabled,
+          overlappingNumber: overlappingConfig.number,
+          requestedRangeStart: range_start,
+          requestedRangeEnd: range_end
+        }, 'updateRange: Rango superpuesto con otra configuración');
         return res.status(400).json({
           success: false,
           message: `El rango se superpone con otra configuración activa: ${overlappingConfig.nombre || overlappingConfig._id}`,
@@ -481,6 +493,8 @@ const configuracionScrapingController = {
             conflictingConfig: {
               id: overlappingConfig._id,
               nombre: overlappingConfig.nombre,
+              fuero: overlappingConfig.fuero,
+              year: overlappingConfig.year,
               range_start: overlappingConfig.range_start,
               range_end: overlappingConfig.range_end,
               enabled: overlappingConfig.enabled,
