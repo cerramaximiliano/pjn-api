@@ -458,10 +458,12 @@ const configuracionScrapingController = {
       }
 
       // Verificar si otro documento de ConfiguracionScraping tiene un rango superpuesto
+      // Excluir workers temporales de retry (worker_id que comienza con "retry_worker_temp")
       const overlappingConfig = await ConfiguracionScraping.findOne({
         _id: { $ne: id }, // Excluir el documento actual
         fuero: configuracion.fuero, // Mismo fuero
         year: configuracion.year, // Mismo año
+        worker_id: { $not: /^retry_worker_temp/ }, // Excluir workers temporales de retry
         $or: [
           // El nuevo rango comienza dentro de un rango existente
           { range_start: { $lte: range_start }, range_end: { $gte: range_start } },
