@@ -335,8 +335,11 @@ const configuracionScrapingController = {
       const { id } = req.params;
       const { range_start, range_end } = req.body;
 
+      logger.info({ id, range_start, range_end, body: req.body }, 'updateRange: Inicio de petición');
+
       // Validaciones básicas
       if (!id) {
+        logger.warn({ id }, 'updateRange: id no proporcionado');
         return res.status(400).json({
           success: false,
           message: 'El parámetro id es obligatorio',
@@ -345,6 +348,7 @@ const configuracionScrapingController = {
       }
 
       if (!range_start || !range_end) {
+        logger.warn({ id, range_start, range_end }, 'updateRange: range_start o range_end no proporcionados');
         return res.status(400).json({
           success: false,
           message: 'Los parámetros range_start y range_end son obligatorios',
@@ -353,6 +357,7 @@ const configuracionScrapingController = {
       }
 
       if (range_start >= range_end) {
+        logger.warn({ id, range_start, range_end }, 'updateRange: range_start >= range_end');
         return res.status(400).json({
           success: false,
           message: 'El range_start debe ser menor que range_end',
@@ -372,11 +377,28 @@ const configuracionScrapingController = {
       }
 
       // Verificar si el worker está terminado
-      const isCompleted = configuracion.enabled === false && 
-                         configuracion.completionEmailSent === true && 
+      const isCompleted = configuracion.enabled === false &&
+                         configuracion.completionEmailSent === true &&
                          configuracion.number >= configuracion.range_end;
 
+      logger.info({
+        id,
+        isCompleted,
+        enabled: configuracion.enabled,
+        completionEmailSent: configuracion.completionEmailSent,
+        number: configuracion.number,
+        current_range_end: configuracion.range_end,
+        current_range_start: configuracion.range_start
+      }, 'updateRange: Estado del worker');
+
       if (!isCompleted) {
+        logger.warn({
+          id,
+          enabled: configuracion.enabled,
+          completionEmailSent: configuracion.completionEmailSent,
+          number: configuracion.number,
+          range_end: configuracion.range_end
+        }, 'updateRange: Worker no terminado');
         return res.status(400).json({
           success: false,
           message: 'El worker no está terminado. Debe cumplir: enabled=false, completionEmailSent=true y number >= range_end',
@@ -386,6 +408,7 @@ const configuracionScrapingController = {
 
       // Verificar si el nuevo rango es igual al rango actual
       if (configuracion.range_start === range_start && configuracion.range_end === range_end) {
+        logger.warn({ id, range_start, range_end }, 'updateRange: Rango idéntico al actual');
         return res.status(400).json({
           success: false,
           message: 'El nuevo rango es idéntico al rango actual',
@@ -402,6 +425,7 @@ const configuracionScrapingController = {
       );
 
       if (hasOverlapping) {
+        logger.warn({ id, fuero: configuracion.fuero, year: configuracion.year, range_start, range_end }, 'updateRange: Rango superpuesto en historial');
         return res.status(400).json({
           success: false,
           message: 'El rango especificado se superpone con un rango existente en el historial',
@@ -418,6 +442,7 @@ const configuracionScrapingController = {
       });
 
       if (duplicateRange) {
+        logger.warn({ id, duplicateRange: duplicateRange._id, version: duplicateRange.version }, 'updateRange: Rango duplicado en historial');
         return res.status(400).json({
           success: false,
           message: `Este rango ya fue procesado anteriormente (versión ${duplicateRange.version}, completado el ${duplicateRange.completedAt.toLocaleDateString()})`,
@@ -448,6 +473,7 @@ const configuracionScrapingController = {
       });
 
       if (overlappingConfig) {
+        logger.warn({ id, overlappingConfigId: overlappingConfig._id, overlappingNombre: overlappingConfig.nombre }, 'updateRange: Rango superpuesto con otra configuración');
         return res.status(400).json({
           success: false,
           message: `El rango se superpone con otra configuración activa: ${overlappingConfig.nombre || overlappingConfig._id}`,
