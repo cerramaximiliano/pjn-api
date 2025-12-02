@@ -65,9 +65,11 @@ const configuracionScrapingController = {
 
       // Construir ordenamiento
       const sortOptions = {};
-      const validSortFields = ['nombre', 'fuero', 'year', 'number', 'range_start', 'range_end', 'enabled', 'updatedAt', 'last_check'];
+      const validSortFields = ['nombre', 'fuero', 'year', 'number', 'range_start', 'range_end', 'enabled', 'updatedAt', 'last_check', 'consecutive_not_found'];
       const sortField = validSortFields.includes(sortBy) ? sortBy : 'nombre';
       sortOptions[sortField] = sortOrder === 'desc' ? -1 : 1;
+      // Agregar _id como campo secundario para garantizar ordenamiento determinístico
+      sortOptions._id = 1;
 
       logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, enabled=${enabled}, fuero=${fuero}, year=${year}, progreso=${progreso}, worker_id=${worker_id}, sortBy=${sortBy}, sortOrder=${sortOrder}, includeTemporary=${includeTemporary}`);
       logger.info(`[findAll] Filter applied:`, JSON.stringify(filter));
