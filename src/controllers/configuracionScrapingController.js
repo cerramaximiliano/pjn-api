@@ -11,6 +11,7 @@ const configuracionScrapingController = {
         fuero,
         year,
         progreso,
+        worker_id,
         includeTemporary = 'false',
         sortBy = 'nombre',
         sortOrder = 'asc',
@@ -46,6 +47,11 @@ const configuracionScrapingController = {
         filter.year = Number(year);
       }
 
+      // Filtro por worker_id (búsqueda parcial)
+      if (worker_id && worker_id.trim() !== '') {
+        filter.worker_id = { $regex: worker_id.trim(), $options: 'i' };
+      }
+
       // Filtro por progreso (completo/incompleto)
       if (progreso === 'completo') {
         // Progreso 100%: number >= range_end
@@ -63,7 +69,7 @@ const configuracionScrapingController = {
       const sortField = validSortFields.includes(sortBy) ? sortBy : 'nombre';
       sortOptions[sortField] = sortOrder === 'desc' ? -1 : 1;
 
-      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, enabled=${enabled}, fuero=${fuero}, year=${year}, progreso=${progreso}, sortBy=${sortBy}, sortOrder=${sortOrder}, includeTemporary=${includeTemporary}`);
+      logger.info(`[findAll] Query params: page=${page}, limit=${limit}, activo=${activo}, enabled=${enabled}, fuero=${fuero}, year=${year}, progreso=${progreso}, worker_id=${worker_id}, sortBy=${sortBy}, sortOrder=${sortOrder}, includeTemporary=${includeTemporary}`);
       logger.info(`[findAll] Filter applied:`, JSON.stringify(filter));
       logger.info(`[findAll] Sort applied:`, JSON.stringify(sortOptions));
       logger.info(`[findAll] Skip: ${skip}, Limit: ${Number(limit)}`);
