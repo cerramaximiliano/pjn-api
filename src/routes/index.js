@@ -8,6 +8,7 @@ const configuracionScrapingHistoryRoutes = require('./configuracionScrapingHisto
 const configuracionAppUpdateRoutes = require('./configuracionAppUpdateRoutes');
 const judicialMovementsRoutes = require('./judicialMovementsRoutes');
 const serverRoutes = require('./serverRoutes');
+const workerLogRoutes = require('./workerLogRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -38,5 +39,8 @@ router.use('/judicial-movements', judicialMovementsRoutes);
 
 // Montar las rutas de servidores/workers
 router.use('/servers', serverRoutes);
+
+// Montar las rutas de logs de workers
+router.use('/worker-logs', workerLogRoutes);
 
 module.exports = router;
