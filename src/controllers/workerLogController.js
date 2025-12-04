@@ -16,6 +16,7 @@ const workerLogController = {
    * - skip: offset para paginación (default: 0)
    * - documentId: filtrar por documento específico
    * - sort: campo para ordenar (default: -startTime)
+   * - hasMovimientos: true = solo con movimientos, false = solo sin movimientos
    */
   async findAll(req, res) {
     try {
@@ -28,7 +29,8 @@ const workerLogController = {
         limit = 50,
         skip = 0,
         documentId,
-        sort = '-startTime'
+        sort = '-startTime',
+        hasMovimientos
       } = req.query;
 
       // Construir query
@@ -47,6 +49,17 @@ const workerLogController = {
       if (workerId) query.workerId = workerId;
       if (fuero) query['document.fuero'] = fuero;
       if (documentId) query['document.documentId'] = documentId;
+
+      // Filtrar por movimientos
+      if (hasMovimientos === 'true' || hasMovimientos === '1') {
+        query['changes.movimientosAdded'] = { $gt: 0 };
+      } else if (hasMovimientos === 'false' || hasMovimientos === '0') {
+        query.$or = [
+          { 'changes.movimientosAdded': { $exists: false } },
+          { 'changes.movimientosAdded': 0 },
+          { 'changes.movimientosAdded': null }
+        ];
+      }
 
       // Limitar cantidad
       const limitNum = Math.min(parseInt(limit), 500);
