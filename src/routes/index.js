@@ -9,6 +9,7 @@ const configuracionAppUpdateRoutes = require('./configuracionAppUpdateRoutes');
 const judicialMovementsRoutes = require('./judicialMovementsRoutes');
 const serverRoutes = require('./serverRoutes');
 const workerLogRoutes = require('./workerLogRoutes');
+const cleanupConfigRoutes = require('./cleanupConfigRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -42,5 +43,8 @@ router.use('/servers', serverRoutes);
 
 // Montar las rutas de logs de workers
 router.use('/worker-logs', workerLogRoutes);
+
+// Montar las rutas de configuración de limpieza de logs
+router.use('/cleanup-config', cleanupConfigRoutes);
 
 module.exports = router;
