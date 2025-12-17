@@ -8,6 +8,9 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Router de causas funcionando' });
 });
 
+// Ruta para obtener estadísticas de causas (para dashboard)
+router.get('/stats', verifyToken, causasController.getStats);
+
 // Ruta para obtener todas las causas verificadas
 router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
 

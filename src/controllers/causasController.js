@@ -1562,6 +1562,71 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  // Obtener estadísticas de causas para el dashboard
+  async getStats(req, res) {
+    try {
+      // Ejecutar todas las consultas en paralelo para mejor rendimiento
+      const [
+        // PJN - Verified (verified: true, isValid: true)
+        civilVerified,
+        comercialVerified,
+        segSocVerified,
+        trabajoVerified,
+        // PJN - Non-verified (verified: true, isValid: false)
+        civilNonVerified,
+        comercialNonVerified,
+        segSocNonVerified,
+        trabajoNonVerified
+      ] = await Promise.all([
+        // Verified counts
+        CausasCivil.countDocuments({ verified: true, isValid: true }),
+        CausasComercial.countDocuments({ verified: true, isValid: true }),
+        CausasSegSoc.countDocuments({ verified: true, isValid: true }),
+        CausasTrabajo.countDocuments({ verified: true, isValid: true }),
+        // Non-verified counts
+        CausasCivil.countDocuments({ verified: true, isValid: false }),
+        CausasComercial.countDocuments({ verified: true, isValid: false }),
+        CausasSegSoc.countDocuments({ verified: true, isValid: false }),
+        CausasTrabajo.countDocuments({ verified: true, isValid: false })
+      ]);
+
+      const totalVerified = civilVerified + comercialVerified + segSocVerified + trabajoVerified;
+      const totalNonVerified = civilNonVerified + comercialNonVerified + segSocNonVerified + trabajoNonVerified;
+
+      res.json({
+        success: true,
+        message: 'Estadísticas de causas PJN',
+        data: {
+          verified: totalVerified,
+          nonVerified: totalNonVerified,
+          total: totalVerified + totalNonVerified,
+          breakdown: {
+            verified: {
+              civil: civilVerified,
+              comercial: comercialVerified,
+              segSoc: segSocVerified,
+              trabajo: trabajoVerified
+            },
+            nonVerified: {
+              civil: civilNonVerified,
+              comercial: comercialNonVerified,
+              segSoc: segSocNonVerified,
+              trabajo: trabajoNonVerified
+            }
+          }
+        }
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo estadísticas: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
   }
 
 };
