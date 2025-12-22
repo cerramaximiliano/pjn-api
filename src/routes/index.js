@@ -6,6 +6,7 @@ const configuracionVerificacionRoutes = require('./configuracionVerificacionRout
 const configuracionScrapingRoutes = require('./configuracionScrapingRoutes');
 const configuracionScrapingHistoryRoutes = require('./configuracionScrapingHistoryRoutes');
 const configuracionAppUpdateRoutes = require('./configuracionAppUpdateRoutes');
+const configuracionEmailVerificationRoutes = require('./configuracionEmailVerificationRoutes');
 const judicialMovementsRoutes = require('./judicialMovementsRoutes');
 const serverRoutes = require('./serverRoutes');
 const workerLogRoutes = require('./workerLogRoutes');
@@ -34,6 +35,9 @@ router.use('/configuracion-scraping-history', configuracionScrapingHistoryRoutes
 
 // Montar las rutas de configuración de actualización de app
 router.use('/configuracion-app-update', configuracionAppUpdateRoutes);
+
+// Montar las rutas de configuración de verificación de email (NeverBounce)
+router.use('/configuracion-email-verification', configuracionEmailVerificationRoutes);
 
 // Montar las rutas de movimientos judiciales
 router.use('/judicial-movements', judicialMovementsRoutes);
