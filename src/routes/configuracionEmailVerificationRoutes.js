@@ -15,4 +15,7 @@ router.post('/:id/reset-daily', verifyToken, verifyAdmin, configuracionEmailVeri
 // Limpiar estado de procesamiento - requiere rol de administrador
 router.post('/:id/clear-processing', verifyToken, verifyAdmin, configuracionEmailVerificationController.clearProcessingState);
 
+// Actualizar créditos desde la API de NeverBounce - requiere rol de administrador
+router.post('/:id/refresh-credits', verifyToken, verifyAdmin, configuracionEmailVerificationController.refreshCredits);
+
 module.exports = router;
