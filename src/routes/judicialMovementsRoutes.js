@@ -8,4 +8,10 @@ const judicialMovementsController = require('../controllers/judicialMovementsCon
  */
 router.get('/by-expediente/:expedienteId', judicialMovementsController.getMovementsByExpedienteId);
 
+/**
+ * Ruta para eliminar un movimiento judicial por ID
+ * DELETE /api/judicial-movements/:id
+ */
+router.delete('/:id', judicialMovementsController.deleteMovement);
+
 module.exports = router;
