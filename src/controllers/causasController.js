@@ -360,6 +360,12 @@ const causasController = {
         }
       }
 
+      // Filtro por update (actualizable)
+      if (req.query.update !== undefined) {
+        searchFilters.update = req.query.update === 'true';
+        logger.info(`Filtro por update: ${searchFilters.update}`);
+      }
+
       // Parámetros de ordenamiento
       const sortBy = req.query.sortBy || 'year'; // Campo por el cual ordenar
       const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1; // Orden ascendente o descendente
