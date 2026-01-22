@@ -11,6 +11,7 @@ const judicialMovementsRoutes = require('./judicialMovementsRoutes');
 const serverRoutes = require('./serverRoutes');
 const workerLogRoutes = require('./workerLogRoutes');
 const cleanupConfigRoutes = require('./cleanupConfigRoutes');
+const intervinientesRoutes = require('./intervinientesRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -50,5 +51,8 @@ router.use('/worker-logs', workerLogRoutes);
 
 // Montar las rutas de configuración de limpieza de logs
 router.use('/cleanup-config', cleanupConfigRoutes);
+
+// Montar las rutas de intervinientes
+router.use('/intervinientes', intervinientesRoutes);
 
 module.exports = router;
