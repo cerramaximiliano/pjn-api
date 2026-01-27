@@ -35,19 +35,13 @@ const managerConfigController = {
      */
     async getSettings(req, res) {
         try {
-            const config = await ManagerConfig.getConfig();
-
-            if (!config) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Configuración no encontrada'
-                });
-            }
+            // Usar getOrCreate para asegurar que siempre exista una configuración
+            const doc = await ManagerConfig.getOrCreate();
 
             res.json({
                 success: true,
                 message: 'Configuración obtenida',
-                data: config
+                data: doc.config
             });
         } catch (error) {
             logger.error(`Error obteniendo settings: ${error.message}`);
