@@ -13,6 +13,7 @@ const workerLogRoutes = require('./workerLogRoutes');
 const cleanupConfigRoutes = require('./cleanupConfigRoutes');
 const intervinientesRoutes = require('./intervinientesRoutes');
 const workerStatsRoutes = require('./workerStatsRoutes');
+const managerConfigRoutes = require('./managerConfigRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -58,5 +59,8 @@ router.use('/intervinientes', intervinientesRoutes);
 
 // Montar las rutas de estadísticas de workers
 router.use('/workers', workerStatsRoutes);
+
+// Montar las rutas de configuración del manager
+router.use('/manager-config', managerConfigRoutes);
 
 module.exports = router;
