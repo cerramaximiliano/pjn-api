@@ -5,11 +5,11 @@
 const express = require('express');
 const router = express.Router();
 const workerStatsController = require('../controllers/workerStatsController');
-const { tokenMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
+const { verifyToken, verifyAdmin } = require('../middleware/auth');
 
 // Todas las rutas requieren autenticación y rol admin
-router.use(tokenMiddleware);
-router.use(adminMiddleware);
+router.use(verifyToken);
+router.use(verifyAdmin);
 
 // Resumen del día actual
 // GET /api/workers/stats/today?workerType=app-update
