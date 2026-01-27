@@ -2,7 +2,7 @@
  * Controller para Intervinientes
  * Maneja las operaciones CRUD para la colección de intervinientes
  */
-const Interviniente = require('../models/interviniente');
+const { Interviniente } = require('pjn-models');
 const { logger } = require('../config/pino');
 
 const intervinientesController = {
