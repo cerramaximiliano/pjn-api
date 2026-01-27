@@ -366,6 +366,16 @@ const causasController = {
         logger.info(`Filtro por update: ${searchFilters.update}`);
       }
 
+      // Filtro por isPrivate (privada)
+      if (req.query.isPrivate !== undefined) {
+        if (req.query.isPrivate === 'null') {
+          searchFilters.isPrivate = null;
+        } else {
+          searchFilters.isPrivate = req.query.isPrivate === 'true';
+        }
+        logger.info(`Filtro por isPrivate: ${searchFilters.isPrivate}`);
+      }
+
       // Parámetros de ordenamiento
       const sortBy = req.query.sortBy || 'year'; // Campo por el cual ordenar
       const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1; // Orden ascendente o descendente
