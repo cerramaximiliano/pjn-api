@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const workerStatsController = require('../controllers/workerStatsController');
-const { tokenMiddleware, adminMiddleware } = require('../middlewares/authMiddleware');
+const { tokenMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
 // Todas las rutas requieren autenticación y rol admin
 router.use(tokenMiddleware);
