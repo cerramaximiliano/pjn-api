@@ -6,7 +6,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const { ManagerConfig } = require('pjn-models');
 
-const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+const MONGO_URI = process.env.URLDB || process.env.MONGODB_URI || process.env.MONGO_URI;
 
 async function createManagerConfig() {
     try {
