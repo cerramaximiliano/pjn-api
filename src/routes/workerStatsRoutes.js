@@ -15,6 +15,10 @@ router.use(verifyAdmin);
 // GET /api/workers/stats/today?workerType=app-update
 router.get('/stats/today', workerStatsController.getTodaySummary);
 
+// Fechas disponibles con datos
+// GET /api/workers/stats/available-dates?workerType=app-update
+router.get('/stats/available-dates', workerStatsController.getAvailableDates);
+
 // Estadísticas por rango de fechas
 // GET /api/workers/stats/range?from=2024-01-01&to=2024-01-31&workerType=app-update&fuero=CIV
 router.get('/stats/range', workerStatsController.getByDateRange);

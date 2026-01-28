@@ -7,6 +7,63 @@ const { logger } = require('../config/pino');
 
 const workerStatsController = {
     /**
+     * Obtener fechas disponibles con estadísticas
+     * GET /api/workers/stats/available-dates
+     */
+    async getAvailableDates(req, res) {
+        try {
+            const { workerType } = req.query;
+
+            const matchStage = {};
+            if (workerType) {
+                matchStage.workerType = workerType;
+            }
+
+            const pipeline = [
+                ...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
+                {
+                    $group: {
+                        _id: '$date',
+                        fuerosCount: { $addToSet: '$fuero' },
+                        totalProcessed: { $sum: '$stats.processed' },
+                        totalSuccessful: { $sum: '$stats.successful' },
+                        totalFailed: { $sum: '$stats.failed' }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        date: '$_id',
+                        fuerosCount: { $size: '$fuerosCount' },
+                        totalProcessed: 1,
+                        totalSuccessful: 1,
+                        totalFailed: 1,
+                        hasData: { $gt: ['$totalProcessed', 0] }
+                    }
+                },
+                { $sort: { date: -1 } },
+                { $limit: 90 } // Últimos 90 días
+            ];
+
+            const dates = await WorkerDailyStats.aggregate(pipeline);
+
+            res.json({
+                success: true,
+                message: `${dates.length} fechas con datos disponibles`,
+                count: dates.length,
+                data: dates
+            });
+        } catch (error) {
+            logger.error(`Error obteniendo fechas disponibles: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
      * Obtener resumen del día actual
      * GET /api/workers/stats/today
      */
