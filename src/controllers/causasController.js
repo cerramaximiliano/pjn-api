@@ -376,6 +376,17 @@ const causasController = {
         logger.info(`Filtro por isPrivate: ${searchFilters.isPrivate}`);
       }
 
+      // Filtro soloElegibles: aplica los criterios completos del worker
+      if (req.query.soloElegibles === 'true') {
+        // Criterios que coinciden EXACTAMENTE con el worker de actualización
+        searchFilters.source = { $in: ["app", "cache", "pjn-login"] };
+        searchFilters.update = true;
+        searchFilters.isPrivate = { $ne: true };
+        searchFilters.movimientosCount = { $gt: 0 };
+        searchFilters['movimiento.0'] = { $exists: true };
+        logger.info(`Filtro soloElegibles: aplicando criterios completos del worker`);
+      }
+
       // Filtro por estadoActualizacion (actualizados/pendientes/errores)
       if (req.query.estadoActualizacion && req.query.estadoActualizacion !== 'todos') {
         const now = new Date();
