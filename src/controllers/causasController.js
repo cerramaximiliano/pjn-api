@@ -376,6 +376,46 @@ const causasController = {
         logger.info(`Filtro por isPrivate: ${searchFilters.isPrivate}`);
       }
 
+      // Filtro por estadoActualizacion (actualizados/pendientes/errores)
+      if (req.query.estadoActualizacion && req.query.estadoActualizacion !== 'todos') {
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0]; // "2026-02-01"
+
+        switch (req.query.estadoActualizacion) {
+          case 'actualizados':
+            // Actualizados hoy: updateStats.today.date === today
+            searchFilters['updateStats.today.date'] = todayStr;
+            searchFilters['updateStats.today.count'] = { $gt: 0 };
+            logger.info(`Filtro estadoActualizacion: actualizados hoy (${todayStr})`);
+            break;
+          case 'pendientes':
+            // Pendientes: NO actualizados hoy Y sin cooldown activo
+            searchFilters.$and = searchFilters.$and || [];
+            searchFilters.$and.push({
+              $or: [
+                { 'updateStats.today.date': { $ne: todayStr } },
+                { 'updateStats.today.date': { $exists: false } },
+                { 'updateStats.today': { $exists: false } }
+              ]
+            });
+            // Excluir los que están en cooldown
+            searchFilters.$and.push({
+              $or: [
+                { 'scrapingProgress.skipUntil': { $exists: false } },
+                { 'scrapingProgress.skipUntil': null },
+                { 'scrapingProgress.skipUntil': { $lte: now } }
+              ]
+            });
+            logger.info(`Filtro estadoActualizacion: pendientes (no actualizados hoy y sin cooldown)`);
+            break;
+          case 'errores':
+            // Con errores/cooldown: scrapingProgress.skipUntil > now
+            searchFilters['scrapingProgress.skipUntil'] = { $gt: now };
+            logger.info(`Filtro estadoActualizacion: errores (en cooldown)`);
+            break;
+        }
+      }
+
       // Parámetros de ordenamiento
       const sortBy = req.query.sortBy || 'year'; // Campo por el cual ordenar
       const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1; // Orden ascendente o descendente
