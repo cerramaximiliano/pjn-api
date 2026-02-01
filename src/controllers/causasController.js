@@ -376,6 +376,12 @@ const causasController = {
         logger.info(`Filtro por isPrivate: ${searchFilters.isPrivate}`);
       }
 
+      // Filtro por source (origen del documento)
+      if (req.query.source) {
+        searchFilters.source = req.query.source;
+        logger.info(`Filtro por source: ${searchFilters.source}`);
+      }
+
       // Filtro soloElegibles: aplica los criterios completos del worker
       if (req.query.soloElegibles === 'true') {
         // Criterios que coinciden EXACTAMENTE con el worker de actualización
