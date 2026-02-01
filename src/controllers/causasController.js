@@ -1708,10 +1708,14 @@ const causasController = {
         eligibleWithErrors: 0, notEligible: 0, updatedToday: 0
       });
 
-      // Calcular porcentaje de cobertura
+      // Calcular porcentaje de cobertura basado en "actualizados hoy"
+      // Esto evita falsos positivos cuando el threshold es bajo (ej: 2h)
       const coveragePercent = totals.eligible > 0
-        ? ((totals.eligibleUpdated / totals.eligible) * 100).toFixed(1)
+        ? ((totals.updatedToday / totals.eligible) * 100).toFixed(1)
         : 0;
+
+      // Pendientes hoy = elegibles que NO fueron actualizados hoy y NO están en cooldown
+      const pendingToday = totals.eligible - totals.updatedToday - totals.eligibleWithErrors;
 
       res.json({
         success: true,
@@ -1719,8 +1723,10 @@ const causasController = {
         data: {
           thresholdHours: threshold,
           timestamp: now.toISOString(),
+          todayDate: todayStr,
           totals: {
             ...totals,
+            pendingToday: Math.max(0, pendingToday),
             coveragePercent: parseFloat(coveragePercent)
           },
           byFuero: statsByFuero.reduce((acc, curr) => {
