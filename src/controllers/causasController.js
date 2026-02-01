@@ -1580,6 +1580,181 @@ const causasController = {
     }
   },
 
+  // Obtener estadísticas de elegibilidad para actualización
+  async getEligibilityStats(req, res) {
+    try {
+      const { fuero, thresholdHours = 12 } = req.query;
+      const threshold = parseInt(thresholdHours);
+      const now = new Date();
+      const updateThreshold = new Date(now - threshold * 60 * 60 * 1000);
+
+      // Modelos a consultar
+      const models = fuero && fuero !== 'todos'
+        ? [{ model: getModel(fuero), name: fuero }]
+        : [
+            { model: CausasCivil, name: 'CIV' },
+            { model: CausasComercial, name: 'COM' },
+            { model: CausasSegSoc, name: 'CSS' },
+            { model: CausasTrabajo, name: 'CNT' }
+          ];
+
+      // Base filter for verified causas
+      const baseFilter = { verified: true, isValid: true };
+
+      // Ejecutar agregaciones en paralelo
+      const statsPromises = models.map(async ({ model, name }) => {
+        const [result] = await model.aggregate([
+          { $match: baseFilter },
+          {
+            $facet: {
+              // Total verificados
+              total: [{ $count: 'count' }],
+
+              // Elegibles: update=true, isPrivate!=true, isArchived!=true
+              eligible: [
+                {
+                  $match: {
+                    update: true,
+                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
+                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }]
+                  }
+                },
+                { $count: 'count' }
+              ],
+
+              // Elegibles actualizados (lastUpdate dentro del threshold)
+              eligibleUpdated: [
+                {
+                  $match: {
+                    update: true,
+                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
+                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }],
+                    lastUpdate: { $gte: updateThreshold }
+                  }
+                },
+                { $count: 'count' }
+              ],
+
+              // Elegibles pendientes (lastUpdate fuera del threshold, sin cooldown)
+              eligiblePending: [
+                {
+                  $match: {
+                    update: true,
+                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
+                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }],
+                    lastUpdate: { $lt: updateThreshold },
+                    $or: [
+                      { 'scrapingProgress.skipUntil': { $exists: false } },
+                      { 'scrapingProgress.skipUntil': null },
+                      { 'scrapingProgress.skipUntil': { $lte: now } }
+                    ]
+                  }
+                },
+                { $count: 'count' }
+              ],
+
+              // Con errores (en cooldown activo)
+              eligibleWithErrors: [
+                {
+                  $match: {
+                    update: true,
+                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
+                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }],
+                    'scrapingProgress.skipUntil': { $gt: now }
+                  }
+                },
+                { $count: 'count' }
+              ],
+
+              // No elegibles
+              notEligible: [
+                {
+                  $match: {
+                    $or: [
+                      { update: false },
+                      { update: { $exists: false } },
+                      { isPrivate: true },
+                      { isArchived: true }
+                    ]
+                  }
+                },
+                { $count: 'count' }
+              ],
+
+              // Actualizados hoy
+              updatedToday: [
+                {
+                  $match: {
+                    'appUpdateStats.today.date': now.toISOString().split('T')[0],
+                    'appUpdateStats.today.count': { $gt: 0 }
+                  }
+                },
+                { $count: 'count' }
+              ]
+            }
+          }
+        ]);
+
+        return {
+          fuero: name,
+          total: result.total[0]?.count || 0,
+          eligible: result.eligible[0]?.count || 0,
+          eligibleUpdated: result.eligibleUpdated[0]?.count || 0,
+          eligiblePending: result.eligiblePending[0]?.count || 0,
+          eligibleWithErrors: result.eligibleWithErrors[0]?.count || 0,
+          notEligible: result.notEligible[0]?.count || 0,
+          updatedToday: result.updatedToday[0]?.count || 0
+        };
+      });
+
+      const statsByFuero = await Promise.all(statsPromises);
+
+      // Calcular totales
+      const totals = statsByFuero.reduce((acc, curr) => ({
+        total: acc.total + curr.total,
+        eligible: acc.eligible + curr.eligible,
+        eligibleUpdated: acc.eligibleUpdated + curr.eligibleUpdated,
+        eligiblePending: acc.eligiblePending + curr.eligiblePending,
+        eligibleWithErrors: acc.eligibleWithErrors + curr.eligibleWithErrors,
+        notEligible: acc.notEligible + curr.notEligible,
+        updatedToday: acc.updatedToday + curr.updatedToday
+      }), {
+        total: 0, eligible: 0, eligibleUpdated: 0, eligiblePending: 0,
+        eligibleWithErrors: 0, notEligible: 0, updatedToday: 0
+      });
+
+      // Calcular porcentaje de cobertura
+      const coveragePercent = totals.eligible > 0
+        ? ((totals.eligibleUpdated / totals.eligible) * 100).toFixed(1)
+        : 0;
+
+      res.json({
+        success: true,
+        message: 'Estadísticas de elegibilidad',
+        data: {
+          thresholdHours: threshold,
+          timestamp: now.toISOString(),
+          totals: {
+            ...totals,
+            coveragePercent: parseFloat(coveragePercent)
+          },
+          byFuero: statsByFuero.reduce((acc, curr) => {
+            acc[curr.fuero] = curr;
+            return acc;
+          }, {})
+        }
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo estadísticas de elegibilidad: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
   // Obtener estadísticas de causas para el dashboard
   async getStats(req, res) {
     try {

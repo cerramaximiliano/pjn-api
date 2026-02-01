@@ -11,6 +11,10 @@ router.get('/test', (req, res) => {
 // Ruta para obtener estadísticas de causas (para dashboard)
 router.get('/stats', verifyToken, causasController.getStats);
 
+// Ruta para obtener estadísticas de elegibilidad para actualización
+// GET /api/causas/stats/eligibility?fuero=CIV&thresholdHours=12
+router.get('/stats/eligibility', verifyToken, causasController.getEligibilityStats);
+
 // Ruta para obtener todas las causas verificadas
 router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
 
