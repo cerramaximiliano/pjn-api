@@ -1860,6 +1860,187 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  /**
+   * Obtiene estadísticas de capacidad de procesamiento para el dashboard
+   * Incluye: tiempo promedio, capacidad por worker, proyecciones y simulador
+   */
+  async getCapacityStats(req, res) {
+    try {
+      const {
+        thresholdHours = 2,
+        workersPerFuero = 3,
+        workHoursPerDay = 14
+      } = req.query;
+
+      const threshold = parseInt(thresholdHours);
+      const workers = parseInt(workersPerFuero);
+      const workHours = parseInt(workHoursPerDay);
+
+      const models = [
+        { model: CausasCivil, name: 'CIV', fuero: 'civil' },
+        { model: CausasComercial, name: 'COM', fuero: 'comercial' },
+        { model: CausasSegSoc, name: 'CSS', fuero: 'ss' },
+        { model: CausasTrabajo, name: 'CNT', fuero: 'trabajo' }
+      ];
+
+      // Filtro base para documentos elegibles
+      const workerBaseFilter = {
+        source: { $in: ["app", "cache", "pjn-login"] },
+        verified: true,
+        isValid: true,
+        update: true,
+        isPrivate: { $ne: true },
+        movimientosCount: { $gt: 0 },
+        'movimiento.0': { $exists: true }
+      };
+
+      // Obtener estadísticas por fuero
+      const statsPromises = models.map(async ({ model, name, fuero }) => {
+        // Agregación para obtener promedios de updateStats
+        const statsAgg = await model.aggregate([
+          { $match: { 'updateStats.count': { $gt: 0 } } },
+          { $group: {
+            _id: null,
+            avgMs: { $avg: '$updateStats.avgMs' },
+            totalUpdates: { $sum: '$updateStats.count' },
+            totalErrors: { $sum: '$updateStats.errors' },
+            docsWithStats: { $sum: 1 }
+          }}
+        ]);
+
+        // Contar documentos elegibles
+        const eligibleCount = await model.countDocuments(workerBaseFilter);
+
+        // Obtener updateStats.today para calcular procesados hoy
+        const todayStr = new Date().toISOString().split('T')[0];
+        const updatedTodayCount = await model.countDocuments({
+          ...workerBaseFilter,
+          'updateStats.today.date': todayStr
+        });
+
+        const stats = statsAgg[0] || { avgMs: 25000, totalUpdates: 0, totalErrors: 0, docsWithStats: 0 };
+        const avgSeconds = (stats.avgMs || 25000) / 1000;
+
+        // Calcular capacidad
+        const docsPerHourPerWorker = Math.floor(3600 / avgSeconds);
+        const docsPerHourTotal = docsPerHourPerWorker * workers;
+        const docsPerDayTotal = docsPerHourTotal * workHours;
+
+        // Calcular actualizaciones posibles por documento
+        const maxUpdatesPerDocPerDay = Math.floor(workHours / threshold);
+        const theoreticalDailyCapacity = docsPerDayTotal;
+        const actualMaxUpdates = eligibleCount > 0
+          ? Math.min(maxUpdatesPerDocPerDay, Math.floor(theoreticalDailyCapacity / eligibleCount))
+          : 0;
+
+        // Tasa de éxito (exitosos / total)
+        const successRate = stats.totalUpdates > 0
+          ? ((stats.totalUpdates - stats.totalErrors) / stats.totalUpdates) * 100
+          : 100;
+
+        return {
+          fuero: name,
+          fueroKey: fuero,
+          eligible: eligibleCount,
+          updatedToday: updatedTodayCount,
+          processing: {
+            avgSeconds: Math.round(avgSeconds * 10) / 10,
+            avgMs: Math.round(stats.avgMs || 25000),
+            totalUpdates: stats.totalUpdates,
+            totalErrors: stats.totalErrors,
+            successRate: Math.round(successRate * 10) / 10
+          },
+          capacity: {
+            docsPerHourPerWorker,
+            docsPerHourTotal,
+            docsPerDayTotal,
+            workers
+          },
+          projections: {
+            maxUpdatesPerDocPerDay,
+            actualUpdatesPerDocPerDay: actualMaxUpdates,
+            timeToProcessAllOnce: eligibleCount > 0
+              ? Math.round((eligibleCount / docsPerHourTotal) * 60) // minutos
+              : 0,
+            dailyCoveragePercent: eligibleCount > 0
+              ? Math.min(100, Math.round((docsPerDayTotal / eligibleCount) * 100))
+              : 100
+          }
+        };
+      });
+
+      const statsByFuero = await Promise.all(statsPromises);
+
+      // Calcular totales
+      const totals = statsByFuero.reduce((acc, curr) => ({
+        eligible: acc.eligible + curr.eligible,
+        updatedToday: acc.updatedToday + curr.updatedToday,
+        totalUpdates: acc.totalUpdates + curr.processing.totalUpdates,
+        totalErrors: acc.totalErrors + curr.processing.totalErrors,
+        docsPerDayTotal: acc.docsPerDayTotal + curr.capacity.docsPerDayTotal
+      }), { eligible: 0, updatedToday: 0, totalUpdates: 0, totalErrors: 0, docsPerDayTotal: 0 });
+
+      // Promedio ponderado del tiempo de procesamiento
+      const weightedAvgMs = statsByFuero.reduce((acc, curr) => {
+        return acc + (curr.processing.avgMs * curr.processing.totalUpdates);
+      }, 0) / (totals.totalUpdates || 1);
+
+      const avgSeconds = weightedAvgMs / 1000;
+      const globalSuccessRate = totals.totalUpdates > 0
+        ? ((totals.totalUpdates - totals.totalErrors) / totals.totalUpdates) * 100
+        : 100;
+
+      res.json({
+        success: true,
+        message: 'Estadísticas de capacidad de procesamiento',
+        data: {
+          config: {
+            thresholdHours: threshold,
+            workersPerFuero: workers,
+            workHoursPerDay: workHours
+          },
+          totals: {
+            eligible: totals.eligible,
+            updatedToday: totals.updatedToday,
+            avgSeconds: Math.round(avgSeconds * 10) / 10,
+            avgMs: Math.round(weightedAvgMs),
+            successRate: Math.round(globalSuccessRate * 10) / 10,
+            docsPerHourPerWorker: Math.floor(3600 / avgSeconds),
+            docsPerDayAllFueros: totals.docsPerDayTotal,
+            maxUpdatesPerDocPerDay: Math.floor(workHours / threshold),
+            timeToProcessAllOnce: totals.eligible > 0
+              ? Math.round((totals.eligible / (totals.docsPerDayTotal / workHours)) * 60)
+              : 0,
+            dailyCoveragePercent: totals.eligible > 0
+              ? Math.min(100, Math.round((totals.docsPerDayTotal / totals.eligible) * 100))
+              : 100
+          },
+          byFuero: statsByFuero.reduce((acc, curr) => {
+            acc[curr.fuero] = curr;
+            return acc;
+          }, {}),
+          simulation: {
+            description: 'Ajusta los parámetros para simular diferentes escenarios',
+            parameters: {
+              thresholdHours: 'Tiempo mínimo entre actualizaciones de un mismo documento',
+              workersPerFuero: 'Cantidad de workers por fuero',
+              workHoursPerDay: 'Horas de trabajo por día'
+            },
+            example: '?thresholdHours=2&workersPerFuero=3&workHoursPerDay=14'
+          }
+        }
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo estadísticas de capacidad: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
   }
 
 };

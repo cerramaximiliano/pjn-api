@@ -12,8 +12,12 @@ router.get('/test', (req, res) => {
 router.get('/stats', verifyToken, causasController.getStats);
 
 // Ruta para obtener estadísticas de elegibilidad para actualización
-// GET /api/causas/stats/eligibility?fuero=CIV&thresholdHours=12
+// GET /api/causas/stats/eligibility?fuero=CIV&thresholdHours=2
 router.get('/stats/eligibility', verifyToken, causasController.getEligibilityStats);
+
+// Ruta para obtener estadísticas de capacidad de procesamiento
+// GET /api/causas/stats/capacity?thresholdHours=2&workersPerFuero=3&workHoursPerDay=14
+router.get('/stats/capacity', verifyToken, causasController.getCapacityStats);
 
 // Ruta para obtener todas las causas verificadas
 router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
