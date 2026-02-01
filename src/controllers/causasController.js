@@ -1676,8 +1676,8 @@ const causasController = {
         // Actualizados hoy (basado en appUpdateStats.today)
         const updatedToday = await model.countDocuments({
           ...workerBaseFilter,
-          'appUpdateStats.today.date': todayStr,
-          'appUpdateStats.today.count': { $gt: 0 }
+          'updateStats.today.date': todayStr,
+          'updateStats.today.count': { $gt: 0 }
         });
 
         return {
