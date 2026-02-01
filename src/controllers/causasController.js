@@ -385,7 +385,8 @@ const causasController = {
       // Filtro soloElegibles: aplica los criterios completos del worker
       if (req.query.soloElegibles === 'true') {
         // Criterios que coinciden EXACTAMENTE con el worker de actualización
-        searchFilters.source = { $in: ["app", "cache", "pjn-login"] };
+        // NOTA: pjn-login NO es elegible para app-update-worker
+        searchFilters.source = { $in: ["app", "cache"] };
         searchFilters.update = true;
         searchFilters.isPrivate = { $ne: true };
         searchFilters.movimientosCount = { $gt: 0 };
@@ -1661,8 +1662,9 @@ const causasController = {
       const statsPromises = models.map(async ({ model, name }) => {
         // Criterios base que coinciden EXACTAMENTE con el worker
         // Ver: app-update-manager.js -> countPendingDocumentsByFuero()
+        // NOTA: pjn-login NO es elegible para app-update-worker
         const workerBaseFilter = {
-          source: { $in: ["app", "cache", "pjn-login"] },
+          source: { $in: ["app", "cache"] },
           verified: true,
           isValid: true,
           update: true,
@@ -1723,7 +1725,7 @@ const causasController = {
           $or: [
             { update: { $ne: true } },
             { isPrivate: true },
-            { source: { $nin: ["app", "cache", "pjn-login"] } },
+            { source: { $nin: ["app", "cache"] } },
             { movimientosCount: { $lte: 0 } },
             { movimientosCount: { $exists: false } },
             { 'movimiento.0': { $exists: false } }
@@ -1892,8 +1894,9 @@ const causasController = {
       ];
 
       // Filtro base para documentos elegibles
+      // NOTA: pjn-login NO es elegible para app-update-worker
       const workerBaseFilter = {
-        source: { $in: ["app", "cache", "pjn-login"] },
+        source: { $in: ["app", "cache"] },
         verified: true,
         isValid: true,
         update: true,
