@@ -1635,7 +1635,7 @@ const causasController = {
   // IMPORTANTE: Los criterios deben coincidir EXACTAMENTE con los del worker (app-update-manager.js)
   async getEligibilityStats(req, res) {
     try {
-      const { fuero, thresholdHours = 12 } = req.query;
+      const { fuero, thresholdHours = 2 } = req.query;
       const threshold = parseInt(thresholdHours);
       const now = new Date();
       const updateThreshold = new Date(now - threshold * 60 * 60 * 1000);
