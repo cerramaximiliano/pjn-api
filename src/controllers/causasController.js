@@ -1581,12 +1581,14 @@ const causasController = {
   },
 
   // Obtener estadísticas de elegibilidad para actualización
+  // IMPORTANTE: Los criterios deben coincidir EXACTAMENTE con los del worker (app-update-manager.js)
   async getEligibilityStats(req, res) {
     try {
       const { fuero, thresholdHours = 12 } = req.query;
       const threshold = parseInt(thresholdHours);
       const now = new Date();
       const updateThreshold = new Date(now - threshold * 60 * 60 * 1000);
+      const todayStr = now.toISOString().split('T')[0];
 
       // Modelos a consultar
       const models = fuero && fuero !== 'todos'
@@ -1598,112 +1600,95 @@ const causasController = {
             { model: CausasTrabajo, name: 'CNT' }
           ];
 
-      // Base filter for verified causas
-      const baseFilter = { verified: true, isValid: true };
-
-      // Ejecutar agregaciones en paralelo
+      // Ejecutar consultas en paralelo por cada modelo
       const statsPromises = models.map(async ({ model, name }) => {
-        const [result] = await model.aggregate([
-          { $match: baseFilter },
-          {
-            $facet: {
-              // Total verificados
-              total: [{ $count: 'count' }],
+        // Criterios base que coinciden EXACTAMENTE con el worker
+        // Ver: app-update-manager.js -> countPendingDocumentsByFuero()
+        const workerBaseFilter = {
+          source: { $in: ["app", "cache", "pjn-login"] },
+          verified: true,
+          isValid: true,
+          update: true,
+          isPrivate: { $ne: true },
+          movimientosCount: { $gt: 0 },
+          'movimiento.0': { $exists: true }
+        };
 
-              // Elegibles: update=true, isPrivate!=true, isArchived!=true
-              eligible: [
-                {
-                  $match: {
-                    update: true,
-                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
-                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }]
-                  }
-                },
-                { $count: 'count' }
-              ],
+        // Total verificados (para contexto)
+        const total = await model.countDocuments({ verified: true, isValid: true });
 
-              // Elegibles actualizados (lastUpdate dentro del threshold)
-              eligibleUpdated: [
-                {
-                  $match: {
-                    update: true,
-                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
-                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }],
-                    lastUpdate: { $gte: updateThreshold }
-                  }
-                },
-                { $count: 'count' }
-              ],
+        // Elegibles: cumplen criterios base del worker
+        const eligible = await model.countDocuments(workerBaseFilter);
 
-              // Elegibles pendientes (lastUpdate fuera del threshold, sin cooldown)
-              eligiblePending: [
-                {
-                  $match: {
-                    update: true,
-                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
-                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }],
-                    lastUpdate: { $lt: updateThreshold },
-                    $or: [
-                      { 'scrapingProgress.skipUntil': { $exists: false } },
-                      { 'scrapingProgress.skipUntil': null },
-                      { 'scrapingProgress.skipUntil': { $lte: now } }
-                    ]
-                  }
-                },
-                { $count: 'count' }
-              ],
+        // Actualizados: elegibles con lastUpdate dentro del threshold
+        const eligibleUpdated = await model.countDocuments({
+          ...workerBaseFilter,
+          lastUpdate: { $gte: updateThreshold }
+        });
 
-              // Con errores (en cooldown activo)
-              eligibleWithErrors: [
-                {
-                  $match: {
-                    update: true,
-                    $or: [{ isPrivate: false }, { isPrivate: null }, { isPrivate: { $exists: false } }],
-                    $or: [{ isArchived: false }, { isArchived: null }, { isArchived: { $exists: false } }],
-                    'scrapingProgress.skipUntil': { $gt: now }
-                  }
-                },
-                { $count: 'count' }
-              ],
-
-              // No elegibles
-              notEligible: [
-                {
-                  $match: {
-                    $or: [
-                      { update: false },
-                      { update: { $exists: false } },
-                      { isPrivate: true },
-                      { isArchived: true }
-                    ]
-                  }
-                },
-                { $count: 'count' }
-              ],
-
-              // Actualizados hoy
-              updatedToday: [
-                {
-                  $match: {
-                    'appUpdateStats.today.date': now.toISOString().split('T')[0],
-                    'appUpdateStats.today.count': { $gt: 0 }
-                  }
-                },
-                { $count: 'count' }
+        // Pendientes: elegibles que necesitan actualización Y no están en cooldown
+        const eligiblePending = await model.countDocuments({
+          ...workerBaseFilter,
+          $and: [
+            {
+              $or: [
+                { lastUpdate: { $exists: false } },
+                { lastUpdate: { $lt: updateThreshold } }
+              ]
+            },
+            {
+              $or: [
+                { 'scrapingProgress.skipUntil': { $exists: false } },
+                { 'scrapingProgress.skipUntil': null },
+                { 'scrapingProgress.skipUntil': { $lte: now } }
+              ]
+            },
+            {
+              $or: [
+                { processingLock: { $exists: false } },
+                { processingLock: null },
+                { 'processingLock.expiresAt': { $lt: now } }
               ]
             }
-          }
-        ]);
+          ]
+        });
+
+        // Con errores: elegibles en cooldown activo
+        const eligibleWithErrors = await model.countDocuments({
+          ...workerBaseFilter,
+          'scrapingProgress.skipUntil': { $gt: now }
+        });
+
+        // No elegibles para el worker (no cumplen criterios base)
+        const notEligible = await model.countDocuments({
+          verified: true,
+          isValid: true,
+          $or: [
+            { update: { $ne: true } },
+            { isPrivate: true },
+            { source: { $nin: ["app", "cache", "pjn-login"] } },
+            { movimientosCount: { $lte: 0 } },
+            { movimientosCount: { $exists: false } },
+            { 'movimiento.0': { $exists: false } }
+          ]
+        });
+
+        // Actualizados hoy (basado en appUpdateStats.today)
+        const updatedToday = await model.countDocuments({
+          ...workerBaseFilter,
+          'appUpdateStats.today.date': todayStr,
+          'appUpdateStats.today.count': { $gt: 0 }
+        });
 
         return {
           fuero: name,
-          total: result.total[0]?.count || 0,
-          eligible: result.eligible[0]?.count || 0,
-          eligibleUpdated: result.eligibleUpdated[0]?.count || 0,
-          eligiblePending: result.eligiblePending[0]?.count || 0,
-          eligibleWithErrors: result.eligibleWithErrors[0]?.count || 0,
-          notEligible: result.notEligible[0]?.count || 0,
-          updatedToday: result.updatedToday[0]?.count || 0
+          total,
+          eligible,
+          eligibleUpdated,
+          eligiblePending,
+          eligibleWithErrors,
+          notEligible,
+          updatedToday
         };
       });
 
