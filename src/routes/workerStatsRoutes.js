@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const workerStatsController = require('../controllers/workerStatsController');
 const workerStatsExtendedController = require('../controllers/workerStatsExtendedController');
+const stuckDocumentsController = require('../controllers/stuckDocumentsController');
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 
 // Todas las rutas requieren autenticación y rol admin
@@ -87,5 +88,31 @@ router.get('/summary/compare', workerStatsExtendedController.compareDays);
 // Regenerar resumen de un día (útil para correcciones)
 // POST /api/workers/summary/regenerate/:date?workerType=app-update
 router.post('/summary/regenerate/:date', workerStatsExtendedController.regenerateSummary);
+
+// ==================== STUCK DOCUMENTS WORKER ====================
+
+// Estadísticas completas del stuck documents worker
+// GET /api/workers/stuck-documents/stats?hours=24
+router.get('/stuck-documents/stats', stuckDocumentsController.getStats);
+
+// Lista de documentos stuck pendientes
+// GET /api/workers/stuck-documents/pending?fuero=CIV&source=app&page=1&limit=20
+router.get('/stuck-documents/pending', stuckDocumentsController.getPendingDocuments);
+
+// Logs recientes del worker
+// GET /api/workers/stuck-documents/logs?hours=24&status=failed&limit=50
+router.get('/stuck-documents/logs', stuckDocumentsController.getRecentLogs);
+
+// Marcar documento como archivado (excluir del procesamiento)
+// POST /api/workers/stuck-documents/archive/:fuero/:id
+router.post('/stuck-documents/archive/:fuero/:id', stuckDocumentsController.archiveDocument);
+
+// Desarchivar documento (volver a incluir en procesamiento)
+// POST /api/workers/stuck-documents/unarchive/:fuero/:id
+router.post('/stuck-documents/unarchive/:fuero/:id', stuckDocumentsController.unarchiveDocument);
+
+// Habilitar/deshabilitar worker
+// POST /api/workers/stuck-documents/toggle
+router.post('/stuck-documents/toggle', stuckDocumentsController.toggleWorker);
 
 module.exports = router;
