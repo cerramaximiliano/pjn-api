@@ -42,4 +42,18 @@ router.get('/eligible-count', extraInfoConfigController.getEligibleCount);
 // GET /api/extra-info-config/intervinientes-stats - Estadísticas de intervinientes
 router.get('/intervinientes-stats', extraInfoConfigController.getIntervinientesStats);
 
+// ===== ESTADÍSTICAS DIARIAS (HISTORIAL) =====
+
+// GET /api/extra-info-config/daily-stats - Historial de estadísticas diarias
+router.get('/daily-stats', extraInfoConfigController.getDailyStats);
+
+// GET /api/extra-info-config/daily-stats/summary - Resumen por período
+router.get('/daily-stats/summary', extraInfoConfigController.getDailyStatsSummary);
+
+// GET /api/extra-info-config/daily-stats/today - Estadísticas del día actual
+router.get('/daily-stats/today', extraInfoConfigController.getTodayStats);
+
+// POST /api/extra-info-config/daily-stats/cleanup - Limpiar estadísticas antiguas
+router.post('/daily-stats/cleanup', extraInfoConfigController.cleanupDailyStats);
+
 module.exports = router;

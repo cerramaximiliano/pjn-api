@@ -726,6 +726,130 @@ const extraInfoConfigController = {
                 error: error.message
             });
         }
+    },
+
+    /**
+     * Obtener estadísticas diarias (historial)
+     * GET /api/extra-info-config/daily-stats
+     * Query params: startDate, endDate, limit, sort
+     */
+    async getDailyStats(req, res) {
+        try {
+            const { startDate, endDate, limit = 30, sort = 'desc' } = req.query;
+
+            const stats = await ConfiguracionExtraInfo.getDailyStats({
+                startDate: startDate ? new Date(startDate) : undefined,
+                endDate: endDate ? new Date(endDate) : undefined,
+                limit: parseInt(limit),
+                sort
+            });
+
+            res.json({
+                success: true,
+                message: `${stats.length} registros de estadísticas diarias`,
+                data: {
+                    stats,
+                    count: stats.length,
+                    filters: {
+                        startDate: startDate || null,
+                        endDate: endDate || null,
+                        limit: parseInt(limit),
+                        sort
+                    }
+                }
+            });
+        } catch (error) {
+            logger.error(`Error obteniendo estadísticas diarias: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Obtener resumen de estadísticas diarias por período
+     * GET /api/extra-info-config/daily-stats/summary
+     * Query params: days (default: 30)
+     */
+    async getDailyStatsSummary(req, res) {
+        try {
+            const days = parseInt(req.query.days) || 30;
+
+            const summary = await ConfiguracionExtraInfo.getDailyStatsSummary(days);
+
+            res.json({
+                success: true,
+                message: `Resumen de estadísticas de los últimos ${days} días`,
+                data: summary
+            });
+        } catch (error) {
+            logger.error(`Error obteniendo resumen de estadísticas: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Obtener estadísticas del día actual
+     * GET /api/extra-info-config/daily-stats/today
+     */
+    async getTodayStats(req, res) {
+        try {
+            const todayStat = await ConfiguracionExtraInfo.getOrCreateDailyStat();
+
+            if (!todayStat) {
+                return res.json({
+                    success: true,
+                    message: 'No hay estadísticas para hoy',
+                    data: null
+                });
+            }
+
+            res.json({
+                success: true,
+                message: 'Estadísticas del día actual',
+                data: todayStat
+            });
+        } catch (error) {
+            logger.error(`Error obteniendo estadísticas de hoy: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Limpiar estadísticas antiguas
+     * POST /api/extra-info-config/daily-stats/cleanup
+     * Body: { keepDays: number } (default: 90)
+     */
+    async cleanupDailyStats(req, res) {
+        try {
+            const keepDays = parseInt(req.body.keepDays) || 90;
+
+            await ConfiguracionExtraInfo.cleanupOldDailyStats(keepDays);
+
+            logger.info(`Limpieza de estadísticas diarias: manteniendo últimos ${keepDays} días`);
+
+            res.json({
+                success: true,
+                message: `Estadísticas antiguas eliminadas (manteniendo últimos ${keepDays} días)`
+            });
+        } catch (error) {
+            logger.error(`Error limpiando estadísticas: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
     }
 };
 
