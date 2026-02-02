@@ -362,6 +362,232 @@ const extraInfoConfigController = {
     },
 
     /**
+     * Obtener todos los usuarios con su estado de sincronización
+     * GET /api/extra-info-config/users
+     * Query params: page, limit, search, filterSync (all|enabled|disabled)
+     */
+    async getAllUsers(req, res) {
+        try {
+            const db = mongoose.connection.db;
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 20;
+            const skip = (page - 1) * limit;
+            const search = req.query.search || '';
+            const filterSync = req.query.filterSync || 'all';
+
+            // Construir query de búsqueda
+            const query = {};
+
+            if (search) {
+                query.$or = [
+                    { email: { $regex: search, $options: 'i' } },
+                    { name: { $regex: search, $options: 'i' } }
+                ];
+            }
+
+            if (filterSync === 'enabled') {
+                query['preferences.pjn.syncContactsFromIntervinientes'] = true;
+            } else if (filterSync === 'disabled') {
+                query.$or = query.$or || [];
+                query['preferences.pjn.syncContactsFromIntervinientes'] = { $ne: true };
+            }
+
+            // Contar total
+            const totalUsers = await db.collection('usuarios').countDocuments(query);
+            const totalPages = Math.ceil(totalUsers / limit);
+
+            // Obtener usuarios paginados
+            const users = await db.collection('usuarios').find(
+                query,
+                {
+                    projection: {
+                        email: 1,
+                        name: 1,
+                        'preferences.pjn': 1,
+                        createdAt: 1
+                    }
+                }
+            )
+            .sort({ email: 1 })
+            .skip(skip)
+            .limit(limit)
+            .toArray();
+
+            // Contar usuarios con sync habilitado (del total sin paginación)
+            const usersWithSyncEnabled = await db.collection('usuarios').countDocuments({
+                'preferences.pjn.syncContactsFromIntervinientes': true
+            });
+
+            res.json({
+                success: true,
+                message: `${users.length} usuarios obtenidos`,
+                data: {
+                    users: users.map(u => ({
+                        _id: u._id,
+                        email: u.email,
+                        name: u.name,
+                        syncEnabled: u.preferences?.pjn?.syncContactsFromIntervinientes === true,
+                        createdAt: u.createdAt
+                    })),
+                    pagination: {
+                        page,
+                        limit,
+                        totalUsers,
+                        totalPages,
+                        hasMore: page < totalPages
+                    },
+                    summary: {
+                        totalUsersInSystem: await db.collection('usuarios').countDocuments({}),
+                        usersWithSyncEnabled,
+                        usersWithSyncDisabled: await db.collection('usuarios').countDocuments({}) - usersWithSyncEnabled
+                    }
+                }
+            });
+        } catch (error) {
+            logger.error(`Error obteniendo usuarios: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Actualizar preferencia de sincronización de un usuario
+     * PATCH /api/extra-info-config/users/:userId/sync
+     */
+    async updateUserSyncPreference(req, res) {
+        try {
+            const { userId } = req.params;
+            const { syncEnabled } = req.body;
+
+            if (typeof syncEnabled !== 'boolean') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'syncEnabled debe ser un booleano'
+                });
+            }
+
+            // Validar ObjectId
+            if (!mongoose.Types.ObjectId.isValid(userId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'userId inválido'
+                });
+            }
+
+            const db = mongoose.connection.db;
+
+            const result = await db.collection('usuarios').updateOne(
+                { _id: new mongoose.Types.ObjectId(userId) },
+                {
+                    $set: {
+                        'preferences.pjn.syncContactsFromIntervinientes': syncEnabled,
+                        updatedAt: new Date()
+                    }
+                }
+            );
+
+            if (result.matchedCount === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Usuario no encontrado'
+                });
+            }
+
+            // Obtener datos actualizados del usuario
+            const user = await db.collection('usuarios').findOne(
+                { _id: new mongoose.Types.ObjectId(userId) },
+                { projection: { email: 1, name: 1, 'preferences.pjn': 1 } }
+            );
+
+            logger.info(`Preferencia de sincronización actualizada para usuario ${userId}: ${syncEnabled}`);
+
+            res.json({
+                success: true,
+                message: `Sincronización ${syncEnabled ? 'habilitada' : 'deshabilitada'} para el usuario`,
+                data: {
+                    _id: user._id,
+                    email: user.email,
+                    name: user.name,
+                    syncEnabled: user.preferences?.pjn?.syncContactsFromIntervinientes === true
+                }
+            });
+        } catch (error) {
+            logger.error(`Error actualizando preferencia de usuario: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Actualizar preferencia de sincronización para múltiples usuarios
+     * PATCH /api/extra-info-config/users/bulk-sync
+     */
+    async bulkUpdateUserSyncPreference(req, res) {
+        try {
+            const { userIds, syncEnabled } = req.body;
+
+            if (!Array.isArray(userIds) || userIds.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'userIds debe ser un array no vacío'
+                });
+            }
+
+            if (typeof syncEnabled !== 'boolean') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'syncEnabled debe ser un booleano'
+                });
+            }
+
+            // Validar ObjectIds
+            const validIds = userIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+            if (validIds.length !== userIds.length) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Algunos userIds son inválidos'
+                });
+            }
+
+            const db = mongoose.connection.db;
+
+            const result = await db.collection('usuarios').updateMany(
+                { _id: { $in: validIds.map(id => new mongoose.Types.ObjectId(id)) } },
+                {
+                    $set: {
+                        'preferences.pjn.syncContactsFromIntervinientes': syncEnabled,
+                        updatedAt: new Date()
+                    }
+                }
+            );
+
+            logger.info(`Preferencia de sincronización actualizada en lote: ${result.modifiedCount} usuarios -> ${syncEnabled}`);
+
+            res.json({
+                success: true,
+                message: `Sincronización ${syncEnabled ? 'habilitada' : 'deshabilitada'} para ${result.modifiedCount} usuarios`,
+                data: {
+                    matched: result.matchedCount,
+                    modified: result.modifiedCount
+                }
+            });
+        } catch (error) {
+            logger.error(`Error en actualización masiva: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
      * Obtener documentos elegibles para procesamiento
      * GET /api/extra-info-config/eligible-count
      */
