@@ -14,6 +14,7 @@ const cleanupConfigRoutes = require('./cleanupConfigRoutes');
 const intervinientesRoutes = require('./intervinientesRoutes');
 const workerStatsRoutes = require('./workerStatsRoutes');
 const managerConfigRoutes = require('./managerConfigRoutes');
+const extraInfoConfigRoutes = require('./extraInfoConfigRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -62,5 +63,8 @@ router.use('/workers', workerStatsRoutes);
 
 // Montar las rutas de configuración del manager
 router.use('/manager-config', managerConfigRoutes);
+
+// Montar las rutas de configuración del extra-info worker
+router.use('/extra-info-config', extraInfoConfigRoutes);
 
 module.exports = router;
