@@ -5,6 +5,42 @@
 const { WorkerHourlyStats, WorkerDailySummary } = require('pjn-models');
 const { logger } = require('../config/pino');
 
+/**
+ * Helper para obtener fecha y hora en zona horaria de Argentina (UTC-3)
+ * Esto es importante porque las estadísticas se agrupan por día/hora local
+ */
+function getArgentinaDateTime() {
+    const now = new Date();
+    // Argentina es UTC-3 (no tiene horario de verano actualmente)
+    const argentinaOffset = -3 * 60; // -180 minutos
+    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const argentinaMinutes = utcMinutes + argentinaOffset;
+
+    // Calcular la hora en Argentina
+    let argentinaHour = Math.floor(argentinaMinutes / 60);
+    let dayOffset = 0;
+
+    if (argentinaHour < 0) {
+        argentinaHour += 24;
+        dayOffset = -1; // Día anterior en Argentina
+    } else if (argentinaHour >= 24) {
+        argentinaHour -= 24;
+        dayOffset = 1; // Día siguiente en Argentina
+    }
+
+    // Crear fecha ajustada
+    const argentinaDate = new Date(now);
+    argentinaDate.setUTCDate(argentinaDate.getUTCDate() + dayOffset);
+
+    // Formatear fecha como YYYY-MM-DD
+    const year = argentinaDate.getUTCFullYear();
+    const month = String(argentinaDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(argentinaDate.getUTCDate()).padStart(2, '0');
+    const date = `${year}-${month}-${day}`;
+
+    return { date, hour: argentinaHour };
+}
+
 const workerStatsExtendedController = {
     // ==================== HOURLY STATS ====================
 
@@ -98,9 +134,8 @@ const workerStatsExtendedController = {
     async getCurrentHourStats(req, res) {
         try {
             const { workerType } = req.query;
-            const now = new Date();
-            const date = now.toISOString().split('T')[0];
-            const hour = now.getHours();
+            // Usar zona horaria de Argentina
+            const { date, hour } = getArgentinaDateTime();
 
             const query = { date, hour };
             if (workerType) query.workerType = workerType;
@@ -165,13 +200,35 @@ const workerStatsExtendedController = {
             const { hours = 24, fuero, workerType } = req.query;
             const maxHours = Math.min(parseInt(hours), 168);
 
-            const now = new Date();
+            // Usar zona horaria de Argentina como punto de partida
+            const { date: currentDate, hour: currentHour } = getArgentinaDateTime();
             const events = [];
 
+            // Convertir fecha actual a timestamp para iterar hacia atrás
+            const [year, month, day] = currentDate.split('-').map(Number);
+            const baseDate = new Date(Date.UTC(year, month - 1, day, currentHour + 3)); // +3 para compensar UTC-3
+
             for (let i = 0; i < maxHours; i++) {
-                const time = new Date(now.getTime() - (i * 60 * 60 * 1000));
-                const date = time.toISOString().split('T')[0];
-                const hour = time.getHours();
+                const time = new Date(baseDate.getTime() - (i * 60 * 60 * 1000));
+                // Calcular fecha/hora en Argentina para este timestamp
+                const argentinaOffset = -3 * 60; // minutos
+                const utcMinutes = time.getUTCHours() * 60 + time.getUTCMinutes();
+                const argentinaMinutes = utcMinutes + argentinaOffset;
+
+                let argHour = Math.floor(argentinaMinutes / 60);
+                let dayOffset = 0;
+                if (argHour < 0) {
+                    argHour += 24;
+                    dayOffset = -1;
+                } else if (argHour >= 24) {
+                    argHour -= 24;
+                    dayOffset = 1;
+                }
+
+                const adjDate = new Date(time);
+                adjDate.setUTCDate(adjDate.getUTCDate() + dayOffset);
+                const date = `${adjDate.getUTCFullYear()}-${String(adjDate.getUTCMonth() + 1).padStart(2, '0')}-${String(adjDate.getUTCDate()).padStart(2, '0')}`;
+                const hour = argHour;
 
                 const query = { date, hour };
                 if (fuero) query.fuero = fuero;
@@ -221,7 +278,8 @@ const workerStatsExtendedController = {
     async getTodaySummary(req, res) {
         try {
             const { workerType } = req.query;
-            const today = new Date().toISOString().split('T')[0];
+            // Usar zona horaria de Argentina
+            const { date: today } = getArgentinaDateTime();
 
             // Intentar obtener el resumen existente o generarlo
             let summary = await WorkerDailySummary.findOne({
@@ -274,11 +332,12 @@ const workerStatsExtendedController = {
 
             if (!summary) {
                 // Intentar generar si es una fecha pasada
-                const requestedDate = new Date(date);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
+                const requestedDate = new Date(date + 'T00:00:00');
+                // Usar zona horaria de Argentina para "hoy"
+                const { date: todayStr } = getArgentinaDateTime();
+                const todayDate = new Date(todayStr + 'T00:00:00');
 
-                if (requestedDate < today) {
+                if (requestedDate < todayDate) {
                     summary = await WorkerDailySummary.generateSummary(date, workerType || 'app-update');
                     summary = summary.toObject ? summary.toObject() : summary;
                 } else {
