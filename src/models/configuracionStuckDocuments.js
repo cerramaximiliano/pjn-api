@@ -27,6 +27,47 @@ const configuracionStuckDocumentsSchema = new Schema({
         type: Boolean,
         default: true
     },
+    // Configuración de horarios
+    schedule: {
+        cronPattern: {
+            type: String,
+            default: '*/10 * * * *'
+        },
+        workingDays: {
+            type: [Number],
+            default: [1, 2, 3, 4, 5],
+            validate: {
+                validator: function(arr) {
+                    return arr.every(day => day >= 0 && day <= 6);
+                },
+                message: 'Los días deben estar entre 0 (Domingo) y 6 (Sábado)'
+            }
+        },
+        workingHoursStart: {
+            type: Number,
+            default: 8,
+            min: 0,
+            max: 23
+        },
+        workingHoursEnd: {
+            type: Number,
+            default: 22,
+            min: 0,
+            max: 23
+        },
+        timezone: {
+            type: String,
+            default: 'America/Argentina/Buenos_Aires'
+        },
+        pauseOnWeekends: {
+            type: Boolean,
+            default: true
+        },
+        pauseOnHolidays: {
+            type: Boolean,
+            default: false
+        }
+    },
     batch_size: {
         type: Number,
         default: 3,
