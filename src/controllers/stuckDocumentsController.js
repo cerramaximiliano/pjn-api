@@ -531,6 +531,178 @@ const stuckDocumentsController = {
                 error: error.message
             });
         }
+    },
+
+    /**
+     * Obtener configuración completa del worker
+     * GET /api/workers/stuck-documents/config
+     */
+    async getConfig(req, res) {
+        try {
+            let config = await ConfiguracionStuckDocuments.findOne({
+                worker_id: 'stuck_documents_main'
+            });
+
+            // Si no existe, crear con valores por defecto
+            if (!config) {
+                config = await ConfiguracionStuckDocuments.create({
+                    worker_id: 'stuck_documents_main',
+                    fuero: 'CIV',
+                    processing_mode: 'all',
+                    enabled: true,
+                    batch_size: 3,
+                    lock_timeout_minutes: 20,
+                    schedule: {
+                        cronPattern: '*/10 * * * *',
+                        workingDays: [1, 2, 3, 4, 5],
+                        workingHoursStart: 8,
+                        workingHoursEnd: 22,
+                        timezone: 'America/Argentina/Buenos_Aires',
+                        pauseOnWeekends: true,
+                        pauseOnHolidays: false
+                    }
+                });
+            }
+
+            res.json({
+                success: true,
+                message: 'Configuración del stuck documents worker',
+                data: config
+            });
+        } catch (error) {
+            logger.error(`Error obteniendo configuración: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Actualizar configuración del worker
+     * PATCH /api/workers/stuck-documents/config
+     */
+    async updateConfig(req, res) {
+        try {
+            const allowedFields = [
+                'enabled',
+                'processing_mode',
+                'batch_size',
+                'lock_timeout_minutes',
+                'schedule.cronPattern',
+                'schedule.workingDays',
+                'schedule.workingHoursStart',
+                'schedule.workingHoursEnd',
+                'schedule.timezone',
+                'schedule.pauseOnWeekends',
+                'schedule.pauseOnHolidays'
+            ];
+
+            const updates = {};
+
+            // Procesar campos permitidos
+            for (const field of allowedFields) {
+                const value = field.includes('.')
+                    ? req.body[field.split('.')[0]]?.[field.split('.')[1]]
+                    : req.body[field];
+
+                if (value !== undefined) {
+                    updates[field] = value;
+                }
+            }
+
+            // También aceptar schedule como objeto completo
+            if (req.body.schedule && typeof req.body.schedule === 'object') {
+                const scheduleFields = ['cronPattern', 'workingDays', 'workingHoursStart', 'workingHoursEnd', 'timezone', 'pauseOnWeekends', 'pauseOnHolidays'];
+                for (const sf of scheduleFields) {
+                    if (req.body.schedule[sf] !== undefined) {
+                        updates[`schedule.${sf}`] = req.body.schedule[sf];
+                    }
+                }
+            }
+
+            if (Object.keys(updates).length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No se proporcionaron campos válidos para actualizar'
+                });
+            }
+
+            const config = await ConfiguracionStuckDocuments.findOneAndUpdate(
+                { worker_id: 'stuck_documents_main' },
+                { $set: updates },
+                { new: true, runValidators: true }
+            );
+
+            if (!config) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Configuración del worker no encontrada'
+                });
+            }
+
+            logger.info(`Configuración de stuck documents actualizada: ${JSON.stringify(updates)}`);
+
+            res.json({
+                success: true,
+                message: 'Configuración actualizada correctamente',
+                data: config
+            });
+        } catch (error) {
+            logger.error(`Error actualizando configuración: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Resetear estadísticas del worker
+     * POST /api/workers/stuck-documents/reset-stats
+     */
+    async resetStats(req, res) {
+        try {
+            const config = await ConfiguracionStuckDocuments.findOneAndUpdate(
+                { worker_id: 'stuck_documents_main' },
+                {
+                    $set: {
+                        documents_processed: 0,
+                        documents_fixed: 0,
+                        documents_failed: 0
+                    }
+                },
+                { new: true }
+            );
+
+            if (!config) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Configuración del worker no encontrada'
+                });
+            }
+
+            logger.info('Estadísticas de stuck documents reseteadas');
+
+            res.json({
+                success: true,
+                message: 'Estadísticas reseteadas correctamente',
+                data: {
+                    documents_processed: config.documents_processed,
+                    documents_fixed: config.documents_fixed,
+                    documents_failed: config.documents_failed
+                }
+            });
+        } catch (error) {
+            logger.error(`Error reseteando estadísticas: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
     }
 };
 

@@ -35,4 +35,16 @@ router.post('/unarchive/:fuero/:id', stuckDocumentsController.unarchiveDocument)
 // POST /api/workers/stuck-documents/toggle
 router.post('/toggle', stuckDocumentsController.toggleWorker);
 
+// Obtener configuración completa del worker
+// GET /api/workers/stuck-documents/config
+router.get('/config', stuckDocumentsController.getConfig);
+
+// Actualizar configuración del worker
+// PATCH /api/workers/stuck-documents/config
+router.patch('/config', stuckDocumentsController.updateConfig);
+
+// Resetear estadísticas del worker
+// POST /api/workers/stuck-documents/reset-stats
+router.post('/reset-stats', stuckDocumentsController.resetStats);
+
 module.exports = router;
