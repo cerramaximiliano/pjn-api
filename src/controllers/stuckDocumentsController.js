@@ -108,7 +108,7 @@ const stuckDocumentsController = {
                 totalMovimientosAdded += log.changes?.movimientosAdded || 0;
             }
 
-            // 4. Identificar documentos que fallan repetidamente
+            // 4. Identificar documentos que fallan repetidamente (logs recientes)
             const repeatedFailures = await WorkerLog.aggregate([
                 {
                     $match: {
@@ -134,6 +134,76 @@ const stuckDocumentsController = {
                 { $sort: { count: -1 } },
                 { $limit: 20 }
             ]);
+
+            // 4.1 Identificar documentos crónicamente atorados (busca en documentos directamente)
+            // Documentos que siguen atorados y tienen múltiples intentos del worker
+            const chronicStuck = [];
+            for (const { model, fuero } of models) {
+                const stuckDocs = await model.aggregate([
+                    {
+                        $match: {
+                            source: { $in: ['app', 'cache'] },
+                            verified: true,
+                            isValid: true,
+                            isArchived: { $ne: true },
+                            $or: [
+                                { movimientosCount: 0 },
+                                { movimientosCount: { $exists: false } }
+                            ],
+                            'updateHistory.source': 'stuck_documents_worker'
+                        }
+                    },
+                    {
+                        $project: {
+                            number: 1,
+                            year: 1,
+                            caratula: 1,
+                            folderIds: 1,
+                            fechaUltimoMovimiento: 1,
+                            stuckAttempts: {
+                                $filter: {
+                                    input: { $ifNull: ['$updateHistory', []] },
+                                    as: 'h',
+                                    cond: { $eq: ['$$h.source', 'stuck_documents_worker'] }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        $addFields: {
+                            attemptCount: { $size: '$stuckAttempts' },
+                            firstAttempt: { $arrayElemAt: ['$stuckAttempts.timestamp', 0] },
+                            lastAttempt: { $arrayElemAt: ['$stuckAttempts.timestamp', -1] }
+                        }
+                    },
+                    { $match: { attemptCount: { $gte: 2 } } },
+                    { $sort: { attemptCount: -1 } },
+                    { $limit: 10 }
+                ]);
+
+                for (const doc of stuckDocs) {
+                    const daysSinceFirst = doc.firstAttempt
+                        ? Math.floor((Date.now() - new Date(doc.firstAttempt).getTime()) / (1000 * 60 * 60 * 24))
+                        : null;
+
+                    chronicStuck.push({
+                        documentId: doc._id,
+                        expediente: `${doc.number}/${doc.year}`,
+                        fuero,
+                        caratula: doc.caratula,
+                        hasFolders: doc.folderIds && doc.folderIds.length > 0,
+                        foldersCount: doc.folderIds?.length || 0,
+                        attemptCount: doc.attemptCount,
+                        firstAttempt: doc.firstAttempt,
+                        lastAttempt: doc.lastAttempt,
+                        daysSinceFirst,
+                        hasDateDiscordance: !!doc.fechaUltimoMovimiento
+                    });
+                }
+            }
+
+            // Ordenar por días atorado descendente
+            chronicStuck.sort((a, b) => (b.daysSinceFirst || 0) - (a.daysSinceFirst || 0));
 
             // 5. Calcular tiempo desde última ejecución
             let timeSinceLastCheck = null;
@@ -226,7 +296,8 @@ const stuckDocumentsController = {
                         lastAttempt: doc.lastAttempt,
                         lastStatus: doc.lastStatus,
                         lastMessage: doc.lastMessage
-                    }))
+                    })),
+                    chronicStuck: chronicStuck.slice(0, 20) // Limitar a 20
                 }
             });
         } catch (error) {
