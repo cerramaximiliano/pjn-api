@@ -115,4 +115,16 @@ router.post('/stuck-documents/unarchive/:fuero/:id', stuckDocumentsController.un
 // POST /api/workers/stuck-documents/toggle
 router.post('/stuck-documents/toggle', stuckDocumentsController.toggleWorker);
 
+// Obtener configuración completa del worker
+// GET /api/workers/stuck-documents/config
+router.get('/stuck-documents/config', stuckDocumentsController.getConfig);
+
+// Actualizar configuración del worker
+// PATCH /api/workers/stuck-documents/config
+router.patch('/stuck-documents/config', stuckDocumentsController.updateConfig);
+
+// Resetear estadísticas del worker
+// POST /api/workers/stuck-documents/reset-stats
+router.post('/stuck-documents/reset-stats', stuckDocumentsController.resetStats);
+
 module.exports = router;
