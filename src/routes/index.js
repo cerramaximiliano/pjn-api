@@ -15,6 +15,7 @@ const intervinientesRoutes = require('./intervinientesRoutes');
 const workerStatsRoutes = require('./workerStatsRoutes');
 const managerConfigRoutes = require('./managerConfigRoutes');
 const extraInfoConfigRoutes = require('./extraInfoConfigRoutes');
+const scrapingManagerRoutes = require('./scrapingManagerRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -66,5 +67,8 @@ router.use('/manager-config', managerConfigRoutes);
 
 // Montar las rutas de configuración del extra-info worker
 router.use('/extra-info-config', extraInfoConfigRoutes);
+
+// Montar las rutas del scraping manager (pjn-mis-causas)
+router.use('/scraping-manager', scrapingManagerRoutes);
 
 module.exports = router;

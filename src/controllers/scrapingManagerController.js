@@ -1,0 +1,237 @@
+/**
+ * Controller para Scraping Manager Config
+ * Lee/escribe el archivo JSON de configuración del Scraping Worker Manager
+ * y consulta el estado del manager desde MongoDB
+ */
+const fs = require('fs');
+const path = require('path');
+const mongoose = require('mongoose');
+const { logger } = require('../config/pino');
+
+// Ruta al archivo de configuración del scraping manager
+const CONFIG_PATH = path.resolve(__dirname, '../../../pjn-mis-causas/src/config/scraping-manager.config.json');
+
+/**
+ * Lee el archivo de configuración JSON
+ */
+function readConfig() {
+  const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
+  return JSON.parse(raw);
+}
+
+/**
+ * Escribe el archivo de configuración JSON
+ */
+function writeConfig(config) {
+  config._lastModified = new Date().toISOString();
+  const json = JSON.stringify(config, null, 2) + '\n';
+  fs.writeFileSync(CONFIG_PATH, json, 'utf-8');
+  return config;
+}
+
+const scrapingManagerController = {
+  /**
+   * Obtener configuración completa
+   * GET /api/scraping-manager
+   */
+  async getConfig(req, res) {
+    try {
+      const config = readConfig();
+
+      res.json({
+        success: true,
+        message: 'Configuración del scraping manager obtenida',
+        data: config
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo config del scraping manager: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error al leer la configuración',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * Actualizar configuración completa
+   * PUT /api/scraping-manager
+   */
+  async updateConfig(req, res) {
+    try {
+      const newConfig = req.body;
+
+      if (!newConfig.global || !newConfig.manager || !newConfig.workers) {
+        return res.status(400).json({
+          success: false,
+          message: 'Configuración incompleta: requiere secciones global, manager y workers'
+        });
+      }
+
+      // Preservar metadatos
+      const current = readConfig();
+      newConfig._version = current._version;
+      newConfig._createdBy = current._createdBy;
+
+      const saved = writeConfig(newConfig);
+
+      logger.info(`Scraping manager config actualizada completamente por usuario ${req.userId}`);
+
+      res.json({
+        success: true,
+        message: 'Configuración actualizada',
+        data: saved
+      });
+    } catch (error) {
+      logger.error(`Error actualizando config del scraping manager: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error al actualizar la configuración',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * Actualizar sección global
+   * PATCH /api/scraping-manager/global
+   */
+  async updateGlobal(req, res) {
+    try {
+      const updates = req.body;
+      const config = readConfig();
+
+      // Merge solo campos válidos de global
+      const allowedFields = ['enabled', 'serviceAvailable', 'maintenanceMessage', 'scheduledDowntime'];
+      for (const field of allowedFields) {
+        if (updates[field] !== undefined) {
+          config.global[field] = updates[field];
+        }
+      }
+
+      // Merge campos de manager si vienen
+      if (updates.manager) {
+        const managerFields = ['pollIntervalMs', 'configWatchEnabled', 'healthCheckIntervalMs'];
+        for (const field of managerFields) {
+          if (updates.manager[field] !== undefined) {
+            config.manager[field] = updates.manager[field];
+          }
+        }
+      }
+
+      const saved = writeConfig(config);
+
+      logger.info(`Scraping manager global config actualizada por usuario ${req.userId}`);
+
+      res.json({
+        success: true,
+        message: 'Configuración global actualizada',
+        data: saved
+      });
+    } catch (error) {
+      logger.error(`Error actualizando global config: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error al actualizar la configuración global',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * Actualizar configuración de un worker específico
+   * PATCH /api/scraping-manager/workers/:workerName
+   */
+  async updateWorker(req, res) {
+    try {
+      const { workerName } = req.params;
+      const updates = req.body;
+      const config = readConfig();
+
+      if (!config.workers[workerName]) {
+        return res.status(404).json({
+          success: false,
+          message: `Worker '${workerName}' no encontrado en la configuración`
+        });
+      }
+
+      const worker = config.workers[workerName];
+
+      // Actualizar enabled
+      if (updates.enabled !== undefined) {
+        worker.enabled = updates.enabled;
+      }
+
+      // Actualizar scaling
+      if (updates.scaling) {
+        worker.scaling = { ...worker.scaling, ...updates.scaling };
+      }
+
+      // Actualizar schedule
+      if (updates.schedule) {
+        worker.schedule = { ...worker.schedule, ...updates.schedule };
+      }
+
+      // Actualizar queue
+      if (updates.queue) {
+        worker.queue = { ...worker.queue, ...updates.queue };
+      }
+
+      // Actualizar healthCheck
+      if (updates.healthCheck) {
+        worker.healthCheck = { ...worker.healthCheck, ...updates.healthCheck };
+      }
+
+      const saved = writeConfig(config);
+
+      logger.info(`Scraping manager worker '${workerName}' actualizado por usuario ${req.userId}`);
+
+      res.json({
+        success: true,
+        message: `Worker '${workerName}' actualizado`,
+        data: saved.workers[workerName]
+      });
+    } catch (error) {
+      logger.error(`Error actualizando worker config: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error al actualizar la configuración del worker',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * Obtener estado actual del manager desde MongoDB
+   * GET /api/scraping-manager/state
+   */
+  async getManagerState(req, res) {
+    try {
+      const db = mongoose.connection.db;
+      const collection = db.collection('scraping-manager-state');
+
+      const [serviceAvailability, managerStatus] = await Promise.all([
+        collection.findOne({ _id: 'service-availability' }),
+        collection.findOne({ _id: 'manager-status' })
+      ]);
+
+      res.json({
+        success: true,
+        message: 'Estado del manager obtenido',
+        data: {
+          serviceAvailability: serviceAvailability || null,
+          managerStatus: managerStatus || null
+        }
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo estado del manager: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener el estado del manager',
+        error: error.message
+      });
+    }
+  }
+};
+
+module.exports = scrapingManagerController;
