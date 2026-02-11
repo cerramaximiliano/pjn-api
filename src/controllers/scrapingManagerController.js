@@ -1,31 +1,34 @@
 /**
  * Controller para Scraping Manager Config
- * Lee/escribe el archivo JSON de configuración del Scraping Worker Manager
+ * Lee/escribe la configuración del Scraping Worker Manager desde MongoDB
+ * (colección scraping-manager-state, _id: "config")
  * y consulta el estado del manager desde MongoDB
  */
-const fs = require('fs');
-const path = require('path');
 const mongoose = require('mongoose');
 const { logger } = require('../config/pino');
 
-// Ruta al archivo de configuración del scraping manager
-const CONFIG_PATH = path.resolve(__dirname, '../../../pjn-mis-causas/src/config/scraping-manager.config.json');
-
 /**
- * Lee el archivo de configuración JSON
+ * Lee la configuración desde MongoDB
  */
-function readConfig() {
-  const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-  return JSON.parse(raw);
+async function readConfig() {
+  const db = mongoose.connection.db;
+  const doc = await db.collection('scraping-manager-state').findOne({ _id: 'config' });
+  if (!doc) throw new Error('Config no encontrada en MongoDB (scraping-manager-state._id="config")');
+  const { _id, ...config } = doc;
+  return config;
 }
 
 /**
- * Escribe el archivo de configuración JSON
+ * Escribe la configuración en MongoDB
  */
-function writeConfig(config) {
+async function writeConfig(config) {
   config._lastModified = new Date().toISOString();
-  const json = JSON.stringify(config, null, 2) + '\n';
-  fs.writeFileSync(CONFIG_PATH, json, 'utf-8');
+  const db = mongoose.connection.db;
+  await db.collection('scraping-manager-state').updateOne(
+    { _id: 'config' },
+    { $set: config },
+    { upsert: true }
+  );
   return config;
 }
 
@@ -36,7 +39,7 @@ const scrapingManagerController = {
    */
   async getConfig(req, res) {
     try {
-      const config = readConfig();
+      const config = await readConfig();
 
       res.json({
         success: true,
@@ -69,11 +72,11 @@ const scrapingManagerController = {
       }
 
       // Preservar metadatos
-      const current = readConfig();
+      const current = await readConfig();
       newConfig._version = current._version;
       newConfig._createdBy = current._createdBy;
 
-      const saved = writeConfig(newConfig);
+      const saved = await writeConfig(newConfig);
 
       logger.info(`Scraping manager config actualizada completamente por usuario ${req.userId}`);
 
@@ -99,7 +102,7 @@ const scrapingManagerController = {
   async updateGlobal(req, res) {
     try {
       const updates = req.body;
-      const config = readConfig();
+      const config = await readConfig();
 
       // Merge solo campos válidos de global
       const allowedFields = ['enabled', 'serviceAvailable', 'maintenanceMessage', 'scheduledDowntime'];
@@ -119,7 +122,7 @@ const scrapingManagerController = {
         }
       }
 
-      const saved = writeConfig(config);
+      const saved = await writeConfig(config);
 
       logger.info(`Scraping manager global config actualizada por usuario ${req.userId}`);
 
@@ -146,7 +149,7 @@ const scrapingManagerController = {
     try {
       const { workerName } = req.params;
       const updates = req.body;
-      const config = readConfig();
+      const config = await readConfig();
 
       if (!config.workers[workerName]) {
         return res.status(404).json({
@@ -182,7 +185,7 @@ const scrapingManagerController = {
         worker.healthCheck = { ...worker.healthCheck, ...updates.healthCheck };
       }
 
-      const saved = writeConfig(config);
+      const saved = await writeConfig(config);
 
       logger.info(`Scraping manager worker '${workerName}' actualizado por usuario ${req.userId}`);
 
