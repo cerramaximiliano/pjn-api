@@ -16,6 +16,7 @@ const workerStatsRoutes = require('./workerStatsRoutes');
 const managerConfigRoutes = require('./managerConfigRoutes');
 const extraInfoConfigRoutes = require('./extraInfoConfigRoutes');
 const scrapingManagerRoutes = require('./scrapingManagerRoutes');
+const causasUpdateRoutes = require('./causasUpdateRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -70,5 +71,8 @@ router.use('/extra-info-config', extraInfoConfigRoutes);
 
 // Montar las rutas del scraping manager (pjn-mis-causas)
 router.use('/scraping-manager', scrapingManagerRoutes);
+
+// Montar las rutas del causas-update worker (pjn-mis-causas)
+router.use('/causas-update', causasUpdateRoutes);
 
 module.exports = router;
