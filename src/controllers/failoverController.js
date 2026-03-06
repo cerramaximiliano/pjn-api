@@ -8,21 +8,23 @@ const { logger } = require("../config/pino");
 exports.getStatus = async (req, res) => {
   try {
     const db = mongoose.connection.db;
-    const [state, leaderLock, managerStatus, cloudStatus] = await Promise.all([
+    const [state, leaderLock, onpremHeartbeat, cloudStatus] = await Promise.all([
       db.collection("scraping-failover-state").findOne({ _id: "state" }),
       db.collection("scraping-failover-state").findOne({ _id: "leader-lock" }),
-      db.collection("scraping-manager-state").findOne({ _id: "manager-status" }),
+      db.collection("scraping-manager-state").findOne({ _id: "onprem-heartbeat" }),
       db.collection("scraping-manager-state").findOne({ _id: "cloud-status" }),
     ]);
 
-    const msSinceLastPoll = managerStatus?.lastPoll
-      ? Date.now() - new Date(managerStatus.lastPoll).getTime()
+    const msSinceLastPoll = onpremHeartbeat?.lastPoll
+      ? Date.now() - new Date(onpremHeartbeat.lastPoll).getTime()
       : null;
 
     res.json({
       success: true,
       data: {
         cloudActive: state?.cloudActive ?? false,
+        draining: state?.draining ?? false,
+        drainingStartedAt: state?.drainingStartedAt ?? null,
         activatedAt: state?.activatedAt ?? null,
         deactivatedAt: state?.deactivatedAt ?? null,
         reason: state?.reason ?? null,
@@ -36,7 +38,7 @@ exports.getStatus = async (req, res) => {
             }
           : null,
         heartbeat: {
-          lastPoll: managerStatus?.lastPoll ?? null,
+          lastPoll: onpremHeartbeat?.lastPoll ?? null,
           msSinceLastPoll,
           alive: msSinceLastPoll !== null && msSinceLastPoll < 5 * 60 * 1000,
         },
