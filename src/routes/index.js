@@ -20,6 +20,7 @@ const scrapingWorkerManagerRoutes = require('./scrapingWorkerManagerRoutes');
 const causasUpdateRoutes = require('./causasUpdateRoutes');
 const syncResetRoutes = require('./syncResetRoutes');
 const failoverRoutes = require('./failoverRoutes');
+const configuracionUpdateMovimientosRoutes = require('./configuracionUpdateMovimientosRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -86,5 +87,8 @@ router.use('/sync-reset', syncResetRoutes);
 
 // Montar las rutas de failover cloud
 router.use('/failover', failoverRoutes);
+
+// Montar las rutas de configuración del worker update-movimientos
+router.use('/configuracion-update-movimientos', configuracionUpdateMovimientosRoutes);
 
 module.exports = router;
