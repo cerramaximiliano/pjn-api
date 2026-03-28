@@ -4,6 +4,8 @@ const { logger } = require('../config/pino');
 
 const ALLOWED_WORKER_FIELDS = [
 	'enabled',
+	'cronPattern',
+	'batchSize',
 	'lockTimeoutMinutes',
 	'errorCooldown.enabled',
 	'errorCooldown.maxConsecutiveErrors',

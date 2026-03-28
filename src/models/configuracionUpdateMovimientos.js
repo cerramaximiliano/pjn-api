@@ -11,6 +11,8 @@ const schema = new Schema(
 		worker_id: { type: String, required: true, unique: true },
 		fuero: { type: String, enum: ['CIV', 'CSS', 'CNT', 'COM'], required: true },
 		enabled: { type: Boolean, default: false },
+		cronPattern: { type: String, default: '*/2 * * * *' },
+		batchSize: { type: Number, default: 1 },
 		lockTimeoutMinutes: { type: Number, default: 5 },
 		errorCooldown: {
 			enabled: { type: Boolean, default: true },
