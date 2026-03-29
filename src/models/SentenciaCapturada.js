@@ -25,6 +25,13 @@ const schema = new Schema(
 			default: 'otro',
 		},
 
+		category: { type: String, enum: ['novelty', 'rutina'], default: 'novelty' },
+		source: {
+			worker: { type: String },
+			collectionName: { type: String },
+			collectedAt: { type: Date },
+		},
+
 		detectedAt: { type: Date, default: Date.now },
 		workerVersion: { type: String, default: '1.0' },
 		collection: { type: String },
