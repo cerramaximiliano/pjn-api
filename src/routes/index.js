@@ -21,6 +21,7 @@ const causasUpdateRoutes = require('./causasUpdateRoutes');
 const syncResetRoutes = require('./syncResetRoutes');
 const failoverRoutes = require('./failoverRoutes');
 const configuracionUpdateMovimientosRoutes = require('./configuracionUpdateMovimientosRoutes');
+const sentenciasCapturadasRoutes = require('./sentenciasCapturadasRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -90,5 +91,8 @@ router.use('/failover', failoverRoutes);
 
 // Montar las rutas de configuración del worker update-movimientos
 router.use('/configuracion-update-movimientos', configuracionUpdateMovimientosRoutes);
+
+// Sentencias capturadas por update-movimientos-worker
+router.use('/sentencias-capturadas', sentenciasCapturadasRoutes);
 
 module.exports = router;
