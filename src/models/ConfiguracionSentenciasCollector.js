@@ -22,7 +22,7 @@ const schema = new mongoose.Schema(
 	{
 		name: { type: String, default: 'sentencias-collector', unique: true },
 		enabled: { type: Boolean, default: false },
-		cronPattern: { type: String, default: '*/10 * * * *' },
+		cronPattern: { type: String, default: '* * * * *' },
 		batchSize: { type: Number, default: 100 },
 		maxPendingQueue: { type: Number, default: 50 },
 		fueros: { type: [fueroConfigSchema], default: () => [
