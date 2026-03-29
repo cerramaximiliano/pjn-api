@@ -22,6 +22,7 @@ const syncResetRoutes = require('./syncResetRoutes');
 const failoverRoutes = require('./failoverRoutes');
 const configuracionUpdateMovimientosRoutes = require('./configuracionUpdateMovimientosRoutes');
 const sentenciasCapturadasRoutes = require('./sentenciasCapturadasRoutes');
+const configuracionSentenciasCollectorRoutes = require('./configuracionSentenciasCollectorRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -94,5 +95,8 @@ router.use('/configuracion-update-movimientos', configuracionUpdateMovimientosRo
 
 // Sentencias capturadas por update-movimientos-worker
 router.use('/sentencias-capturadas', sentenciasCapturadasRoutes);
+
+// Configuración del sentencias-collector-worker
+router.use('/configuracion-sentencias-collector', configuracionSentenciasCollectorRoutes);
 
 module.exports = router;
