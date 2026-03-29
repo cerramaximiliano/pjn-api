@@ -68,6 +68,16 @@ const schema = new Schema(
 			error: { type: String },
 		},
 
+		// Estado de indexación en Pinecone (embeddings)
+		embeddingStatus: {
+			type: String,
+			enum: ['pending', 'processing', 'completed', 'error', 'skipped'],
+			default: 'pending',
+		},
+		embeddedAt: { type: Date },
+		embeddingError: { type: String },
+		embeddingChunksCount: { type: Number, default: 0 },
+
 		processingHistory: [
 			{
 				status: { type: String },
