@@ -44,6 +44,31 @@ const schema = new Schema(
 		processingError: { type: String },
 		processingResult: { type: Schema.Types.Mixed },
 		retryCount: { type: Number, default: 0 },
+
+		ocrStatus: {
+			type: String,
+			enum: ['not_needed', 'pending', 'processing', 'completed', 'error'],
+			default: 'not_needed',
+		},
+		ocrAttempts: { type: Number, default: 0 },
+		ocrResult: {
+			processedAt: { type: Date },
+			text: { type: String },
+			charCount: { type: Number },
+			pageCount: { type: Number },
+			method: { type: String },
+			processingTimeMs: { type: Number },
+			error: { type: String },
+		},
+
+		processingHistory: [
+			{
+				status: { type: String },
+				at: { type: Date },
+				method: { type: String },
+				notes: { type: String },
+			},
+		],
 	},
 	{
 		collection: 'sentencias-capturadas',
@@ -55,5 +80,6 @@ schema.index({ causaId: 1, url: 1 }, { unique: true });
 schema.index({ fuero: 1, sentenciaTipo: 1, processingStatus: 1 });
 schema.index({ detectedAt: -1 });
 schema.index({ processedAt: -1 });
+schema.index({ ocrStatus: 1, processingStatus: 1 });
 
 module.exports = mongoose.model('SentenciaCapturada', schema);

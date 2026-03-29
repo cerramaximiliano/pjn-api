@@ -6,7 +6,7 @@ const sentenciasCapturadasController = {
 	// GET /api/sentencias-capturadas/stats
 	async getStats(req, res) {
 		try {
-			const [byStatus, byTipo, byFuero, recientes, errores] = await Promise.all([
+			const [byStatus, byTipo, byFuero, recientes, errores, ocrByStatus, ocrRecientes] = await Promise.all([
 				// Por status
 				SentenciaCapturada.aggregate([
 					{ $group: { _id: '$processingStatus', count: { $sum: 1 } } },
@@ -42,7 +42,7 @@ const sentenciasCapturadasController = {
 					.find({ processingStatus: { $in: ['processed', 'extracted_needs_ocr'] } })
 					.sort({ processedAt: -1 })
 					.limit(10)
-					.select('number year fuero caratula sentenciaTipo processedAt processingResult.charCount processingResult.pageCount processingResult.method processingResult.isScanned movimientoTipo movimientoFecha url')
+					.select('number year fuero caratula sentenciaTipo processedAt processingResult.charCount processingResult.pageCount processingResult.method processingResult.isScanned movimientoTipo movimientoFecha url ocrStatus ocrResult.processedAt ocrResult.charCount ocrResult.method')
 					.lean(),
 
 				// Errores recientes
@@ -50,7 +50,22 @@ const sentenciasCapturadasController = {
 					.find({ processingStatus: 'error' })
 					.sort({ processedAt: -1 })
 					.limit(10)
-					.select('number year fuero caratula sentenciaTipo processedAt processingError retryCount url')
+					.select('number year fuero caratula sentenciaTipo processedAt processingError retryCount url ocrStatus ocrAttempts')
+					.lean(),
+
+				// OCR stats: por estado de OCR
+				SentenciaCapturada.aggregate([
+					{ $match: { ocrStatus: { $ne: 'not_needed' } } },
+					{ $group: { _id: '$ocrStatus', count: { $sum: 1 }, avgMs: { $avg: '$ocrResult.processingTimeMs' } } },
+					{ $sort: { _id: 1 } },
+				]),
+
+				// Últimas 5 procesadas por OCR
+				SentenciaCapturada
+					.find({ ocrStatus: 'completed' })
+					.sort({ 'ocrResult.processedAt': -1 })
+					.limit(5)
+					.select('number year fuero caratula sentenciaTipo ocrResult.processedAt ocrResult.charCount ocrResult.pageCount ocrResult.method ocrResult.processingTimeMs')
 					.lean(),
 			]);
 
@@ -71,6 +86,7 @@ const sentenciasCapturadasController = {
 					byFuero,
 					recientes,
 					errores,
+					ocr: { byStatus: ocrByStatus, recientes: ocrRecientes },
 				},
 			});
 		} catch (error) {
@@ -124,13 +140,35 @@ const sentenciasCapturadasController = {
 		try {
 			const doc = await SentenciaCapturada.findByIdAndUpdate(
 				req.params.id,
-				{ $set: { processingStatus: 'pending', retryCount: 0, processingError: null }, $unset: { processingLock: '' } },
+				{
+					$set: { processingStatus: 'pending', retryCount: 0, processingError: null, ocrStatus: 'not_needed' },
+					$unset: { processingLock: '' },
+				},
 				{ new: true }
 			).select('-processingLock -__v');
 			if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
 			res.json({ success: true, message: 'Reencola como pending', data: doc });
 		} catch (error) {
 			logger.error(`Error reintentando sentencia ${req.params.id}: ${error}`);
+			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
+		}
+	},
+
+	// POST /api/sentencias-capturadas/:id/retry-ocr — reencolar para OCR
+	async retryOcr(req, res) {
+		try {
+			const doc = await SentenciaCapturada.findByIdAndUpdate(
+				req.params.id,
+				{
+					$set: { processingStatus: 'extracted_needs_ocr', ocrStatus: 'pending', ocrAttempts: 0, 'ocrResult.error': null },
+					$unset: { processingLock: '' },
+				},
+				{ new: true }
+			).select('-processingLock -__v');
+			if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
+			res.json({ success: true, message: 'Reencola para OCR', data: doc });
+		} catch (error) {
+			logger.error(`Error reintentando OCR de sentencia ${req.params.id}: ${error}`);
 			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
 		}
 	},
