@@ -6,7 +6,7 @@ const sentenciasCapturadasController = {
 	// GET /api/sentencias-capturadas/stats
 	async getStats(req, res) {
 		try {
-			const [byStatus, byTipo, byFuero, recientes, errores, ocrByStatus, ocrRecientes] = await Promise.all([
+			const [byStatus, byTipo, byFuero, recientes, errores, ocrByStatus, ocrRecientes, byCategory, noveltyRecientes] = await Promise.all([
 				// Por status
 				SentenciaCapturada.aggregate([
 					{ $group: { _id: '$processingStatus', count: { $sum: 1 } } },
@@ -67,6 +67,25 @@ const sentenciasCapturadasController = {
 					.limit(5)
 					.select('number year fuero caratula sentenciaTipo ocrResult.processedAt ocrResult.charCount ocrResult.pageCount ocrResult.method ocrResult.processingTimeMs')
 					.lean(),
+
+				// Por categoría (novelty / rutina)
+				SentenciaCapturada.aggregate([
+					{ $group: {
+						_id: '$category',
+						total: { $sum: 1 },
+						processed: { $sum: { $cond: [{ $eq: ['$processingStatus', 'processed'] }, 1, 0] } },
+						pending: { $sum: { $cond: [{ $eq: ['$processingStatus', 'pending'] }, 1, 0] } },
+					}},
+					{ $sort: { _id: 1 } },
+				]),
+
+				// Últimas 10 novelty procesadas (para newsletter)
+				SentenciaCapturada
+					.find({ category: 'novelty', processingStatus: { $in: ['processed', 'extracted_needs_ocr'] } })
+					.sort({ processedAt: -1 })
+					.limit(10)
+					.select('number year fuero caratula sentenciaTipo processedAt processingResult.charCount processingResult.pageCount processingResult.method movimientoTipo movimientoFecha url ocrStatus ocrResult.charCount category')
+					.lean(),
 			]);
 
 			// Totales globales
@@ -87,6 +106,8 @@ const sentenciasCapturadasController = {
 					recientes,
 					errores,
 					ocr: { byStatus: ocrByStatus, recientes: ocrRecientes },
+					byCategory,
+					noveltyRecientes,
 				},
 			});
 		} catch (error) {
@@ -98,11 +119,12 @@ const sentenciasCapturadasController = {
 	// GET /api/sentencias-capturadas — lista paginada con filtros
 	async findAll(req, res) {
 		try {
-			const { status, fuero, tipo, page = 1, limit = 20 } = req.query;
+			const { status, fuero, tipo, category, page = 1, limit = 20 } = req.query;
 			const filter = {};
 			if (status) filter.processingStatus = status;
 			if (fuero) filter.fuero = fuero;
 			if (tipo) filter.sentenciaTipo = tipo;
+			if (category) filter.category = category;
 
 			const skip = (parseInt(page) - 1) * parseInt(limit);
 			const [docs, total] = await Promise.all([
