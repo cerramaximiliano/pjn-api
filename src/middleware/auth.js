@@ -6,8 +6,16 @@ const moment = require('moment');
 // Nombre de la cookie para compatibilidad con servidor B
 const TOKEN_COOKIE_NAME = 'auth_token';
 
-// Middleware para verificar autenticación mediante cookies
+// Middleware para verificar autenticación mediante cookies, JWT o API Key
 const verifyToken = async (req, res, next) => {
+  // Verificar primero si viene una API Key válida (para llamadas service-to-service)
+  const apiKeyFromHeader = req.headers['x-api-key'] || req.headers['api-key'];
+  const validApiKey = process.env.API_KEY;
+  if (apiKeyFromHeader && validApiKey && apiKeyFromHeader === validApiKey) {
+    req.userId = 'service';
+    return next();
+  }
+
   // Obtener token de la cookie, encabezado Authorization o query param
   const tokenFromCookie = req.cookies?.[TOKEN_COOKIE_NAME];
   const tokenFromHeader = req.headers.authorization?.split(' ')[1]; // "Bearer TOKEN"

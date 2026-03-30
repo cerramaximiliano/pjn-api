@@ -46,13 +46,34 @@ const getArgentinaDate = () => {
 };
 
 const causasController = {
-  // Buscar por número y año
+  // Buscar por número y año (con soporte para incidentes)
+  // Query params: ?incidente=42/2 (buscar incidente específico), ?all=true (principal + incidentes)
   async findByNumberAndYear(req, res) {
     try {
       const { fuero, number, year } = req.params;
+      const { incidente, all } = req.query;
       const Model = getModel(fuero);
 
-      const causa = await Model.findOne({ number, year });
+      const query = { number, year };
+
+      if (incidente) {
+        // Buscar incidente específico
+        query.incidente = incidente;
+      } else if (all === 'true') {
+        // Retornar causa principal + todos los incidentes
+        const causas = await Model.find(query).sort({ incidente: 1 });
+        return res.json({
+          success: true,
+          message: `Se encontraron ${causas.length} causa(s)`,
+          count: causas.length,
+          data: causas
+        });
+      } else {
+        // Default: solo causa principal
+        query.incidente = null;
+      }
+
+      const causa = await Model.findOne(query);
       if (!causa) {
         return res.status(404).json({
           success: false,
