@@ -23,6 +23,7 @@ const failoverRoutes = require('./failoverRoutes');
 const configuracionUpdateMovimientosRoutes = require('./configuracionUpdateMovimientosRoutes');
 const sentenciasCapturadasRoutes = require('./sentenciasCapturadasRoutes');
 const configuracionSentenciasCollectorRoutes = require('./configuracionSentenciasCollectorRoutes');
+const configuracionSemanticWorkerRoutes = require('./configuracionSemanticWorkerRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -98,5 +99,7 @@ router.use('/sentencias-capturadas', sentenciasCapturadasRoutes);
 
 // Configuración del sentencias-collector-worker
 router.use('/configuracion-sentencias-collector', configuracionSentenciasCollectorRoutes);
+// Configuración del sentencias-semantic-worker (layer 2)
+router.use('/configuracion-semantic-worker', configuracionSemanticWorkerRoutes);
 
 module.exports = router;
