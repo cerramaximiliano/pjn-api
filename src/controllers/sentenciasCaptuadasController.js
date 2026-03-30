@@ -6,7 +6,7 @@ const sentenciasCapturadasController = {
 	// GET /api/sentencias-capturadas/stats
 	async getStats(req, res) {
 		try {
-			const [byStatus, byTipo, byFuero, recientes, errores, ocrByStatus, ocrRecientes, byCategory, noveltyRecientes] = await Promise.all([
+			const [byStatus, byTipo, byFuero, recientes, errores, ocrByStatus, ocrRecientes, byCategory, noveltyRecientes, embeddingByStatus, embeddingRecientes, embeddingErrors] = await Promise.all([
 				// Por status
 				SentenciaCapturada.aggregate([
 					{ $group: { _id: '$processingStatus', count: { $sum: 1 } } },
@@ -86,6 +86,33 @@ const sentenciasCapturadasController = {
 					.limit(10)
 					.select('number year fuero caratula sentenciaTipo processedAt processingResult.charCount processingResult.pageCount processingResult.method movimientoTipo movimientoFecha url ocrStatus ocrResult.charCount category')
 					.lean(),
+
+				// Embeddings: por estado
+				SentenciaCapturada.aggregate([
+					{ $match: { processingStatus: 'processed' } },
+					{ $group: {
+						_id: '$embeddingStatus',
+						count: { $sum: 1 },
+						avgChunks: { $avg: '$embeddingChunksCount' },
+					}},
+					{ $sort: { _id: 1 } },
+				]),
+
+				// Últimas 8 indexadas en Pinecone
+				SentenciaCapturada
+					.find({ embeddingStatus: 'completed' })
+					.sort({ embeddedAt: -1 })
+					.limit(8)
+					.select('number year fuero caratula sentenciaTipo embeddedAt embeddingChunksCount category')
+					.lean(),
+
+				// Últimas 5 con error de embedding
+				SentenciaCapturada
+					.find({ embeddingStatus: 'error' })
+					.sort({ embeddedAt: -1 })
+					.limit(5)
+					.select('number year fuero caratula sentenciaTipo embeddingError embeddedAt')
+					.lean(),
 			]);
 
 			// Totales globales
@@ -108,6 +135,7 @@ const sentenciasCapturadasController = {
 					ocr: { byStatus: ocrByStatus, recientes: ocrRecientes },
 					byCategory,
 					noveltyRecientes,
+					embeddings: { byStatus: embeddingByStatus, recientes: embeddingRecientes, errors: embeddingErrors },
 				},
 			});
 		} catch (error) {
@@ -172,6 +200,22 @@ const sentenciasCapturadasController = {
 			res.json({ success: true, message: 'Reencola como pending', data: doc });
 		} catch (error) {
 			logger.error(`Error reintentando sentencia ${req.params.id}: ${error}`);
+			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
+		}
+	},
+
+	// POST /api/sentencias-capturadas/:id/retry-embedding — reencolar para embeddings
+	async retryEmbedding(req, res) {
+		try {
+			const doc = await SentenciaCapturada.findByIdAndUpdate(
+				req.params.id,
+				{ $set: { embeddingStatus: 'pending', embeddingError: null } },
+				{ new: true }
+			).select('-processingLock -__v');
+			if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
+			res.json({ success: true, message: 'Reencola para embedding', data: doc });
+		} catch (error) {
+			logger.error(`Error reintentando embedding de sentencia ${req.params.id}: ${error}`);
 			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
 		}
 	},
