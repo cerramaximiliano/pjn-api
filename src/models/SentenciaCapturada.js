@@ -78,6 +78,20 @@ const schema = new Schema(
 		embeddingError: { type: String },
 		embeddingChunksCount: { type: Number, default: 0 },
 
+		// Verificación de novedad (doble capa)
+		// Layer 1 (estructural): category='novelty' + embedding completado → status='single'
+		// Layer 2 (semántica, futuro): búsqueda cosine en Pinecone → status='double' | 'rejected'
+		noveltyCheck: {
+			status: {
+				type: String,
+				enum: ['single', 'double', 'rejected', 'pending_semantic'],
+			},
+			semanticScore: { type: Number },
+			semanticTopMatchId: { type: String },
+			verifiedAt: { type: Date },
+			semanticVerifiedAt: { type: Date },
+		},
+
 		processingHistory: [
 			{
 				status: { type: String },
@@ -98,5 +112,6 @@ schema.index({ fuero: 1, sentenciaTipo: 1, processingStatus: 1 });
 schema.index({ detectedAt: -1 });
 schema.index({ processedAt: -1 });
 schema.index({ ocrStatus: 1, processingStatus: 1 });
+schema.index({ 'noveltyCheck.status': 1, category: 1 });
 
 module.exports = mongoose.model('SentenciaCapturada', schema);

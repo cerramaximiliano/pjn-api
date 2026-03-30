@@ -6,7 +6,7 @@ const sentenciasCapturadasController = {
 	// GET /api/sentencias-capturadas/stats
 	async getStats(req, res) {
 		try {
-			const [byStatus, byTipo, byFuero, recientes, errores, ocrByStatus, ocrRecientes, byCategory, noveltyRecientes, embeddingByStatus, embeddingRecientes, embeddingErrors] = await Promise.all([
+			const [byStatus, byTipo, byFuero, recientes, errores, ocrByStatus, ocrRecientes, byCategory, noveltyRecientes, embeddingByStatus, embeddingRecientes, embeddingErrors, noveltyCheckByStatus] = await Promise.all([
 				// Por status
 				SentenciaCapturada.aggregate([
 					{ $group: { _id: '$processingStatus', count: { $sum: 1 } } },
@@ -113,6 +113,14 @@ const sentenciasCapturadasController = {
 					.limit(5)
 					.select('number year fuero caratula sentenciaTipo embeddingError embeddedAt')
 					.lean(),
+
+				// Novelty check: distribución por estado de verificación
+				// _id=null → novelty embebidas sin noveltyCheck.status aún
+				SentenciaCapturada.aggregate([
+					{ $match: { category: 'novelty' } },
+					{ $group: { _id: '$noveltyCheck.status', count: { $sum: 1 } } },
+					{ $sort: { _id: 1 } },
+				]),
 			]);
 
 			// Totales globales
@@ -136,6 +144,7 @@ const sentenciasCapturadasController = {
 					byCategory,
 					noveltyRecientes,
 					embeddings: { byStatus: embeddingByStatus, recientes: embeddingRecientes, errors: embeddingErrors },
+					noveltyCheck: { byStatus: noveltyCheckByStatus },
 				},
 			});
 		} catch (error) {
