@@ -24,6 +24,8 @@ const configuracionUpdateMovimientosRoutes = require('./configuracionUpdateMovim
 const sentenciasCapturadasRoutes = require('./sentenciasCapturadasRoutes');
 const configuracionSentenciasCollectorRoutes = require('./configuracionSentenciasCollectorRoutes');
 const configuracionSemanticWorkerRoutes = require('./configuracionSemanticWorkerRoutes');
+const saijSentenciasRoutes = require('./saijSentenciasRoutes');
+const saijConfigRoutes = require('./saijConfigRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -101,5 +103,9 @@ router.use('/sentencias-capturadas', sentenciasCapturadasRoutes);
 router.use('/configuracion-sentencias-collector', configuracionSentenciasCollectorRoutes);
 // Configuración del sentencias-semantic-worker (layer 2)
 router.use('/configuracion-semantic-worker', configuracionSemanticWorkerRoutes);
+
+// SAIJ — sentencias y configuración de workers
+router.use('/saij/sentencias', saijSentenciasRoutes);
+router.use('/saij/config',     saijConfigRoutes);
 
 module.exports = router;
