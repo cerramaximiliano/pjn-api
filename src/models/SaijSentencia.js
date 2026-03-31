@@ -20,6 +20,7 @@ const SaijSentenciaSchema = new mongoose.Schema(
         // sumario
         numeroSumario:    { type: String, trim: true },
         texto:            { type: String, trim: true },
+        textoCompleto:    { type: String, trim: true },
 
         // comunes
         titulo:           { type: String, trim: true },
