@@ -28,6 +28,12 @@ const SaijSentenciaSchema = new mongoose.Schema(
         fechaUmod:        { type: String, trim: true },
         tribunal:         { type: String, trim: true },
         tipoTribunal:     { type: String, trim: true },
+        fuero:            { type: String, trim: true },
+        expediente: {
+            numero:       { type: Number },
+            año:          { type: Number },
+            texto:        { type: String, trim: true },
+        },
         jurisdiccion: {
             codigo:       { type: String, trim: true },
             descripcion:  { type: String, trim: true },
@@ -64,6 +70,8 @@ SaijSentenciaSchema.index({ fecha: -1 });
 SaijSentenciaSchema.index({ tribunal: 1 });
 SaijSentenciaSchema.index({ saijType: 1 });
 SaijSentenciaSchema.index({ workerId: 1, status: 1 });
+SaijSentenciaSchema.index({ fuero: 1 }, { sparse: true });
+SaijSentenciaSchema.index({ 'expediente.numero': 1, 'expediente.año': 1, fuero: 1 }, { sparse: true });
 SaijSentenciaSchema.index({ titulo: 'text', texto: 'text', sobre: 'text' });
 
 module.exports = mongoose.model('SaijSentencia', SaijSentenciaSchema);

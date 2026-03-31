@@ -21,6 +21,8 @@ const saijSentenciasController = {
                 status,
                 tribunal,
                 fuero,
+                expedienteNumero,
+                expedienteAño,
                 yearFrom,
                 yearTo,
                 monthFrom,
@@ -34,8 +36,10 @@ const saijSentenciasController = {
             if (saijType) filter.saijType = saijType;
             if (status)   filter.status = status;
             if (tribunal) filter.tribunal = new RegExp(tribunal, 'i');
-            if (fuero)    filter.tipoTribunal = new RegExp(fuero, 'i');
+            if (fuero)    filter.fuero = fuero;
             if (workerId) filter.workerId = workerId;
+            if (expedienteNumero) filter['expediente.numero'] = parseInt(expedienteNumero);
+            if (expedienteAño)    filter['expediente.año'] = parseInt(expedienteAño);
 
             if (yearFrom || yearTo || monthFrom || monthTo) {
                 filter.fecha = {};
