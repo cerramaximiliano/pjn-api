@@ -45,6 +45,16 @@ const SaijSentenciaSchema = new mongoose.Schema(
         saijSentenciaId:  { type: String, trim: true },
         saijSentenciaUrl: { type: String, trim: true },
 
+        causaRefs: [
+            {
+                causaId:    { type: mongoose.Schema.Types.ObjectId },
+                caratula:   { type: String, trim: true },
+                fuero:      { type: String, trim: true },
+                coleccion:  { type: String, trim: true },
+                source:     { type: String, enum: ['app', 'cache'], trim: true },
+            },
+        ],
+
         source:           { type: String, default: 'saij' },
         workerId:         { type: String, trim: true },
         scrapedAt:        { type: Date, default: Date.now },
@@ -72,6 +82,8 @@ SaijSentenciaSchema.index({ saijType: 1 });
 SaijSentenciaSchema.index({ workerId: 1, status: 1 });
 SaijSentenciaSchema.index({ fuero: 1 }, { sparse: true });
 SaijSentenciaSchema.index({ 'expediente.numero': 1, 'expediente.año': 1, fuero: 1 }, { sparse: true });
+SaijSentenciaSchema.index({ 'causaRefs.causaId': 1 }, { sparse: true });
+SaijSentenciaSchema.index({ 'causaRefs.source': 1 }, { sparse: true });
 SaijSentenciaSchema.index({ titulo: 'text', texto: 'text', sobre: 'text' });
 
 module.exports = mongoose.model('SaijSentencia', SaijSentenciaSchema);

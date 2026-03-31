@@ -28,6 +28,9 @@ const saijSentenciasController = {
                 monthFrom,
                 monthTo,
                 workerId,
+                causaId,
+                linked,
+                saijSentenciaId,
                 q,
             } = req.query;
 
@@ -40,6 +43,10 @@ const saijSentenciasController = {
             if (workerId) filter.workerId = workerId;
             if (expedienteNumero) filter['expediente.numero'] = parseInt(expedienteNumero);
             if (expedienteAño)    filter['expediente.año'] = parseInt(expedienteAño);
+            if (causaId)           filter['causaRefs.causaId'] = causaId;
+            if (saijSentenciaId)   filter.saijSentenciaId = saijSentenciaId;
+            if (linked === 'true')  filter['causaRefs.0'] = { $exists: true };
+            if (linked === 'false') filter.$or = [{ causaRefs: { $exists: false } }, { causaRefs: { $size: 0 } }];
 
             if (yearFrom || yearTo || monthFrom || monthTo) {
                 filter.fecha = {};
