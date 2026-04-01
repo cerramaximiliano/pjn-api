@@ -8,6 +8,7 @@ const { verifyToken, verifyAdmin } = require('../middleware/auth');
 // Lectura — requiere token
 router.get('/',              verifyToken,             ctrl.list);
 router.get('/stats',         verifyToken,             ctrl.stats);
+router.get('/enrich/stats',  verifyToken,             ctrl.enrichStats);
 router.get('/saij/:saijId',  verifyToken,             ctrl.getBySaijId);
 router.get('/:id',           verifyToken,             ctrl.getById);
 

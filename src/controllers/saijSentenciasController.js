@@ -126,6 +126,40 @@ const saijSentenciasController = {
     },
 
     /**
+     * GET /api/saij/sentencias/enrich/stats
+     * Progreso del worker de enriquecimiento de texto completo de sumarios.
+     */
+    async enrichStats(req, res) {
+        try {
+            const base = { saijType: 'sumario' };
+
+            const [total, enriched, pendingWithUrl, noUrl, recent] = await Promise.all([
+                SaijSentencia.countDocuments(base),
+                SaijSentencia.countDocuments({ ...base, textoCompleto: { $exists: true, $ne: '' } }),
+                SaijSentencia.countDocuments({
+                    ...base,
+                    url: { $exists: true, $ne: '' },
+                    $or: [{ textoCompleto: { $exists: false } }, { textoCompleto: '' }, { textoCompleto: null }],
+                }),
+                SaijSentencia.countDocuments({ ...base, $or: [{ url: { $exists: false } }, { url: '' }] }),
+                SaijSentencia.find({ ...base, textoCompleto: { $exists: true, $ne: '' } })
+                    .select('numeroSumario texto textoCompleto updatedAt')
+                    .sort({ updatedAt: -1 })
+                    .limit(10)
+                    .lean(),
+            ]);
+
+            res.json({
+                success: true,
+                data: { total, enriched, pendingWithUrl, noUrl, recent },
+            });
+        } catch (error) {
+            logger.error(`[saij] Error enrichStats: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    /**
      * GET /api/saij/sentencias/:id
      * Obtener por MongoDB _id.
      */
