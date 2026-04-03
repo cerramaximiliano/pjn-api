@@ -8,6 +8,8 @@ const ALLOWED_FIELDS = [
 	'cronPattern',
 	'batchSize',
 	'maxPendingQueue',
+	'aiSummary.systemPrompt',
+	'aiSummary.model',
 ];
 
 const ALLOWED_FUERO_FIELDS = ['enabled', 'yearFrom', 'yearTo', 'collection'];
@@ -33,7 +35,11 @@ const configuracionSentenciasCollectorController = {
 			const setData = {};
 
 			for (const field of ALLOWED_FIELDS) {
-				if (body[field] !== undefined) setData[field] = body[field];
+				// Soporta tanto flat ('enabled') como dot-notation ('aiSummary.systemPrompt')
+				const value = field.includes('.')
+					? field.split('.').reduce((obj, k) => obj?.[k], body)
+					: body[field];
+				if (value !== undefined) setData[field] = value;
 			}
 
 			// Actualización de fueros individuales: body.fueros[].{enabled,yearFrom,yearTo,collection}

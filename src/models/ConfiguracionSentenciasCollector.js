@@ -31,6 +31,11 @@ const schema = new mongoose.Schema(
 			{ fuero: 'CNT', enabled: false, collection: 'causas-trabajo', yearFrom: 2020, yearTo: new Date().getFullYear() },
 			{ fuero: 'COM', enabled: false, collection: 'causas-comercial', yearFrom: 2020, yearTo: new Date().getFullYear() },
 		]},
+		aiSummary: {
+			systemPrompt: { type: String, default: null },   // null → usa el prompt default hardcodeado
+			model:        { type: String, default: 'gpt-4o-mini' },
+		},
+
 		currentState: {
 			isRunning: { type: Boolean, default: false },
 			workerId: { type: String },

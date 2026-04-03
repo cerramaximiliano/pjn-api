@@ -1,4 +1,5 @@
 const SentenciaCapturada = require('../models/SentenciaCapturada');
+const ConfiguracionSentenciasCollector = require('../models/ConfiguracionSentenciasCollector');
 const { logger } = require('../config/pino');
 const OpenAI = require('openai').default;
 
@@ -379,13 +380,21 @@ const sentenciasCapturadasController = {
 				truncated,
 			].filter(Boolean).join('\n');
 
+			// Leer prompt y modelo desde configuración (con fallback al default)
+			const collectorCfg = await ConfiguracionSentenciasCollector
+				.findOne({ name: 'sentencias-collector' })
+				.select('aiSummary')
+				.lean();
+			const systemPrompt = collectorCfg?.aiSummary?.systemPrompt || SUMMARY_SYSTEM_PROMPT;
+			const aiModel      = collectorCfg?.aiSummary?.model        || 'gpt-4o-mini';
+
 			const openai = getOpenAI();
 			const completion = await openai.chat.completions.create({
-				model:       'gpt-4o-mini',
+				model:       aiModel,
 				max_tokens:  1500,
 				temperature: 0.3,
 				messages: [
-					{ role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+					{ role: 'system', content: systemPrompt },
 					{ role: 'user',   content: userMessage },
 				],
 			});
