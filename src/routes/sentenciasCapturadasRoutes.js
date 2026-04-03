@@ -11,5 +11,7 @@ router.post('/:id/retry', verifyToken, verifyAdmin, ctrl.retry);
 router.post('/:id/retry-ocr', verifyToken, verifyAdmin, ctrl.retryOcr);
 router.post('/:id/retry-embedding', verifyToken, verifyAdmin, ctrl.retryEmbedding);
 router.patch('/:id/publication', verifyToken, verifyAdmin, ctrl.updatePublicationStatus);
+router.post('/:id/summary', verifyToken, verifyAdmin, ctrl.generateSummary);
+router.patch('/:id/summary', verifyToken, verifyAdmin, ctrl.saveSummary);
 
 module.exports = router;

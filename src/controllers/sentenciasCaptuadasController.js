@@ -1,5 +1,29 @@
 const SentenciaCapturada = require('../models/SentenciaCapturada');
 const { logger } = require('../config/pino');
+const OpenAI = require('openai').default;
+
+let _openai = null;
+function getOpenAI() {
+	if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+	return _openai;
+}
+
+const SUMMARY_SYSTEM_PROMPT = `Eres un asistente jurídico especializado en derecho argentino. Tu tarea es analizar fallos judiciales y producir un resumen estructurado orientado a la divulgación jurídica.
+
+El resumen debe tener EXACTAMENTE las siguientes tres secciones en formato Markdown:
+
+## Resumen del fallo
+Descripción clara y concisa de qué decidió el tribunal, las normas aplicadas y los fundamentos centrales del fallo. Máximo 3 párrafos.
+
+## Pormenores
+Contexto del caso: hechos relevantes, historial procesal, argumentos de las partes y aspectos destacados del razonamiento judicial. Máximo 4 párrafos.
+
+## Resultado
+Disposición final: quién ganó, qué se ordenó, montos o condenas si los hay, costas y cualquier otro punto resolutivo relevante. Máximo 2 párrafos.
+
+Usa lenguaje claro y preciso, apto para abogados y público interesado en derecho. No inventes información que no esté en el texto. Si el texto está incompleto o ilegible en alguna parte, indícalo.`;
+
+const MAX_TEXT_CHARS = 18000;
 
 const sentenciasCapturadasController = {
 
@@ -275,7 +299,7 @@ const sentenciasCapturadasController = {
 					.sort(sort)
 					.skip(page * limit)
 					.limit(limit)
-					.select('causaId fuero caratula juzgado sentenciaTipo movimientoFecha movimientoDetalle url tipoDoc embeddedAt noveltyCheck publicationStatus publishedAt publicationNotes detectedAt')
+					.select('causaId fuero caratula juzgado sentenciaTipo movimientoFecha movimientoDetalle url tipoDoc embeddedAt noveltyCheck publicationStatus publishedAt publicationNotes aiSummary detectedAt')
 					.lean(),
 				SentenciaCapturada.countDocuments(filter),
 			]);
@@ -313,6 +337,100 @@ const sentenciasCapturadasController = {
 		} catch (error) {
 			logger.error(`Error actualizando publicationStatus: ${error.message}`);
 			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
+		}
+	},
+
+	// POST /api/sentencias-capturadas/:id/summary — generar resumen con IA
+	async generateSummary(req, res) {
+		try {
+			const doc = await SentenciaCapturada.findById(req.params.id)
+				.select('caratula fuero sentenciaTipo movimientoFecha juzgado sala processingStatus processingResult ocrStatus ocrResult aiSummary')
+				.lean();
+
+			if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
+
+			// Obtener el texto del documento
+			const text = (doc.ocrStatus === 'completed' && doc.ocrResult?.text)
+				? doc.ocrResult.text
+				: doc.processingResult?.text;
+
+			if (!text || text.trim().length < 100) {
+				return res.status(422).json({ success: false, message: 'El documento no tiene texto extraído disponible para resumir' });
+			}
+
+			const truncated = text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) + '\n\n[Texto truncado por longitud]' : text;
+
+			// Contexto del caso para el prompt
+			const fueroLabel = { CIV: 'Civil', CSS: 'Seguridad Social', CNT: 'Trabajo', COM: 'Comercial' }[doc.fuero] || doc.fuero;
+			const tipoLabel = {
+				primera_instancia: 'Primera Instancia', camara: 'Cámara', interlocutoria: 'Interlocutoria',
+				honorarios: 'Honorarios', definitiva: 'Definitiva', resolucion: 'Resolución', otro: 'Otro',
+			}[doc.sentenciaTipo] || doc.sentenciaTipo;
+
+			const userMessage = [
+				`**Expediente:** ${doc.caratula || 'Sin carátula'}`,
+				`**Fuero:** ${fueroLabel}`,
+				`**Tipo de resolución:** ${tipoLabel}`,
+				doc.juzgado   ? `**Juzgado:** ${doc.juzgado}` : null,
+				doc.sala      ? `**Sala:** ${doc.sala}`        : null,
+				doc.movimientoFecha ? `**Fecha:** ${new Date(doc.movimientoFecha).toLocaleDateString('es-AR')}` : null,
+				'',
+				'**Texto del fallo:**',
+				truncated,
+			].filter(Boolean).join('\n');
+
+			const openai = getOpenAI();
+			const completion = await openai.chat.completions.create({
+				model:       'gpt-4o-mini',
+				max_tokens:  1500,
+				temperature: 0.3,
+				messages: [
+					{ role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+					{ role: 'user',   content: userMessage },
+				],
+			});
+
+			const content = completion.choices[0]?.message?.content || '';
+			const model   = completion.model;
+
+			const updated = await SentenciaCapturada.findByIdAndUpdate(
+				req.params.id,
+				{ $set: { aiSummary: { content, status: 'draft', generatedAt: new Date(), model } } },
+				{ new: true }
+			).select('aiSummary');
+
+			logger.info({ id: req.params.id, model, chars: content.length }, 'AI summary generated');
+			res.json({ success: true, data: updated.aiSummary });
+		} catch (error) {
+			logger.error(`Error generando resumen IA: ${error.message}`);
+			res.status(500).json({ success: false, message: 'Error al generar resumen', error: error.message });
+		}
+	},
+
+	// PATCH /api/sentencias-capturadas/:id/summary — aprobar o editar resumen
+	async saveSummary(req, res) {
+		try {
+			const { content, action } = req.body; // action: 'approve' | 'save'
+			if (!content || typeof content !== 'string') {
+				return res.status(400).json({ success: false, message: 'content requerido' });
+			}
+
+			const set = {
+				'aiSummary.content':     content,
+				'aiSummary.status':      action === 'approve' ? 'approved' : 'draft',
+				...(action === 'approve' ? { 'aiSummary.approvedAt': new Date() } : {}),
+			};
+
+			const doc = await SentenciaCapturada.findByIdAndUpdate(req.params.id, { $set: set }, { new: true })
+				.select('aiSummary');
+
+			if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
+
+			logger.info({ id: req.params.id, action }, 'AI summary saved');
+			res.json({ success: true, data: doc.aiSummary });
+		} catch (error) {
+			logger.error(`Error guardando resumen IA: ${error.message}`);
+			res.status(500).json({ success: false, message: 'Error al guardar resumen', error: error.message });
 		}
 	},
 };

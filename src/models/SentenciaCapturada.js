@@ -92,6 +92,15 @@ const schema = new Schema(
 			semanticVerifiedAt: { type: Date },
 		},
 
+		// Resumen generado por IA para publicación
+		aiSummary: {
+			content:     { type: String },
+			status:      { type: String, enum: ['draft', 'approved'] },
+			generatedAt: { type: Date },
+			approvedAt:  { type: Date },
+			model:       { type: String },
+		},
+
 		// Estado de publicación (solo relevante para category='novelty')
 		publicationStatus: {
 			type: String,
