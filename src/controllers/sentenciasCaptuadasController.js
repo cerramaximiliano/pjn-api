@@ -247,6 +247,68 @@ const sentenciasCapturadasController = {
 			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
 		}
 	},
+
+	// GET /api/sentencias-capturadas/publication-queue — sentencias novelty listas para publicar
+	async getPublicationQueue(req, res) {
+		try {
+			const page  = Math.max(0, parseInt(req.query.page  || '0', 10));
+			const limit = Math.min(50, parseInt(req.query.limit || '20', 10));
+			const fuero = req.query.fuero;
+			const tipo  = req.query.tipo;
+
+			const filter = {
+				category:          'novelty',
+				embeddingStatus:   'completed',
+				publicationStatus: 'pending',
+			};
+			if (fuero) filter.fuero = fuero;
+			if (tipo)  filter.sentenciaTipo = tipo;
+
+			const [docs, total] = await Promise.all([
+				SentenciaCapturada.find(filter)
+					.sort({ movimientoFecha: -1 })
+					.skip(page * limit)
+					.limit(limit)
+					.select('causaId fuero caratula juzgado sentenciaTipo movimientoFecha movimientoDetalle url tipoDoc embeddedAt noveltyCheck publicationStatus detectedAt')
+					.lean(),
+				SentenciaCapturada.countDocuments(filter),
+			]);
+
+			res.json({ success: true, data: docs, total, page, limit });
+		} catch (error) {
+			logger.error(`Error obteniendo publication queue: ${error.message}`);
+			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
+		}
+	},
+
+	// PATCH /api/sentencias-capturadas/:id/publication — actualizar estado de publicación
+	async updatePublicationStatus(req, res) {
+		try {
+			const { status, notes } = req.body;
+			if (!['published', 'skipped'].includes(status)) {
+				return res.status(400).json({ success: false, message: "status debe ser 'published' o 'skipped'" });
+			}
+
+			const update = {
+				$set: {
+					publicationStatus: status,
+					publicationNotes:  notes || null,
+					...(status === 'published' ? { publishedAt: new Date() } : {}),
+				},
+			};
+
+			const doc = await SentenciaCapturada.findByIdAndUpdate(req.params.id, update, { new: true })
+				.select('causaId fuero caratula sentenciaTipo publicationStatus publishedAt publicationNotes');
+
+			if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
+
+			logger.info(`Sentencia ${req.params.id} marcada como ${status} por usuario ${req.userId}`);
+			res.json({ success: true, message: `Sentencia marcada como ${status}`, data: doc });
+		} catch (error) {
+			logger.error(`Error actualizando publicationStatus: ${error.message}`);
+			res.status(500).json({ success: false, message: 'Error interno del servidor', error: error.message });
+		}
+	},
 };
 
 module.exports = sentenciasCapturadasController;

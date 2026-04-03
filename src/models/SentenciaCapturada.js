@@ -92,6 +92,14 @@ const schema = new Schema(
 			semanticVerifiedAt: { type: Date },
 		},
 
+		// Estado de publicación (solo relevante para category='novelty')
+		publicationStatus: {
+			type: String,
+			enum: ['pending', 'published', 'skipped'],
+		},
+		publishedAt: { type: Date },
+		publicationNotes: { type: String },
+
 		processingHistory: [
 			{
 				status: { type: String },
@@ -113,5 +121,6 @@ schema.index({ detectedAt: -1 });
 schema.index({ processedAt: -1 });
 schema.index({ ocrStatus: 1, processingStatus: 1 });
 schema.index({ 'noveltyCheck.status': 1, category: 1 });
+schema.index({ publicationStatus: 1, category: 1, embeddingStatus: 1 });
 
 module.exports = mongoose.model('SentenciaCapturada', schema);
