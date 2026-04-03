@@ -234,6 +234,34 @@ const scrapingManagerController = {
         error: error.message
       });
     }
+  },
+
+  /**
+   * Distribución de causas válidas, sentencias y escritos embebidos por fuero
+   * GET /api/scraping-manager/fuero-stats
+   */
+  async getFueroStats(_req, res) {
+    try {
+      const db = mongoose.connection.db;
+      const doc = await db.collection('scraping-manager-state').findOne({ _id: 'fuero-causa-stats' });
+
+      if (!doc) {
+        return res.status(404).json({
+          success: false,
+          message: 'Stats de fuero no disponibles aún (se generan cada ~10 min)'
+        });
+      }
+
+      const { _id, ...data } = doc;
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error(`Error obteniendo fuero stats: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener las estadísticas por fuero',
+        error: error.message
+      });
+    }
   }
 };
 

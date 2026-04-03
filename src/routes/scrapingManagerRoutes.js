@@ -31,4 +31,8 @@ router.patch('/workers/:workerName', scrapingManagerController.updateWorker);
 // GET /api/scraping-manager/state
 router.get('/state', scrapingManagerController.getManagerState);
 
+// Distribución de causas válidas, sentencias y escritos embebidos por fuero
+// GET /api/scraping-manager/fuero-stats
+router.get('/fuero-stats', scrapingManagerController.getFueroStats);
+
 module.exports = router;
