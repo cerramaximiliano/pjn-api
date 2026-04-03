@@ -267,7 +267,8 @@ const sentenciasCapturadasController = {
 			if (fuero) filter.fuero = fuero;
 			if (tipo)  filter.sentenciaTipo = tipo;
 
-			const sort = status === 'published' ? { publishedAt: -1 } : { movimientoFecha: -1 };
+			const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+			const sort = status === 'published' ? { publishedAt: sortOrder } : { movimientoFecha: sortOrder };
 
 			const [docs, total] = await Promise.all([
 				SentenciaCapturada.find(filter)
