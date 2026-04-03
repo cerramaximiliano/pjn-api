@@ -93,6 +93,11 @@ const verifyAdmin = async (req, res, next) => {
       });
     }
 
+    // Las llamadas service-to-service via API Key ya están autenticadas como admin
+    if (req.userId === 'service') {
+      return next();
+    }
+
     // Buscar el usuario en la base de datos por _id
     const user = await User.findById(req.userId).select('role');
     
