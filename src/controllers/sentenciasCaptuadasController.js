@@ -251,25 +251,30 @@ const sentenciasCapturadasController = {
 	// GET /api/sentencias-capturadas/publication-queue — sentencias novelty listas para publicar
 	async getPublicationQueue(req, res) {
 		try {
-			const page  = Math.max(0, parseInt(req.query.page  || '0', 10));
-			const limit = Math.min(50, parseInt(req.query.limit || '20', 10));
-			const fuero = req.query.fuero;
-			const tipo  = req.query.tipo;
+			const page   = Math.max(0, parseInt(req.query.page  || '0', 10));
+			const limit  = Math.min(50, parseInt(req.query.limit || '20', 10));
+			const fuero  = req.query.fuero;
+			const tipo   = req.query.tipo;
+			const status = ['pending', 'skipped', 'published'].includes(req.query.publicationStatus)
+				? req.query.publicationStatus
+				: 'pending';
 
 			const filter = {
 				category:          'novelty',
 				embeddingStatus:   'completed',
-				publicationStatus: 'pending',
+				publicationStatus: status,
 			};
 			if (fuero) filter.fuero = fuero;
 			if (tipo)  filter.sentenciaTipo = tipo;
 
+			const sort = status === 'published' ? { publishedAt: -1 } : { movimientoFecha: -1 };
+
 			const [docs, total] = await Promise.all([
 				SentenciaCapturada.find(filter)
-					.sort({ movimientoFecha: -1 })
+					.sort(sort)
 					.skip(page * limit)
 					.limit(limit)
-					.select('causaId fuero caratula juzgado sentenciaTipo movimientoFecha movimientoDetalle url tipoDoc embeddedAt noveltyCheck publicationStatus detectedAt')
+					.select('causaId fuero caratula juzgado sentenciaTipo movimientoFecha movimientoDetalle url tipoDoc embeddedAt noveltyCheck publicationStatus publishedAt publicationNotes detectedAt')
 					.lean(),
 				SentenciaCapturada.countDocuments(filter),
 			]);
@@ -285,8 +290,8 @@ const sentenciasCapturadasController = {
 	async updatePublicationStatus(req, res) {
 		try {
 			const { status, notes } = req.body;
-			if (!['published', 'skipped'].includes(status)) {
-				return res.status(400).json({ success: false, message: "status debe ser 'published' o 'skipped'" });
+			if (!['published', 'skipped', 'pending'].includes(status)) {
+				return res.status(400).json({ success: false, message: "status debe ser 'published', 'skipped' o 'pending'" });
 			}
 
 			const update = {
