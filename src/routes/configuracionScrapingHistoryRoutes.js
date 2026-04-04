@@ -18,6 +18,9 @@ router.get('/stats/fuero/:fuero/year/:year', verifyToken, configuracionScrapingH
 // Verificar rangos superpuestos
 router.get('/check-overlapping', verifyToken, configuracionScrapingHistoryController.checkOverlappingRanges);
 
+// Obtener análisis de cobertura por fuero y año
+router.get('/coverage/fuero/:fuero/year/:year', verifyToken, configuracionScrapingHistoryController.getCoverageByFueroAndYear);
+
 // Eliminar un registro del historial (solo admin)
 router.delete('/:id', verifyToken, verifyAdmin, configuracionScrapingHistoryController.deleteById);
 

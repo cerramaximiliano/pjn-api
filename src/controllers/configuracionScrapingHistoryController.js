@@ -1,5 +1,37 @@
 const ConfiguracionScrapingHistory = require('../models/configuracionScrapingHistory');
+const { ConfiguracionScraping } = require('pjn-models');
 const { logger } = require('../config/pino');
+
+// Helpers para análisis de cobertura
+function mergeRanges(ranges) {
+  if (!ranges.length) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const merged = [{ ...sorted[0] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = merged[merged.length - 1];
+    if (sorted[i].start <= last.end + 1) {
+      last.end = Math.max(last.end, sorted[i].end);
+    } else {
+      merged.push({ ...sorted[i] });
+    }
+  }
+  return merged;
+}
+
+function calculateGaps(mergedRanges, minStart, maxEnd) {
+  const gaps = [];
+  let current = minStart;
+  for (const range of mergedRanges) {
+    if (range.start > current) {
+      gaps.push({ start: current, end: range.start - 1, size: range.start - current });
+    }
+    current = range.end + 1;
+  }
+  if (current <= maxEnd) {
+    gaps.push({ start: current, end: maxEnd, size: maxEnd - current + 1 });
+  }
+  return gaps;
+}
 
 const configuracionScrapingHistoryController = {
   async findAll(req, res) {
@@ -226,6 +258,111 @@ const configuracionScrapingHistoryController = {
 
     } catch (error) {
       logger.error(`Error verificando rangos superpuestos: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
+  async getCoverageByFueroAndYear(req, res) {
+    try {
+      const { fuero, year } = req.params;
+      const { maxRange } = req.query;
+
+      if (!fuero || !year) {
+        return res.status(400).json({
+          success: false,
+          message: 'Los parámetros fuero y year son obligatorios',
+          data: null
+        });
+      }
+
+      // Traer todos los rangos cubiertos en el historial
+      const historyRanges = await ConfiguracionScrapingHistory.find(
+        { fuero, year: String(year) },
+        { range_start: 1, range_end: 1 }
+      ).lean();
+
+      // Traer workers activos para ese fuero+año
+      const activeWorkers = await ConfiguracionScraping.find(
+        { fuero, year: Number(year), enabled: true, isTemporary: { $ne: true } },
+        { worker_id: 1, range_start: 1, range_end: 1, number: 1, max_number: 1 }
+      ).lean();
+
+      // Determinar límite superior del rango
+      const allEnds = [
+        ...historyRanges.map(r => r.range_end),
+        ...activeWorkers.map(w => w.max_number || w.range_end || 0)
+      ].filter(Boolean);
+
+      const computedMax = allEnds.length ? Math.max(...allEnds) : 0;
+      const maxEnd = maxRange ? Number(maxRange) : computedMax;
+
+      if (maxEnd === 0) {
+        return res.json({
+          success: true,
+          message: 'No hay datos para el fuero y año especificados',
+          data: {
+            fuero,
+            year,
+            maxRange: 0,
+            coveredRanges: [],
+            totalCovered: 0,
+            coveragePercent: 0,
+            gaps: [],
+            activeWorkers: []
+          }
+        });
+      }
+
+      // Mergear rangos cubiertos
+      const rawRanges = historyRanges.map(r => ({ start: r.range_start, end: r.range_end }));
+      const coveredRanges = mergeRanges(rawRanges);
+      const totalCovered = coveredRanges.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
+
+      // Calcular gaps
+      const gaps = calculateGaps(coveredRanges, 1, maxEnd);
+
+      // Enriquecer gaps: marcar si ya tienen worker asignado
+      const enrichedGaps = gaps.map(gap => {
+        const assignedWorker = activeWorkers.find(w =>
+          (w.range_start <= gap.end && w.range_end >= gap.start)
+        );
+        return {
+          ...gap,
+          assigned: !!assignedWorker,
+          workerId: assignedWorker?.worker_id || null
+        };
+      });
+
+      logger.info(`[getCoverage] fuero=${fuero} year=${year} maxEnd=${maxEnd} covered=${totalCovered} gaps=${gaps.length}`);
+
+      res.json({
+        success: true,
+        message: 'Cobertura calculada exitosamente',
+        data: {
+          fuero,
+          year,
+          maxRange: maxEnd,
+          coveredRanges,
+          totalCovered,
+          coveragePercent: maxEnd > 0 ? Math.round((totalCovered / maxEnd) * 100) : 0,
+          gaps: enrichedGaps,
+          activeWorkers: activeWorkers.map(w => ({
+            worker_id: w.worker_id,
+            range_start: w.range_start,
+            range_end: w.range_end,
+            current: w.number,
+            max_number: w.max_number
+          }))
+        }
+      });
+
+    } catch (error) {
+      logger.error(`Error calculando cobertura: ${error}`);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
