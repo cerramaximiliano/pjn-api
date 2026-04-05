@@ -390,8 +390,9 @@ const configuracionScrapingController = {
       // Determinar el year efectivo (el proporcionado o el actual)
       const effectiveYear = year !== undefined ? year : configuracion.year;
 
-      // Verificar si el worker está terminado (completionEmailSent ya no es requerido)
+      // Verificar si el worker está terminado
       const isCompleted = configuracion.enabled === false &&
+                         configuracion.completionEmailSent === true &&
                          configuracion.number >= configuracion.range_end;
 
       logger.info({
@@ -408,12 +409,13 @@ const configuracionScrapingController = {
         logger.warn({
           id,
           enabled: configuracion.enabled,
+          completionEmailSent: configuracion.completionEmailSent,
           number: configuracion.number,
           range_end: configuracion.range_end
         }, 'updateRange: Worker no terminado');
         return res.status(400).json({
           success: false,
-          message: 'El worker no está terminado. Debe cumplir: enabled=false y number >= range_end',
+          message: 'El worker no está terminado. Debe cumplir: enabled=false, completionEmailSent=true y number >= range_end',
           data: null
         });
       }
@@ -470,14 +472,12 @@ const configuracionScrapingController = {
       }
 
       // Verificar si otro documento de ConfiguracionScraping tiene un rango superpuesto
-      // Excluir: el documento actual, workers temporales de retry, y configs deshabilitados
-      // (un config disabled ya no está procesando, el admin puede reasignar ese rango)
+      // Excluir workers temporales de retry (worker_id que comienza con "retry_worker_temp")
       const overlappingConfig = await ConfiguracionScraping.findOne({
         _id: { $ne: id }, // Excluir el documento actual
         fuero: configuracion.fuero, // Mismo fuero
         year: effectiveYear, // Mismo año (usar el year efectivo)
         worker_id: { $not: /^retry_worker_temp/ }, // Excluir workers temporales de retry
-        enabled: true, // Solo bloquear si el config conflictivo está habilitado (activo)
         $or: [
           // El nuevo rango comienza dentro de un rango existente
           { range_start: { $lte: range_start }, range_end: { $gte: range_start } },
