@@ -390,9 +390,8 @@ const configuracionScrapingController = {
       // Determinar el year efectivo (el proporcionado o el actual)
       const effectiveYear = year !== undefined ? year : configuracion.year;
 
-      // Verificar si el worker está terminado
+      // Verificar si el worker está terminado (completionEmailSent ya no es requerido)
       const isCompleted = configuracion.enabled === false &&
-                         configuracion.completionEmailSent === true &&
                          configuracion.number >= configuracion.range_end;
 
       logger.info({
@@ -409,13 +408,12 @@ const configuracionScrapingController = {
         logger.warn({
           id,
           enabled: configuracion.enabled,
-          completionEmailSent: configuracion.completionEmailSent,
           number: configuracion.number,
           range_end: configuracion.range_end
         }, 'updateRange: Worker no terminado');
         return res.status(400).json({
           success: false,
-          message: 'El worker no está terminado. Debe cumplir: enabled=false, completionEmailSent=true y number >= range_end',
+          message: 'El worker no está terminado. Debe cumplir: enabled=false y number >= range_end',
           data: null
         });
       }
