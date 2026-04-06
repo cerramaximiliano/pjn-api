@@ -11,6 +11,8 @@ router.put('/:id', verifyToken, verifyAdmin, configuracionScrapingController.upd
 
 router.put('/:id/range', verifyToken, verifyAdmin, configuracionScrapingController.updateRange);
 
+router.patch('/:id/probe', verifyToken, verifyAdmin, configuracionScrapingController.updateProbeConfig);
+
 router.delete('/:id', verifyToken, verifyAdmin, configuracionScrapingController.deleteById);
 
 module.exports = router;

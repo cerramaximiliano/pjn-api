@@ -745,6 +745,112 @@ const configuracionScrapingController = {
     }
   },
 
+  async updateProbeConfig(req, res) {
+    try {
+      const { id } = req.params;
+      const { threshold, probe_offsets, check_interval_hours, reset_pause } = req.body;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'El parámetro id es obligatorio',
+          data: null
+        });
+      }
+
+      // Validaciones
+      if (threshold !== undefined) {
+        if (!Number.isInteger(threshold) || threshold < 1) {
+          return res.status(400).json({
+            success: false,
+            message: 'threshold debe ser un entero positivo',
+            data: null
+          });
+        }
+      }
+
+      if (probe_offsets !== undefined) {
+        if (!Array.isArray(probe_offsets) || probe_offsets.length === 0 ||
+            !probe_offsets.every(o => Number.isInteger(o) && o > 0)) {
+          return res.status(400).json({
+            success: false,
+            message: 'probe_offsets debe ser un array de enteros positivos',
+            data: null
+          });
+        }
+      }
+
+      if (check_interval_hours !== undefined) {
+        if (typeof check_interval_hours !== 'number' || check_interval_hours <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'check_interval_hours debe ser un número positivo',
+            data: null
+          });
+        }
+      }
+
+      const update = {};
+      if (threshold !== undefined) update['current_year_probe.threshold'] = threshold;
+      if (probe_offsets !== undefined) update['current_year_probe.probe_offsets'] = probe_offsets;
+      if (check_interval_hours !== undefined) update['current_year_probe.check_interval_hours'] = check_interval_hours;
+      if (reset_pause === true) {
+        update['current_year_probe.paused_until'] = null;
+        update['current_year_probe.estimated_frontier'] = null;
+        update['current_year_probe.last_probe_result'] = null;
+      }
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se proporcionaron campos válidos para actualizar (threshold, probe_offsets, check_interval_hours, reset_pause)',
+          data: null
+        });
+      }
+
+      const configuracion = await ConfiguracionScraping.findByIdAndUpdate(
+        id,
+        { $set: update },
+        { new: true, runValidators: true }
+      ).select('worker_id fuero year current_year_probe');
+
+      if (!configuracion) {
+        return res.status(404).json({
+          success: false,
+          message: 'Configuración de scraping no encontrada',
+          data: null
+        });
+      }
+
+      logger.info(`Probe config actualizada para ${configuracion.worker_id} (${configuracion.fuero} ${configuracion.year})`);
+
+      res.json({
+        success: true,
+        message: 'Configuración de probe actualizada exitosamente',
+        data: configuracion
+      });
+
+    } catch (error) {
+      logger.error(`Error actualizando probe config: ${error}`);
+
+      if (error.name === 'CastError') {
+        return res.status(400).json({
+          success: false,
+          message: 'ID inválido',
+          error: error.message,
+          data: null
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
   async deleteById(req, res) {
     try {
       const { id } = req.params;
