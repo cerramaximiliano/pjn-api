@@ -546,7 +546,21 @@ const configuracionScrapingController = {
         duration: configuracion.duration,
         errors: configuracion.errors || [],
         lastError: configuracion.lastError,
-        retryCount: configuracion.retryCount || 0
+        retryCount: configuracion.retryCount || 0,
+        // Estadísticas acumuladas del rango
+        totalFound: configuracion.total_found || 0,
+        totalNotFound: configuracion.total_not_found || 0,
+        totalErrors: configuracion.total_errors || 0,
+        ...(configuracion.verification && {
+          verification: {
+            totalAttempted: configuracion.verification.totalAttempted || 0,
+            totalVerified: configuracion.verification.totalVerified || 0,
+            totalValid: configuracion.verification.totalValid || 0,
+            totalInvalid: configuracion.verification.totalInvalid || 0,
+            totalVerificationFailed: configuracion.verification.totalVerificationFailed || 0,
+            totalCaptchaFailed: configuracion.verification.totalCaptchaFailed || 0
+          }
+        })
       });
 
       // Agregar captchaStats si existen
@@ -571,6 +585,43 @@ const configuracionScrapingController = {
       // Guardar el historial
       await historicalData.save();
 
+      // Entrada para rangeHistory (array embebido en el documento)
+      const rangeHistoryEntry = {
+        version: nextVersion,
+        range_start: configuracion.range_start,
+        range_end: configuracion.range_end,
+        year: String(configuracion.year),
+        completedAt: new Date(),
+        lastProcessedNumber: configuracion.number,
+        documentsProcessed: configuracion.documentsProcessed || 0,
+        documentsFound: configuracion.documentsFound || 0,
+        enabled: configuracion.enabled,
+        completionEmailSent: configuracion.completionEmailSent,
+        startedAt: configuracion.startedAt,
+        duration: configuracion.duration,
+        totalFound: configuracion.total_found || 0,
+        totalNotFound: configuracion.total_not_found || 0,
+        totalErrors: configuracion.total_errors || 0,
+        ...(configuracion.captchaStats && {
+          captchaStats: {
+            totalCaptchas: configuracion.captchaStats.totalCaptchas,
+            totalCaptchasFailed: configuracion.captchaStats.totalCaptchasFailed,
+            totalCost: configuracion.captchaStats.totalCost,
+            provider: configuracion.captchaStats.provider
+          }
+        }),
+        ...(configuracion.verification && {
+          verification: {
+            totalAttempted: configuracion.verification.totalAttempted || 0,
+            totalVerified: configuracion.verification.totalVerified || 0,
+            totalValid: configuracion.verification.totalValid || 0,
+            totalInvalid: configuracion.verification.totalInvalid || 0,
+            totalVerificationFailed: configuracion.verification.totalVerificationFailed || 0,
+            totalCaptchaFailed: configuracion.verification.totalCaptchaFailed || 0
+          }
+        })
+      };
+
       // Preparar la actualización del documento principal
       const updateData = {
         range_start: range_start,
@@ -587,14 +638,25 @@ const configuracionScrapingController = {
         lastError: null,
         retryCount: 0,
         lastActivityAt: new Date(),
-        // Resetear campos de documentos no encontrados consecutivos
+        // Resetear estadísticas acumuladas del rango anterior
+        total_found: 0,
+        total_not_found: 0,
+        total_errors: 0,
+        consecutive_errors: 0,
+        // Resetear rangos de error y not_found
         consecutive_not_found: 0,
         not_found_range: {
           start_number: null,
           end_number: null,
           started_at: null,
           updated_at: null
-        }
+        },
+        error_range: {
+          start_number: null,
+          end_number: null,
+          started_at: null,
+          updated_at: null
+        },
       };
 
       // Actualizar year solo si se proporcionó en el request
@@ -616,11 +678,24 @@ const configuracionScrapingController = {
         updateData['requestStats.failedRequests'] = 0;
       }
 
-      // Actualizar el documento
+      // Si existe verification, resetear sus contadores
+      if (configuracion.verification) {
+        updateData['verification.totalAttempted'] = 0;
+        updateData['verification.totalVerified'] = 0;
+        updateData['verification.totalValid'] = 0;
+        updateData['verification.totalInvalid'] = 0;
+        updateData['verification.totalVerificationFailed'] = 0;
+        updateData['verification.totalCaptchaFailed'] = 0;
+      }
+
+      // Actualizar el documento: $set para campos planos + $push para rangeHistory
       const configuracionActualizada = await ConfiguracionScraping.findByIdAndUpdate(
         id,
-        updateData,
-        { 
+        {
+          $set: updateData,
+          $push: { rangeHistory: rangeHistoryEntry }
+        },
+        {
           new: true,
           runValidators: true
         }

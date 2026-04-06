@@ -87,6 +87,27 @@ const configuracionScrapingHistorySchema = new mongoose.Schema({
   retryCount: {
     type: Number,
     default: 0
+  },
+  // Estadísticas acumuladas del rango completo (reseteadas al reasignar)
+  totalFound: {
+    type: Number,
+    default: 0
+  },
+  totalNotFound: {
+    type: Number,
+    default: 0
+  },
+  totalErrors: {
+    type: Number,
+    default: 0
+  },
+  verification: {
+    totalAttempted: Number,
+    totalVerified: Number,
+    totalValid: Number,
+    totalInvalid: Number,
+    totalVerificationFailed: Number,
+    totalCaptchaFailed: Number
   }
 }, {
   timestamps: true
