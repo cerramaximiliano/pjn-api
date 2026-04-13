@@ -117,15 +117,6 @@ async function queryPinecone(embedding, { topK, filter }) {
 function groupMatchesBySentencia(matches, topK, minScore) {
 	const groups = new Map();
 
-	logger.info({
-		minScore,
-		sample: matches.slice(0, 5).map(m => ({
-			score: m.score,
-			sentenciaId: m.metadata?.sentenciaId,
-			metadataKeys: Object.keys(m.metadata || {}),
-		})),
-	}, '[SentenciasSearch][diag] groupMatchesBySentencia input');
-
 	for (const match of matches) {
 		const meta = match.metadata || {};
 		const sentenciaId = meta.sentenciaId;
@@ -169,11 +160,15 @@ async function downloadChunksFromS3(causaId, sentenciaId) {
 async function enrichGroup(group, includeFullText) {
 	const { sentenciaId, score, matchedChunksByIndex } = group;
 
-	const doc = await SentenciaCapturada.findById(sentenciaId)
-		.select('causaId number year fuero caratula juzgado sala organizacionTextoCompleto movimientoFecha movimientoTipo movimientoDetalle sentenciaTipo category aiSummary embeddingChunksCount embeddedAt')
-		.lean();
+	// Usar el driver nativo para evitar problemas de inicialización del modelo Mongoose
+	// en entornos donde dotenv carga después del require() de los modelos (ej: PM2).
+	const mongoose = require('mongoose');
+	const { ObjectId } = require('mongoose').Types;
+	const doc = await mongoose.connection.db.collection('sentencias-capturadas').findOne(
+		{ _id: new ObjectId(sentenciaId) },
+		{ projection: { causaId: 1, number: 1, year: 1, fuero: 1, caratula: 1, juzgado: 1, sala: 1, organizacionTextoCompleto: 1, movimientoFecha: 1, movimientoTipo: 1, movimientoDetalle: 1, sentenciaTipo: 1, category: 1, aiSummary: 1, embeddingChunksCount: 1, embeddedAt: 1 } }
+	);
 
-	logger.info({ sentenciaId, found: !!doc, score }, '[SentenciasSearch][diag] enrichGroup findById result');
 	if (!doc) return null;
 
 	let allChunks = null;
@@ -263,12 +258,6 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	});
 
 	const groups = groupMatchesBySentencia(matches, topK, minScore);
-
-	logger.info({
-		matchesFromPinecone: matches.length,
-		groupsAfterDedup: groups.length,
-		groupScores: groups.map(g => ({ sentenciaId: g.sentenciaId, score: g.score })),
-	}, '[SentenciasSearch][diag] groups pre-enrich');
 
 	const enrichStart = Date.now();
 	const enriched = await Promise.all(groups.map(g => enrichGroup(g, includeFullText)));
