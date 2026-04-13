@@ -337,4 +337,22 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
 	};
 }
 
-module.exports = { searchByQuery, searchBySimilarity };
+/**
+ * Devuelve todos los chunks de una sentencia desde S3.
+ * @param {string} sentenciaId - _id de la sentencia
+ */
+async function getChunks(sentenciaId) {
+	const doc = await SentenciaCapturada.findById(sentenciaId)
+		.select('causaId embeddingStatus')
+		.lean();
+
+	if (!doc) throw new Error('Sentencia no encontrada');
+	if (doc.embeddingStatus !== 'completed') throw new Error('La sentencia no tiene chunks indexados');
+
+	const chunks = await downloadChunksFromS3(doc.causaId.toString(), sentenciaId);
+	if (!chunks || chunks.length === 0) throw new Error('No se encontraron chunks en S3 para esta sentencia');
+
+	return chunks.sort((a, b) => a.index - b.index);
+}
+
+module.exports = { searchByQuery, searchBySimilarity, getChunks };

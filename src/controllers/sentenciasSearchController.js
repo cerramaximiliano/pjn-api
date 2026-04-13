@@ -1,4 +1,4 @@
-const { searchByQuery, searchBySimilarity } = require('../services/sentenciasSearchService');
+const { searchByQuery, searchBySimilarity, getChunks } = require('../services/sentenciasSearchService');
 const { logger } = require('../config/pino');
 
 const sentenciasSearchController = {
@@ -74,6 +74,28 @@ const sentenciasSearchController = {
 			}
 			logger.error({ err: error.message }, '[SentenciasSearch] error en búsqueda por similitud');
 			res.status(500).json({ success: false, message: 'Error al ejecutar la búsqueda', error: error.message });
+		}
+	},
+	// GET /sentencias/:id/chunks — texto completo de una sentencia
+	async getChunks(req, res) {
+		try {
+			const { id } = req.params;
+			if (!id || typeof id !== 'string') {
+				return res.status(400).json({ success: false, message: 'ID de sentencia requerido' });
+			}
+
+			const chunks = await getChunks(id);
+			res.json({ success: true, chunks, total: chunks.length });
+		} catch (error) {
+			if (error.message === 'Sentencia no encontrada') {
+				return res.status(404).json({ success: false, message: error.message });
+			}
+			if (error.message === 'La sentencia no tiene chunks indexados' ||
+				error.message === 'No se encontraron chunks en S3 para esta sentencia') {
+				return res.status(422).json({ success: false, message: error.message });
+			}
+			logger.error({ err: error.message }, '[SentenciasSearch] error obteniendo chunks');
+			res.status(500).json({ success: false, message: 'Error al obtener el texto de la sentencia', error: error.message });
 		}
 	},
 };
