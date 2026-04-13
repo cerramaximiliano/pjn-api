@@ -151,6 +151,7 @@ async function enrichGroup(group, includeFullText) {
 		.select('causaId number year fuero caratula juzgado sala organizacionTextoCompleto movimientoFecha movimientoTipo movimientoDetalle sentenciaTipo category aiSummary embeddingChunksCount embeddedAt')
 		.lean();
 
+	logger.info({ sentenciaId, found: !!doc, score }, '[SentenciasSearch][diag] enrichGroup findById result');
 	if (!doc) return null;
 
 	let allChunks = null;
@@ -239,6 +240,12 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	});
 
 	const groups = groupMatchesBySentencia(matches, topK, minScore);
+
+	logger.info({
+		matchesFromPinecone: matches.length,
+		groupsAfterDedup: groups.length,
+		groupScores: groups.map(g => ({ sentenciaId: g.sentenciaId, score: g.score })),
+	}, '[SentenciasSearch][diag] groups pre-enrich');
 
 	const enrichStart = Date.now();
 	const enriched = await Promise.all(groups.map(g => enrichGroup(g, includeFullText)));
