@@ -9,7 +9,7 @@ const EMBEDDING_DIMENSIONS = 1024;
 const MAX_INPUT_CHARS = 20000;
 const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 20;
-const DEFAULT_MIN_SCORE = 0.70;
+const DEFAULT_MIN_SCORE = 0.60;
 const PINECONE_MULTIPLIER = 4; // pedir topK*4 a Pinecone para asegurar diversidad antes de deduplicar
 
 let _openai = null;
@@ -95,13 +95,6 @@ async function queryPinecone(embedding, { topK, filter }) {
 
 	const result = await index.query(queryParams);
 	const matches = result.matches || [];
-	// Debug temporal: loguear primeros 5 matches para diagnosticar
-	logger.info({
-		pineconeMatches: matches.length,
-		topScores: matches.slice(0, 5).map(m => ({ score: m.score, sentenciaId: m.metadata?.sentenciaId, fuero: m.metadata?.fuero })),
-		indexName: process.env.PINECONE_SENTENCIAS_INDEX || 'pjn-style-corpus-v2',
-		namespace: process.env.PINECONE_SENTENCIAS_NAMESPACE || 'sentencias-corpus',
-	}, '[SentenciasSearch] respuesta cruda de Pinecone');
 	return {
 		matches,
 		latencyMs: Date.now() - start,
