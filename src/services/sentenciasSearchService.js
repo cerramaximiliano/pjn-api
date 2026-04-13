@@ -51,16 +51,80 @@ function getS3BucketName() {
 }
 
 /**
- * Expande queries cortas con contexto legal para mejorar el alineamiento
- * semántico con los chunks de sentencias indexados en Pinecone.
- * La expansión solo afecta al embedding, no al query que se devuelve al cliente.
+ * Mapa de sinónimos jurídicos argentinos para query augmentation.
+ * Amplía el vocabulario de la query antes de embeber, mejorando la cobertura
+ * semántica sin necesidad de llamadas a GPT (sin latencia adicional).
  */
-function expandQueryForEmbedding(query) {
-	const words = query.trim().split(/\s+/);
-	if (words.length <= 5) {
-		return `Sentencia judicial argentina sobre: ${query}`;
+const LEGAL_SYNONYMS = {
+	// Responsabilidad civil / accidentes
+	'accidente de tránsito':      'accidente de tránsito siniestro vial colisión vehicular choque responsabilidad civil daños y perjuicios',
+	'accidente':                  'accidente siniestro colisión choque responsabilidad civil',
+	'atropellamiento':            'atropellamiento accidente peatón responsabilidad civil daños',
+	'daño moral':                 'daño moral daño extrapatrimonial daño psicológico padecimiento reparación resarcimiento',
+	'daño extrapatrimonial':      'daño extrapatrimonial daño moral padecimiento sufrimiento reparación',
+	'daño psicológico':           'daño psicológico daño psíquico incapacidad psicológica secuelas daño moral',
+	'mala praxis':                'mala praxis negligencia médica responsabilidad profesional médico',
+
+	// Laboral
+	'despido sin causa':          'despido sin causa despido injustificado ruptura contrato laboral indemnización artículo 245 LCT',
+	'despido':                    'despido sin causa rescisión contrato laboral indemnización LCT',
+	'despido por embarazo':       'despido por embarazo nulidad despido maternidad reinstalación protección maternidad artículo 178 LCT',
+	'horas extras':               'horas extras horas suplementarias tiempo extra jornada adicional trabajo fuera horario',
+	'accidente laboral':          'accidente laboral accidente de trabajo infortunio laboral incapacidad ART ley 24557',
+	'accidente de trabajo':       'accidente de trabajo infortunio laboral incapacidad permanente ART ley 24557 riesgos trabajo',
+	'solidaridad laboral':        'solidaridad laboral empleador principal contratista subcontratista artículo 30 LCT',
+
+	// Previsional / Seguridad social
+	'jubilación':                 'jubilación haber previsional beneficio jubilatorio ANSES retiro',
+	'reajuste jubilación':        'reajuste haber jubilatorio movilidad previsional actualización jubilación ANSES',
+	'movilidad jubilatoria':      'movilidad jubilatoria reajuste haber previsional actualización jubilación ANSES',
+	'haber previsional':          'haber previsional jubilación beneficio ANSES movilidad reajuste',
+
+	// Procesal
+	'caducidad de instancia':     'caducidad de instancia perención abandono proceso inactividad procesal',
+	'perención':                  'perención caducidad instancia abandono proceso inactividad',
+	'medida cautelar':            'medida cautelar embargo preventivo inhibición general bienes prohibición innovar',
+	'embargo':                    'embargo preventivo embargo ejecutivo medida cautelar traba embargo',
+	'prescripción':               'prescripción liberatoria prescripción acción plazo prescriptivo caducidad derecho',
+
+	// Civil / Contratos
+	'usucapión':                  'usucapión prescripción adquisitiva posesión veinteañal inmueble dominio',
+	'nulidad':                    'nulidad acto jurídico invalidez nulidad contrato vicio consentimiento',
+	'daños y perjuicios':         'daños y perjuicios responsabilidad civil reparación indemnización resarcimiento',
+	'indemnización':              'indemnización resarcimiento reparación daños y perjuicios compensación',
+
+	// Ejecuciones / Honorarios
+	'honorarios':                 'honorarios regulación honorarios aranceles profesionales retribución',
+	'ejecución hipotecaria':      'ejecución hipotecaria subasta inmueble remate judicial hipoteca',
+};
+
+/**
+ * Query augmentation con sinónimos jurídicos.
+ * Expande la query con vocabulario equivalente del dominio legal argentino,
+ * mejorando la cobertura semántica sin llamadas a APIs externas.
+ */
+function augmentQueryWithSynonyms(query) {
+	const q = query.toLowerCase().trim();
+	const augmentations = [];
+
+	for (const [term, expansion] of Object.entries(LEGAL_SYNONYMS)) {
+		if (q.includes(term)) {
+			augmentations.push(expansion);
+		}
 	}
-	return query;
+
+	if (augmentations.length === 0) {
+		// Sin sinónimos específicos: agregar contexto jurídico genérico para queries cortas
+		const words = q.split(/\s+/);
+		if (words.length <= 5) {
+			return `Sentencia judicial argentina: ${query}. Considerando: ${query}.`;
+		}
+		return query;
+	}
+
+	// Combinar la query original con las expansiones (sin duplicar)
+	const allTerms = [query, ...augmentations];
+	return [...new Set(allTerms)].join(' | ');
 }
 
 async function embedQuery(text) {
@@ -248,8 +312,10 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	topK = Math.min(topK, MAX_TOP_K);
 	const pineconeTopK = topK * PINECONE_MULTIPLIER;
 
-	const expandedQuery = expandQueryForEmbedding(query);
-	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(expandedQuery);
+	// Query augmentation: expandir con sinónimos jurídicos antes de embeber
+	const augmentedQuery = augmentQueryWithSynonyms(query);
+
+	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(augmentedQuery);
 
 	const filter = buildPineconeFilter(filters);
 	const { matches, latencyMs: pineconeLatencyMs } = await queryPinecone(embedding, {
