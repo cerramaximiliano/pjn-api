@@ -9,7 +9,7 @@ const EMBEDDING_DIMENSIONS = 1024;
 const MAX_INPUT_CHARS = 20000;
 const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 20;
-const DEFAULT_MIN_SCORE = 0.60;
+const DEFAULT_MIN_SCORE = 0.55;
 const PINECONE_MULTIPLIER = 4; // pedir topK*4 a Pinecone para asegurar diversidad antes de deduplicar
 
 let _openai = null;
@@ -48,6 +48,19 @@ function getS3() {
 
 function getS3BucketName() {
 	return process.env.AWS_S3_BUCKET_NAME || 'pjn-rag-documents';
+}
+
+/**
+ * Expande queries cortas con contexto legal para mejorar el alineamiento
+ * semántico con los chunks de sentencias indexados en Pinecone.
+ * La expansión solo afecta al embedding, no al query que se devuelve al cliente.
+ */
+function expandQueryForEmbedding(query) {
+	const words = query.trim().split(/\s+/);
+	if (words.length <= 5) {
+		return `Sentencia judicial argentina sobre: ${query}`;
+	}
+	return query;
 }
 
 async function embedQuery(text) {
@@ -240,7 +253,8 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	topK = Math.min(topK, MAX_TOP_K);
 	const pineconeTopK = topK * PINECONE_MULTIPLIER;
 
-	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(query);
+	const expandedQuery = expandQueryForEmbedding(query);
+	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(expandedQuery);
 
 	const filter = buildPineconeFilter(filters);
 	const { matches, latencyMs: pineconeLatencyMs } = await queryPinecone(embedding, {

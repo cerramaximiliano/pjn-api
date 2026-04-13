@@ -17,7 +17,7 @@ const sentenciasSearchController = {
 
 			const topK = Math.min(parseInt(options.topK) || 5, 20);
 			const clientMinScore = parseFloat(options.minScore);
-			const minScore = isNaN(clientMinScore) ? 0.60 : Math.min(clientMinScore, 0.65);
+			const minScore = isNaN(clientMinScore) ? 0.55 : Math.min(clientMinScore, 0.60);
 			const includeFullText = options.includeFullText === true;
 
 			const result = await searchByQuery(query.trim(), { filters, topK, minScore, includeFullText });
@@ -53,7 +53,7 @@ const sentenciasSearchController = {
 
 			const topK = Math.min(parseInt(options.topK) || 5, 20);
 			const clientMinScore = parseFloat(options.minScore);
-			const minScore = isNaN(clientMinScore) ? 0.60 : Math.min(clientMinScore, 0.65);
+			const minScore = isNaN(clientMinScore) ? 0.55 : Math.min(clientMinScore, 0.60);
 			const includeFullText = options.includeFullText === true;
 
 			const result = await searchBySimilarity(sentenciaId, { topK, minScore, includeFullText });
