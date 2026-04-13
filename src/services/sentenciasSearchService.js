@@ -263,7 +263,7 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	const enriched = await Promise.all(groups.map(g => enrichGroup(g, includeFullText)));
 	const enrichmentLatencyMs = Date.now() - enrichStart;
 
-	const results = enriched.filter(Boolean);
+	const results = deduplicateResults(enriched.filter(Boolean));
 
 	return {
 		results,
@@ -278,6 +278,22 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 }
 
 /**
+ * Elimina resultados duplicados (misma sentencia indexada dos veces en Pinecone
+ * con distinto _id). La clave de dedup es caratula+fuero+year; gana el de mayor score.
+ */
+function deduplicateResults(results) {
+	const seen = new Map();
+	for (const r of results) {
+		const key = `${(r.sentencia.caratula || '').trim().toLowerCase()}|${r.sentencia.fuero}|${r.sentencia.year}`;
+		const existing = seen.get(key);
+		if (!existing || r.score > existing.score) {
+			seen.set(key, r);
+		}
+	}
+	return Array.from(seen.values()).sort((a, b) => b.score - a.score);
+}
+
+/**
  * Búsqueda de sentencias similares a una dada.
  * @param {string} sentenciaId - _id de la sentencia fuente
  * @param {Object} opts
@@ -288,9 +304,12 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore = DEFAULT_MIN_SCORE, includeFullText = false } = {}) {
 	topK = Math.min(topK, MAX_TOP_K);
 
-	const sourceSentencia = await SentenciaCapturada.findById(sentenciaId)
-		.select('causaId fuero sentenciaTipo embeddingStatus')
-		.lean();
+	const mongoose = require('mongoose');
+	const { ObjectId } = require('mongoose').Types;
+	const sourceSentencia = await mongoose.connection.db.collection('sentencias-capturadas').findOne(
+		{ _id: new ObjectId(sentenciaId) },
+		{ projection: { causaId: 1, fuero: 1, sentenciaTipo: 1, embeddingStatus: 1 } }
+	);
 
 	if (!sourceSentencia) throw new Error('Sentencia no encontrada');
 	if (sourceSentencia.embeddingStatus !== 'completed') {
@@ -325,7 +344,7 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
 	const enriched = await Promise.all(groups.map(g => enrichGroup(g, includeFullText)));
 	const enrichmentLatencyMs = Date.now() - enrichStart;
 
-	const results = enriched.filter(Boolean);
+	const results = deduplicateResults(enriched.filter(Boolean));
 
 	return {
 		results,
@@ -345,9 +364,12 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
  * @param {string} sentenciaId - _id de la sentencia
  */
 async function getChunks(sentenciaId) {
-	const doc = await SentenciaCapturada.findById(sentenciaId)
-		.select('causaId embeddingStatus')
-		.lean();
+	const mongoose = require('mongoose');
+	const { ObjectId } = require('mongoose').Types;
+	const doc = await mongoose.connection.db.collection('sentencias-capturadas').findOne(
+		{ _id: new ObjectId(sentenciaId) },
+		{ projection: { causaId: 1, embeddingStatus: 1 } }
+	);
 
 	if (!doc) throw new Error('Sentencia no encontrada');
 	if (doc.embeddingStatus !== 'completed') throw new Error('La sentencia no tiene chunks indexados');
