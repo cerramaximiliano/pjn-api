@@ -104,6 +104,15 @@ async function queryPinecone(embedding, { topK, filter }) {
 function groupMatchesBySentencia(matches, topK, minScore) {
 	const groups = new Map();
 
+	logger.info({
+		minScore,
+		sample: matches.slice(0, 5).map(m => ({
+			score: m.score,
+			sentenciaId: m.metadata?.sentenciaId,
+			metadataKeys: Object.keys(m.metadata || {}),
+		})),
+	}, '[SentenciasSearch][diag] groupMatchesBySentencia input');
+
 	for (const match of matches) {
 		const meta = match.metadata || {};
 		const sentenciaId = meta.sentenciaId;
