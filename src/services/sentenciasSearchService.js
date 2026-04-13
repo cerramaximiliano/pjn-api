@@ -22,8 +22,10 @@ function getOpenAI() {
 
 function getPineconeClient() {
 	if (!_pinecone) {
-		const apiKey = process.env.PINECONE_KEY || process.env.PINECONE_API_KEY;
-		if (!apiKey) throw new Error('PINECONE_KEY no configurada');
+		// PINECONE_API_KEY es el nombre canónico (igual al que usa pjn-rag-shared).
+		// PINECONE_KEY se mantiene como fallback por compatibilidad con envs viejos.
+		const apiKey = process.env.PINECONE_API_KEY || process.env.PINECONE_KEY;
+		if (!apiKey) throw new Error('PINECONE_API_KEY no configurada');
 		_pinecone = new Pinecone({ apiKey });
 	}
 	return _pinecone;
@@ -92,8 +94,16 @@ async function queryPinecone(embedding, { topK, filter }) {
 	if (filter) queryParams.filter = filter;
 
 	const result = await index.query(queryParams);
+	const matches = result.matches || [];
+	// Debug temporal: loguear primeros 5 matches para diagnosticar
+	logger.info({
+		pineconeMatches: matches.length,
+		topScores: matches.slice(0, 5).map(m => ({ score: m.score, sentenciaId: m.metadata?.sentenciaId, fuero: m.metadata?.fuero })),
+		indexName: process.env.PINECONE_SENTENCIAS_INDEX || 'pjn-style-corpus-v2',
+		namespace: process.env.PINECONE_SENTENCIAS_NAMESPACE || 'sentencias-corpus',
+	}, '[SentenciasSearch] respuesta cruda de Pinecone');
 	return {
-		matches: result.matches || [],
+		matches,
 		latencyMs: Date.now() - start,
 	};
 }
