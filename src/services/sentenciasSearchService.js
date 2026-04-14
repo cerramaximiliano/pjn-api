@@ -12,6 +12,16 @@ const MAX_TOP_K = 20;
 const DEFAULT_MIN_SCORE = 0.55;
 const PINECONE_MULTIPLIER = 4; // pedir topK*4 a Pinecone para asegurar diversidad antes de deduplicar
 
+// ── Hybrid scoring weights ────────────────────────────────────────────────────
+// α × vector_score + (1-α) × bm25_normalized
+const HYBRID_VECTOR_WEIGHT = 0.65;
+const HYBRID_BM25_WEIGHT   = 0.35;
+
+// BM25 tuning parameters (standard values)
+const BM25_K1 = 1.5;
+const BM25_B  = 0.75;
+const BM25_AVG_DOC_LEN = 280; // tokens aprox por chunk de sentencia (calibrado al corpus)
+
 let _openai = null;
 let _pinecone = null;
 
@@ -48,6 +58,119 @@ function getS3() {
 
 function getS3BucketName() {
 	return process.env.AWS_S3_BUCKET_NAME || 'pjn-rag-documents';
+}
+
+// ── BM25 híbrido ─────────────────────────────────────────────────────────────
+
+/**
+ * Stopwords del español legal. Se excluyen de la tokenización para que BM25
+ * se enfoque en términos con contenido semántico real.
+ */
+const STOPWORDS_ES = new Set([
+	'de','la','el','en','y','a','que','del','los','las','por','con','se','su','es','al',
+	'un','una','para','no','lo','le','ha','si','me','te','más','pero','este','esta',
+	'estos','estas','ese','esa','esos','esas','aquel','aquella','como','cuando','donde',
+	'cual','cuales','quien','quienes','que','cuyo','cuya','cuyos','cuyas','ante','bajo',
+	'contra','desde','hasta','hacia','sin','sobre','tras','entre','durante','mediante',
+	'según','sino','aunque','porque','pues','ya','también','tampoco','ni','o','u','e',
+	'así','bien','muy','tan','tanto','tanto','cuanto','todo','toda','todos','todas',
+	'cada','otro','otra','otros','otras','mismo','misma','dicho','dicha','citado',
+	'autos','causa','expediente','fs','fjs','fojas','ley','art','inc','decreto',
+	'resolución','resoluciones','acuerdo','acuerdos','caso','casos',
+]);
+
+/**
+ * Tokeniza texto para BM25. Extrae términos en minúsculas, elimina puntuación
+ * y stopwords, normaliza números de artículos legales como tokens especiales.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function tokenizeBM25(text) {
+	if (!text) return [];
+	return text
+		.toLowerCase()
+		// Normalizar artículos: "art. 245", "artículo 178" → token "art245", "art178"
+		.replace(/art[íi]culo\.?\s*(\d+)/gi, 'art$1')
+		.replace(/art\.\s*(\d+)/gi, 'art$1')
+		// Normalizar leyes: "ley 24557" → "ley24557"
+		.replace(/ley\s*(\d+)/gi, 'ley$1')
+		// Quitar puntuación conservando letras con tilde y ñ
+		.replace(/[^\wáéíóúüñ\s]/g, ' ')
+		.split(/\s+/)
+		.filter(t => t.length >= 3 && !STOPWORDS_ES.has(t));
+}
+
+/**
+ * Calcula el score BM25 de un documento respecto a los query terms.
+ * Como no tenemos estadísticas de corpus, usamos IDF simplificado (log(2))
+ * que prioriza TF y longitud del documento sin sesgo por frecuencia de términos.
+ *
+ * @param {string[]} queryTerms - Términos tokenizados de la query
+ * @param {string}   docText    - Texto del chunk/documento
+ * @returns {number}            - Score BM25 (no normalizado, ≥ 0)
+ */
+function bm25Score(queryTerms, docText) {
+	if (!queryTerms.length || !docText) return 0;
+
+	const tokens = tokenizeBM25(docText);
+	const docLen = tokens.length || 1;
+
+	// Frecuencia de términos en el documento
+	const tf = {};
+	for (const t of tokens) tf[t] = (tf[t] || 0) + 1;
+
+	let score = 0;
+	const idf = Math.log(2); // IDF fijo (corpus no disponible en query-time)
+
+	for (const term of queryTerms) {
+		const f = tf[term] || 0;
+		if (f === 0) continue;
+		const numerator   = f * (BM25_K1 + 1);
+		const denominator = f + BM25_K1 * (1 - BM25_B + BM25_B * (docLen / BM25_AVG_DOC_LEN));
+		score += idf * (numerator / denominator);
+	}
+	return score;
+}
+
+/**
+ * Combina el vector score de Pinecone con un score BM25 calculado sobre
+ * los chunks ya recuperados. Reordena los resultados por score híbrido.
+ *
+ * Flujo:
+ *   1. Tokenizar la query original (sin augmentation, para matching de términos exactos)
+ *   2. Para cada resultado, calcular BM25 sobre el texto de sus matchedChunks
+ *   3. Normalizar scores BM25 al rango [0, 1] (min-max sobre el batch)
+ *   4. hybrid = HYBRID_VECTOR_WEIGHT × vector + HYBRID_BM25_WEIGHT × bm25_norm
+ *   5. Reordenar y exponer el score híbrido como score final
+ *
+ * @param {string}   originalQuery - Query tal como la ingresó el usuario
+ * @param {Array}    results       - Array de resultados enriquecidos
+ * @returns {Array}                - Resultados reordenados por score híbrido
+ */
+function hybridRerank(originalQuery, results) {
+	if (results.length <= 1) return results;
+
+	const queryTerms = tokenizeBM25(originalQuery);
+	if (queryTerms.length === 0) return results; // query sin términos útiles → sin reranking
+
+	// Calcular BM25 para cada resultado usando el texto de sus matched chunks
+	const bm25Scores = results.map(r => {
+		const docText = r.matchedChunks.map(c => c.text).join(' ');
+		return bm25Score(queryTerms, docText);
+	});
+
+	// Normalizar BM25 a [0, 1] (min-max)
+	const maxBm25 = Math.max(...bm25Scores);
+	const minBm25 = Math.min(...bm25Scores);
+	const rangeBm25 = maxBm25 - minBm25 || 1;
+
+	const reranked = results.map((r, i) => {
+		const bm25Norm = (bm25Scores[i] - minBm25) / rangeBm25;
+		const hybridScore = HYBRID_VECTOR_WEIGHT * r.score + HYBRID_BM25_WEIGHT * bm25Norm;
+		return { ...r, score: Math.round(hybridScore * 10000) / 10000 };
+	});
+
+	return reranked.sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -329,7 +452,8 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	const enriched = await Promise.all(groups.map(g => enrichGroup(g, includeFullText)));
 	const enrichmentLatencyMs = Date.now() - enrichStart;
 
-	const results = deduplicateResults(enriched.filter(Boolean));
+	const deduped  = deduplicateResults(enriched.filter(Boolean));
+	const results  = hybridRerank(query, deduped);
 
 	return {
 		results,
@@ -410,7 +534,9 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
 	const enriched = await Promise.all(groups.map(g => enrichGroup(g, includeFullText)));
 	const enrichmentLatencyMs = Date.now() - enrichStart;
 
-	const results = deduplicateResults(enriched.filter(Boolean));
+	const deduped  = deduplicateResults(enriched.filter(Boolean));
+	// Para búsqueda por similitud usamos queryText como query de BM25
+	const results  = hybridRerank(queryText.slice(0, 500), deduped);
 
 	return {
 		results,
