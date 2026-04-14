@@ -23,15 +23,18 @@ module.exports = {
             },
             max_memory_restart: "1G",
             env: {
-                NODE_ENV: "production"
+                NODE_ENV: "production",
+                HYDE_ENABLED: "true"
             },
             env_development: {
                 NODE_ENV: "development",
-                PORT: 3003
+                PORT: 3003,
+                HYDE_ENABLED: "true"
             },
             env_local: {
                 NODE_ENV: "local",
-                PORT: 8083
+                PORT: 8083,
+                HYDE_ENABLED: "true"
             }
         }
     ]
