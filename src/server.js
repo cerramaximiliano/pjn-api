@@ -66,6 +66,10 @@ async function initializeServer() {
     await mongoose.connect(URLDB);
     logger.info(`Conexión a MongoDB establecida en ambiente ${process.env.NODE_ENV}`);
 
+    // Inicializar caché HyDE (Redis, lazy-connect, solo si HYDE_ENABLED=true)
+    const { initHydeCache } = require('./services/hydeCache');
+    initHydeCache();
+
   } catch (err) {
     logger.error(`Error initializing server: ${err}`);
     process.exit(1);

@@ -3,6 +3,7 @@ const { Pinecone } = require('@pinecone-database/pinecone');
 const AWS = require('aws-sdk');
 const SentenciaCapturada = require('../models/SentenciaCapturada');
 const { logger } = require('../config/pino');
+const { getHydeEmbedding } = require('./hydeCache');
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMENSIONS = 1024;
@@ -435,10 +436,15 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	topK = Math.min(topK, MAX_TOP_K);
 	const pineconeTopK = topK * PINECONE_MULTIPLIER;
 
-	// Query augmentation: expandir con sinónimos jurídicos antes de embeber
-	const augmentedQuery = augmentQueryWithSynonyms(query);
+	// 1. Intentar embedding HyDE desde caché Redis (0ms si hit, null si miss)
+	//    En caso de miss dispara generación en background para el próximo request.
+	const hydeEmbedding = await getHydeEmbedding(query, filters);
 
-	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(augmentedQuery);
+	// 2. Si no hay HyDE cacheado: query augmentation + embedding estándar
+	const augmentedQuery = hydeEmbedding ? null : augmentQueryWithSynonyms(query);
+	const { embedding, latencyMs: embeddingLatencyMs } = hydeEmbedding
+		? { embedding: hydeEmbedding, latencyMs: 0 }
+		: await embedQuery(augmentedQuery);
 
 	const filter = buildPineconeFilter(filters);
 	const { matches, latencyMs: pineconeLatencyMs } = await queryPinecone(embedding, {
