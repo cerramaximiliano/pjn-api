@@ -398,6 +398,7 @@ async function enrichGroup(group, includeFullText) {
 			movimientoTipo: doc.movimientoTipo,
 			sentenciaTipo: doc.sentenciaTipo,
 			category: doc.category,
+			embeddedAt: doc.embeddedAt,
 			...(doc.aiSummary?.status === 'approved' ? { aiSummary: doc.aiSummary } : {}),
 		},
 		score: Math.round(score * 10000) / 10000,
