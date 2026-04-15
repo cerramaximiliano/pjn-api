@@ -5,7 +5,8 @@ const SentenciaCapturada = require('../models/SentenciaCapturada');
 const { logger } = require('../config/pino');
 const { getHydeEmbedding } = require('./hydeCache');
 
-const EMBEDDING_MODEL = 'text-embedding-3-small';
+const EMBEDDING_MODEL_SMALL = 'text-embedding-3-small';
+const EMBEDDING_MODEL_LARGE = 'text-embedding-3-large';
 const EMBEDDING_DIMENSIONS = 1024;
 const MAX_INPUT_CHARS = 20000;
 const DEFAULT_TOP_K = 5;
@@ -42,10 +43,13 @@ function getPineconeClient() {
 	return _pinecone;
 }
 
-function getSentenciasIndex() {
+const NAMESPACE_SMALL = process.env.PINECONE_SENTENCIAS_NAMESPACE || 'sentencias-corpus';
+const NAMESPACE_LARGE = 'sentencias-large-test';
+
+function getSentenciasIndex(namespaceOverride) {
 	const client = getPineconeClient();
 	const indexName = process.env.PINECONE_SENTENCIAS_INDEX || 'pjn-style-corpus-v2';
-	const namespace = process.env.PINECONE_SENTENCIAS_NAMESPACE || 'sentencias-corpus';
+	const namespace = namespaceOverride || NAMESPACE_SMALL;
 	return client.index(indexName).namespace(namespace);
 }
 
@@ -251,11 +255,11 @@ function augmentQueryWithSynonyms(query) {
 	return [...new Set(allTerms)].join(' | ');
 }
 
-async function embedQuery(text) {
+async function embedQuery(text, model) {
 	const start = Date.now();
 	const openai = getOpenAI();
 	const response = await openai.embeddings.create({
-		model: EMBEDDING_MODEL,
+		model: model || EMBEDDING_MODEL_SMALL,
 		input: text.slice(0, MAX_INPUT_CHARS),
 		dimensions: EMBEDDING_DIMENSIONS,
 	});
@@ -287,9 +291,9 @@ function buildPineconeFilter(filters = {}) {
 	return Object.keys(filter).length > 0 ? filter : undefined;
 }
 
-async function queryPinecone(embedding, { topK, filter }) {
+async function queryPinecone(embedding, { topK, filter, namespace }) {
 	const start = Date.now();
-	const index = getSentenciasIndex();
+	const index = getSentenciasIndex(namespace);
 
 	const queryParams = { vector: embedding, topK, includeMetadata: true };
 	if (filter) queryParams.filter = filter;
@@ -432,25 +436,33 @@ async function enrichGroup(group, includeFullText) {
  * @param {number} opts.topK - Cantidad máxima de resultados (default 5, max 20)
  * @param {number} opts.minScore - Score mínimo de relevancia (default 0.70)
  * @param {boolean} opts.includeFullText - Incluir todos los chunks del fallo con flags matched (default false)
+ * @param {string} opts.namespace - Namespace de Pinecone ('sentencias-corpus' | 'sentencias-large-test')
  */
-async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minScore = DEFAULT_MIN_SCORE, includeFullText = false } = {}) {
+async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minScore = DEFAULT_MIN_SCORE, includeFullText = false, namespace } = {}) {
 	topK = Math.min(topK, MAX_TOP_K);
 	const pineconeTopK = topK * PINECONE_MULTIPLIER;
 
-	// 1. Intentar embedding HyDE desde caché Redis (0ms si hit, null si miss)
-	//    En caso de miss dispara generación en background para el próximo request.
-	const hydeEmbedding = await getHydeEmbedding(query, filters);
+	// Determinar modelo de embedding según namespace
+	const isLargeNamespace = namespace === NAMESPACE_LARGE;
+	const embeddingModel = isLargeNamespace ? EMBEDDING_MODEL_LARGE : EMBEDDING_MODEL_SMALL;
 
-	// 2. Si no hay HyDE cacheado: query augmentation + embedding estándar
-	const augmentedQuery = hydeEmbedding ? null : augmentQueryWithSynonyms(query);
+	// 1. Intentar embedding HyDE desde caché Redis (0ms si hit, null si miss)
+	//    HyDE solo aplica al namespace estándar (small) — el large usa embedding directo
+	//    ya que el corpus large fue indexado sin HyDE.
+	const hydeEmbedding = !isLargeNamespace ? await getHydeEmbedding(query, filters) : null;
+
+	// 2. Si no hay HyDE cacheado: embedding directo del query (sin augmentQueryWithSynonyms).
+	//    La augmentación de sinónimos perjudica la recuperación en búsquedas de jurisprudencia
+	//    porque desplaza el embedding lejos del texto exacto indexado en Pinecone.
 	const { embedding, latencyMs: embeddingLatencyMs } = hydeEmbedding
 		? { embedding: hydeEmbedding, latencyMs: 0 }
-		: await embedQuery(augmentedQuery);
+		: await embedQuery(query, embeddingModel);
 
 	const filter = buildPineconeFilter(filters);
 	const { matches, latencyMs: pineconeLatencyMs } = await queryPinecone(embedding, {
 		topK: pineconeTopK,
 		filter,
+		namespace,
 	});
 
 	const groups = groupMatchesBySentencia(matches, topK, minScore);
@@ -465,6 +477,7 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	return {
 		results,
 		total: results.length,
+		namespace: namespace || NAMESPACE_SMALL,
 		latencyMs: {
 			embedding: embeddingLatencyMs,
 			pinecone: pineconeLatencyMs,

@@ -78,6 +78,14 @@ const schema = new Schema(
 		embeddingError: { type: String },
 		embeddingChunksCount: { type: Number, default: 0 },
 
+		// Estado de indexación con text-embedding-3-large (namespace sentencias-large-test)
+		embeddingLargeStatus: {
+			type: String,
+			enum: ['pending', 'processing', 'done', 'error'],
+		},
+		embeddedLargeAt: { type: Date },
+		embeddingLargeError: { type: String },
+
 		// Verificación de novedad (doble capa)
 		// Layer 1 (estructural): category='novelty' + embedding completado → status='single'
 		// Layer 2 (semántica, futuro): búsqueda cosine en Pinecone → status='double' | 'rejected'
