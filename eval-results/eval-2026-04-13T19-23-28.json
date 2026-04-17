@@ -1,0 +1,616 @@
+[
+  {
+    "query": "accidente de tránsito",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 2561,
+    "resultados": [
+      {
+        "score": 0.7406,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GASPAR, YGNACIO ALEX TITO c/ VILICIE, GUSTAVO ADOLFO s/DAÑOS Y PERJUIC",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7358,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GOMEZ DIAZ, JORGE LUIS c/ GUERRERO, HECTOR ENRIQUE Y OTRO s/DAÑOS Y PE",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 2
+      },
+      {
+        "score": 0.7246,
+        "fuero": "CNT",
+        "year": 2022,
+        "caratula": "CORDOBA, LILIANA MABEL Y OTRO c/ PROVINCIA ART S.A. s/ACCIDENTE - LEY ",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "daño moral",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 1052,
+    "resultados": [
+      {
+        "score": 0.7769,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "JIMENA, ADRIAN ANTONIO c/ GONZALEZ, ANGEL CESAR s/DAÑOS Y PERJUICIOS(A",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7754,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GATTONI MORAGA, ALEJANDRO NICOLAS c/ SCHOBER, MARTIN ALFREDO s/DAÑOS Y",
+        "sentenciaTipo": "honorarios",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7687,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "BORDACAHAR, NAHUEL NICOLAS Y OTRO c/ VIEIRA, GUSTAVO MAXIMILIANO s/DAÑ",
+        "sentenciaTipo": "honorarios",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "despido sin causa",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 964,
+    "resultados": [
+      {
+        "score": 0.7315,
+        "fuero": "CNT",
+        "year": 2020,
+        "caratula": "MENDOZA NARVAEZ, JACKELINE ROCIO c/ CENTRO  GALLEGO DE BUENOS AIRES MU",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7315,
+        "fuero": "CNT",
+        "year": 2020,
+        "caratula": "MENDOZA NARVAEZ, JACKELINE ROCIO c/ CENTRO  GALLEGO DE BUENOS AIRES MU",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7308,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "PINTOS BAEZ, MAGNO LEODAN c/ MECANCHAP S.R.L. Y OTRO s/DESPIDO",
+        "sentenciaTipo": "interlocutoria",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "caducidad de instancia",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 870,
+    "resultados": [
+      {
+        "score": 0.7685,
+        "fuero": "CIV",
+        "year": 2024,
+        "caratula": "ALDERETE, GABRIEL SERGIO c/ RIO URUGUAY COOPERATIVA DE SEGUROS LIMITAD",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7665,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "SOSA, MATILDE c/ DAVICE, RAUL EMILIO s/DAÑOS Y PERJUICIOS",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7652,
+        "fuero": "COM",
+        "year": 2020,
+        "caratula": "EXPERTA ASEGURADORA DE RIESGOS DEL TRABAJO S.A. c/ LA VELOZ DEL NORTE ",
+        "sentenciaTipo": "camara",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "indemnización por accidente laboral con incapacidad permanente",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 950,
+    "resultados": [
+      {
+        "score": 0.7239,
+        "fuero": "CIV",
+        "year": 2022,
+        "caratula": "ROMERO, EMMMANUEL ORLANDO c/ ASOCIACION DEL FUTBOL ARGENTINO Y OTRO s/",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7094,
+        "fuero": "CIV",
+        "year": 2024,
+        "caratula": "DARYANA c/ RUIZ MORENO, CARLOS ANTONIO Y OTRO s/DAÑOS Y PERJUICIOS(ACC",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7071,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "RODRIGUEZ, SANDRO FABIAN c/ RICCI, MONICA ZULMA s/DAÑOS Y PERJUICIOS(A",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "reajuste de haberes previsionales jubilación",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 1153,
+    "resultados": [
+      {
+        "score": 0.7748,
+        "fuero": "CSS",
+        "year": 2021,
+        "caratula": "MARZUCCO SALVADOR AUGUSTO c/ ANSES s/REAJUSTES VARIOS",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7739,
+        "fuero": "CSS",
+        "year": 2021,
+        "caratula": "CACERES APOLONIO c/ ANSES s/REAJUSTES VARIOS",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7723,
+        "fuero": "CSS",
+        "year": 2021,
+        "caratula": "BERNACHEA FRANCISCO OMAR c/ ANSES s/REAJUSTES VARIOS",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "medida cautelar embargo preventivo",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 840,
+    "resultados": [
+      {
+        "score": 0.758,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "EIGUREN, ANDRES NICOLAS c/ INVERSIONES BUE SRL s/CUMPLIMIENTO DE CONTR",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.758,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "EIGUREN, ANDRES NICOLAS c/ INVERSIONES BUE SRL s/CUMPLIMIENTO DE CONTR",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.758,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "BORDACAHAR, NAHUEL NICOLAS Y OTRO c/ VIEIRA, GUSTAVO MAXIMILIANO s/DAÑ",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "usucapión prescripción adquisitiva inmueble",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 872,
+    "resultados": [
+      {
+        "score": 0.7338,
+        "fuero": "CIV",
+        "year": 2022,
+        "caratula": "ROBERTAZZI, VALERIA EVANGELINA c/ CESANELLI, HECTOR OSCAR s/PRESCRIPCI",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 3
+      },
+      {
+        "score": 0.723,
+        "fuero": "CIV",
+        "year": 2024,
+        "caratula": "GREBER, JACOBO c/ BARUCH, DINA ESTELA Y OTRO s/PRESCRIPCION ADQUISITIV",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7196,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "SCHMIDT, ELENA CORINA ADRIANA c/ GCBA DEPTO DE HERENCIAS VACANTES s/ES",
+        "sentenciaTipo": "camara",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "responsabilidad civil del conductor por lesiones a peatón en zona urbana",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 917,
+    "resultados": [
+      {
+        "score": 0.7053,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "PELUSO, ELVIRA FLORINDA c/ FRANZE, FIAMMA AGOSTINA s/DAÑOS Y PERJUICIO",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6851,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GOMEZ, DAIANA GABRIELA c/ AYALA, DANIEL ALBERTO Y OTRO s/DAÑOS Y PERJU",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6819,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "SOTO, SOFIA c/ PEREZ, DANIEL ALEJANDRO Y OTRO s/DAÑOS Y PERJUICIOS(ACC",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "nulidad de despido por embarazo y reinstalación en el puesto de trabajo",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 956,
+    "resultados": [
+      {
+        "score": 0.6461,
+        "fuero": "CNT",
+        "year": 2022,
+        "caratula": "LOPEZ MATEO, DEISILEY c/ VILLEGAS, CARINA GABRIELA s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6424,
+        "fuero": "CNT",
+        "year": 2022,
+        "caratula": "LEZCANO, AGUSTINA c/ WATCHMAN SEGURIDAD S.A. s/DESPIDO",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6341,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "SALAS, MELISA ELIZABETH c/ ARCOS DORADOS SA s/DESPIDO",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "determinación del quantum indemnizatorio en daño psicológico permanente",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 935,
+    "resultados": [
+      {
+        "score": 0.7473,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "INSAURRALDE, ALBERTO MARTIN c/ MICRO OMNIBUS QUILMES S.A. Y OTRO s/DAÑ",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7349,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "SOTO, SOFIA c/ PEREZ, DANIEL ALEJANDRO Y OTRO s/DAÑOS Y PERJUICIOS(ACC",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7327,
+        "fuero": "CIV",
+        "year": 2022,
+        "caratula": "RAMOS, JOEL NAZARENO c/  LOS CONSTITUYENTES S.A.T. - LINEA 78 INTERNO ",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "prescripción de la acción por daños derivados de accidente de tránsito",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 908,
+    "resultados": [
+      {
+        "score": 0.697,
+        "fuero": "CIV",
+        "year": 2022,
+        "caratula": "FIORELLI, DANIEL ALEJANDRO c/ RODRIGUEZ, GERARDO RUBEN Y OTRO s/DAÑOS ",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6943,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "CERESOLI, MARCOS JAVIER c/ VERA, DANIEL MAXIMILIANO s/DAÑOS Y PERJUICI",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6862,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GIANFRON, ERIKA GUADALUPE c/ LESTES, NESTOR Y OTRO s/DAÑOS Y PERJUICIO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "solidaridad del empleador principal por deudas laborales del subcontratista",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 1047,
+    "resultados": [
+      {
+        "score": 0.6962,
+        "fuero": "CSS",
+        "year": 2021,
+        "caratula": "AMG OBRAS CIVILES S.A. c/ ADMINISTRACION FEDERAL DE INGRESOS PUBLICOS ",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 2
+      },
+      {
+        "score": 0.6962,
+        "fuero": "CSS",
+        "year": 2021,
+        "caratula": "AMG OBRAS CIVILES S.A. c/ ADMINISTRACION FEDERAL DE INGRESOS PUBLICOS ",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 2
+      },
+      {
+        "score": 0.6926,
+        "fuero": "CNT",
+        "year": 2022,
+        "caratula": "CATELANI, DANIEL c/ DOS SALMONES S.R.L. Y OTROS s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "inconstitucionalidad del tope indemnizatorio por accidente de trabajo ley 24557",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 1018,
+    "resultados": [
+      {
+        "score": 0.7387,
+        "fuero": "CNT",
+        "year": 2022,
+        "caratula": "QUIROGA, JOSE FELICIANO c/ GALENO ART S.A. s/ACCIDENTE - LEY ESPECIAL",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7306,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "PINTO, SERGIO RUBEN c/ PROVINCIA ART S.A. s/ACCIDENTE - LEY ESPECIAL",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7301,
+        "fuero": "CNT",
+        "year": 2022,
+        "caratula": "LOPEZ, LUCAS NAHUEL c/ OMINT ART S.A. s/RECURSO LEY 27348",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "derecho del trabajador a percibir horas extras no registradas en negro",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 876,
+    "resultados": [
+      {
+        "score": 0.7039,
+        "fuero": "CNT",
+        "year": 2020,
+        "caratula": "DOMINGUEZ ORTIZ, NIÑO SALVADOR c/ CASSIC S.A. Y OTRO s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7039,
+        "fuero": "CNT",
+        "year": 2020,
+        "caratula": "DOMINGUEZ ORTIZ, NIÑO SALVADOR c/ CASSIC S.A. Y OTRO s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6861,
+        "fuero": "CNT",
+        "year": 2020,
+        "caratula": "HOYUELOS, RODOLFO LUIS c/ SEMATUR S.R.L. Y OTRO s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "actualización monetaria de condenas dinerarias por inflación en Argentina",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 876,
+    "resultados": [
+      {
+        "score": 0.7336,
+        "fuero": "CNT",
+        "year": 2020,
+        "caratula": "IÑIGUEZ FERRARA, CAMILA DAIANA c/ RH COMERCIALIZADORA INTEGRAL SRL Y O",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7274,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "SALVIA RANGEL, VANESA XIMENA c/ COMANDATORE, CONCEPCION ALEJANDRA s/DE",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7274,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "SALVIA RANGEL, VANESA XIMENA c/ COMANDATORE, CONCEPCION ALEJANDRA s/DE",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "accidente de tránsito daño moral",
+    "filters": {
+      "fuero": "CIV"
+    },
+    "total": 3,
+    "latencyMs": 938,
+    "resultados": [
+      {
+        "score": 0.7558,
+        "fuero": "CIV",
+        "year": 2024,
+        "caratula": "TAMOLA CURBELLO, RODRIGO GASTON Y OTRO c/ \"VEN A MI BUENOS AIRES S.A.\"",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7493,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GIMENEZ, CARLOS EDUARDO c/ CALEDONIA ARGENTINA COMPAÑIA DE SEGUROS S.A",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7435,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "SALAS, HECTOR FERNANDO c/ PAYE, MARCELO ALEJANDRO s/DAÑOS Y PERJUICIOS",
+        "sentenciaTipo": "honorarios",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "despido injustificado indemnización agravada",
+    "filters": {
+      "fuero": "CNT"
+    },
+    "total": 3,
+    "latencyMs": 1164,
+    "resultados": [
+      {
+        "score": 0.7488,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "EXNER, HERNAN PABLO c/ TROCAFONE S.A. s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7488,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "EXNER, HERNAN PABLO c/ TROCAFONE S.A. s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7484,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "PISANO, FERNANDO AGUSTIN c/ DANONE ARGENTINA S.A. s/DESPIDO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "reajuste haber jubilatorio movilidad",
+    "filters": {
+      "fuero": "CSS"
+    },
+    "total": 3,
+    "latencyMs": 928,
+    "resultados": [
+      {
+        "score": 0.7843,
+        "fuero": "CSS",
+        "year": 2024,
+        "caratula": "PINGARO OSCAR ALBERTO c/ ANSES s/REAJUSTES VARIOS",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7826,
+        "fuero": "CSS",
+        "year": 2021,
+        "caratula": "CALAPEÑA PEDRO DAMIAN c/ ANSES s/REAJUSTES VARIOS",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.7826,
+        "fuero": "CSS",
+        "year": 2021,
+        "caratula": "LUNA EMILSE c/ ANSES s/REAJUSTES VARIOS",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  }
+]

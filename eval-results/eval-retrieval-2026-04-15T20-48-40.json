@@ -1,0 +1,25 @@
+{
+  "stats": {
+    "small": {
+      "found1": 0,
+      "found3": 0,
+      "found5": 0,
+      "scores": [],
+      "ranksWhenFound": []
+    },
+    "large": {
+      "found1": 0,
+      "found3": 0,
+      "found5": 0,
+      "scores": [],
+      "ranksWhenFound": []
+    },
+    "bothFound": 0,
+    "neitherFound": 0,
+    "onlySmall": 0,
+    "onlyLarge": 0,
+    "total": 0,
+    "skipped": 100
+  },
+  "details": []
+}

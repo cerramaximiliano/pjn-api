@@ -1,0 +1,246 @@
+[
+  {
+    "query": "accidente de tránsito",
+    "filters": null,
+    "total": 1,
+    "latencyMs": 2159,
+    "resultados": [
+      {
+        "score": 0.6645,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "VINCELLO, JORGE LUIS c/ LOPEZ PINSENT TARSETTI, JOAQUIN Y OTROS s/DAÑO",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "daño moral",
+    "filters": null,
+    "total": 1,
+    "latencyMs": 1037,
+    "resultados": [
+      {
+        "score": 0.7884,
+        "fuero": "CIV",
+        "year": 2024,
+        "caratula": "DUARTE, JUAN MANUEL c/ MICROOMNIBUS MITRE S.A. s/DAÑOS Y PERJUICIOS(AC",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "despido sin causa",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 976,
+    "resultados": []
+  },
+  {
+    "query": "caducidad de instancia",
+    "filters": null,
+    "total": 2,
+    "latencyMs": 882,
+    "resultados": [
+      {
+        "score": 0.8573,
+        "fuero": "CIV",
+        "year": 2024,
+        "caratula": "ALDERETE, GABRIEL SERGIO c/ RIO URUGUAY COOPERATIVA DE SEGUROS LIMITAD",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.5019,
+        "fuero": "CIV",
+        "year": 2024,
+        "caratula": "ARIAS, GERARDO DAMIAN MARTIN c/ MAIDANA, JUAN MANUEL Y OTROS s/DAÑOS Y",
+        "sentenciaTipo": "resolucion",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "indemnización por accidente laboral con incapacidad permanente",
+    "filters": null,
+    "total": 1,
+    "latencyMs": 977,
+    "resultados": [
+      {
+        "score": 0.6733,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GABILAN, LUISA ISIDORA c/ CARDOZO, HUGO HERNAN s/DAÑOS Y PERJUICIOS(AC",
+        "sentenciaTipo": "camara",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "reajuste de haberes previsionales jubilación",
+    "filters": null,
+    "total": 1,
+    "latencyMs": 984,
+    "resultados": [
+      {
+        "score": 0.6963,
+        "fuero": "CSS",
+        "year": 2022,
+        "caratula": "GOFANOVICH BARON GRACIELA MABEL c/ ANSES s/REAJUSTES VARIOS",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "medida cautelar embargo preventivo",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 1067,
+    "resultados": []
+  },
+  {
+    "query": "usucapión prescripción adquisitiva inmueble",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 906,
+    "resultados": []
+  },
+  {
+    "query": "responsabilidad civil del conductor por lesiones a peatón en zona urbana",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 1196,
+    "resultados": []
+  },
+  {
+    "query": "nulidad de despido por embarazo y reinstalación en el puesto de trabajo",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 995,
+    "resultados": []
+  },
+  {
+    "query": "determinación del quantum indemnizatorio en daño psicológico permanente",
+    "filters": null,
+    "total": 1,
+    "latencyMs": 949,
+    "resultados": [
+      {
+        "score": 0.7545,
+        "fuero": "CIV",
+        "year": 2022,
+        "caratula": "RAMOS, JOEL NAZARENO c/  LOS CONSTITUYENTES S.A.T. - LINEA 78 INTERNO ",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "prescripción de la acción por daños derivados de accidente de tránsito",
+    "filters": null,
+    "total": 3,
+    "latencyMs": 971,
+    "resultados": [
+      {
+        "score": 0.7883,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "CALVANO, CLAUDIA c/ EMPRESA DE TRANSPORTE TENIENTE GENERAL ROCA SOCIED",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.6099,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "CERESOLI, MARCOS JAVIER c/ VERA, DANIEL MAXIMILIANO s/DAÑOS Y PERJUICI",
+        "sentenciaTipo": "primera_instancia",
+        "chunksCoincidentes": 1
+      },
+      {
+        "score": 0.4441,
+        "fuero": "CIV",
+        "year": 2020,
+        "caratula": "GIANFRON, ERIKA GUADALUPE c/ LESTES, NESTOR Y OTRO s/DAÑOS Y PERJUICIO",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "solidaridad del empleador principal por deudas laborales del subcontratista",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 1002,
+    "resultados": []
+  },
+  {
+    "query": "inconstitucionalidad del tope indemnizatorio por accidente de trabajo ley 24557",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 820,
+    "resultados": []
+  },
+  {
+    "query": "derecho del trabajador a percibir horas extras no registradas en negro",
+    "filters": null,
+    "total": 1,
+    "latencyMs": 889,
+    "resultados": [
+      {
+        "score": 0.7044,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "BARRIOS, CAROLINA GISELE c/ SOCIEDAD ITALIANA DE BENEFICIENCIA EN BUEN",
+        "sentenciaTipo": "definitiva",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "actualización monetaria de condenas dinerarias por inflación en Argentina",
+    "filters": null,
+    "total": 0,
+    "latencyMs": 949,
+    "resultados": []
+  },
+  {
+    "query": "accidente de tránsito daño moral",
+    "filters": {
+      "fuero": "CIV"
+    },
+    "total": 0,
+    "latencyMs": 885,
+    "resultados": []
+  },
+  {
+    "query": "despido injustificado indemnización agravada",
+    "filters": {
+      "fuero": "CNT"
+    },
+    "total": 1,
+    "latencyMs": 887,
+    "resultados": [
+      {
+        "score": 0.7106,
+        "fuero": "CNT",
+        "year": 2021,
+        "caratula": "GIMENEZ VERON, ARNALDO ARIEL c/ CARSA S.A. s/DESPIDO",
+        "sentenciaTipo": "otro",
+        "chunksCoincidentes": 1
+      }
+    ]
+  },
+  {
+    "query": "reajuste haber jubilatorio movilidad",
+    "filters": {
+      "fuero": "CSS"
+    },
+    "total": 0,
+    "latencyMs": 918,
+    "resultados": []
+  }
+]
