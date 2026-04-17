@@ -243,7 +243,14 @@ const scrapingManagerController = {
   async getFueroStats(_req, res) {
     try {
       const db = mongoose.connection.db;
-      const doc = await db.collection('scraping-manager-state').findOne({ _id: 'fuero-causa-stats' });
+
+      const [doc, activasByFuero] = await Promise.all([
+        db.collection('scraping-manager-state').findOne({ _id: 'fuero-causa-stats' }),
+        db.collection('sentencias-capturadas').aggregate([
+          { $match: { processingStatus: 'processed', embeddingStatus: 'completed' } },
+          { $group: { _id: '$fuero', count: { $sum: 1 } } },
+        ]).toArray(),
+      ]);
 
       if (!doc) {
         return res.status(404).json({
@@ -253,7 +260,23 @@ const scrapingManagerController = {
       }
 
       const { _id, ...data } = doc;
-      res.json({ success: true, data });
+
+      const byFuero = {};
+      let totalActivas = 0;
+      for (const row of activasByFuero) {
+        if (row._id) {
+          byFuero[row._id] = row.count;
+          totalActivas += row.count;
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          ...data,
+          sentenciasActivas: { total: totalActivas, byFuero },
+        },
+      });
     } catch (error) {
       logger.error(`Error obteniendo fuero stats: ${error.message}`);
       res.status(500).json({
