@@ -13,7 +13,7 @@
  */
 
 const { CausasCivil, CausasComercial, CausasSegSoc, CausasTrabajo } = require('pjn-models');
-const logger = require('../utils/logger');
+const { logger } = require('../config/pino');
 
 // Mapping fuero (UI) → modelo Mongoose. Keep in sync con update-movimientos-worker.js
 const FUERO_MODELS = {
