@@ -28,6 +28,7 @@ const saijSentenciasRoutes = require('./saijSentenciasRoutes');
 const saijConfigRoutes = require('./saijConfigRoutes');
 const scrapingStatsRoutes = require('./scrapingStatsRoutes');
 const sentenciasSearchRoutes = require('./sentenciasSearchRoutes');
+const causasElegiblesUpdateRoutes = require('./causasElegiblesUpdateRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -115,5 +116,8 @@ router.use('/scraping-stats', scrapingStatsRoutes);
 
 // Búsqueda semántica de sentencias (Pinecone)
 router.use('/sentencias', sentenciasSearchRoutes);
+
+// Causas elegibles para update (lectura admin del caché local del worker)
+router.use('/causas-elegibles-update', causasElegiblesUpdateRoutes);
 
 module.exports = router;
