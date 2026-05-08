@@ -65,14 +65,15 @@ const verifyToken = async (req, res, next) => {
     // Continuar con el siguiente middleware
     next();
   } catch (error) {
-    logger.error(`Middleware auth: Error de verificación de token: ${error.message}`);
-
-    // Determinar el tipo de error para mensajes más específicos
     let message = "Token is not valid";
     if (error.name === 'TokenExpiredError') {
       message = "Token has expired";
+      logger.warn(`Middleware auth: Error de verificación de token: ${error.message}`);
     } else if (error.name === 'JsonWebTokenError') {
       message = error.message;
+      logger.error(`Middleware auth: Error de verificación de token: ${error.message}`);
+    } else {
+      logger.error(`Middleware auth: Error de verificación de token: ${error.message}`);
     }
 
     res.status(401).json({
