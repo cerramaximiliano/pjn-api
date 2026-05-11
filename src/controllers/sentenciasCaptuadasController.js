@@ -181,18 +181,45 @@ const sentenciasCapturadasController = {
 	// GET /api/sentencias-capturadas — lista paginada con filtros
 	async findAll(req, res) {
 		try {
-			const { status, fuero, tipo, category, page = 1, limit = 20 } = req.query;
+			const {
+				status,
+				fuero,
+				tipo,
+				category,
+				noveltyStatus,
+				search,
+				sortBy = 'detectedAt',
+				sortOrder = 'desc',
+				page = 1,
+				limit = 20,
+			} = req.query;
+
 			const filter = {};
 			if (status) filter.processingStatus = status;
 			if (fuero) filter.fuero = fuero;
 			if (tipo) filter.sentenciaTipo = tipo;
 			if (category) filter.category = category;
+			if (noveltyStatus) filter['noveltyCheck.status'] = noveltyStatus;
+
+			// Búsqueda por carátula o número de expediente
+			if (search && search.trim()) {
+				const term = search.trim();
+				const asNumber = parseInt(term, 10);
+				const ors = [{ caratula: { $regex: term, $options: 'i' } }];
+				if (!Number.isNaN(asNumber)) ors.push({ number: asNumber });
+				filter.$or = ors;
+			}
+
+			// Sort whitelist — evitar sort injection arbitrario
+			const ALLOWED_SORT = new Set(['detectedAt', 'processedAt', 'movimientoFecha', 'embeddedAt', 'publishedAt']);
+			const sortField = ALLOWED_SORT.has(sortBy) ? sortBy : 'detectedAt';
+			const sortDir = sortOrder === 'asc' ? 1 : -1;
 
 			const skip = (parseInt(page) - 1) * parseInt(limit);
 			const [docs, total] = await Promise.all([
 				SentenciaCapturada
 					.find(filter)
-					.sort({ detectedAt: -1 })
+					.sort({ [sortField]: sortDir })
 					.skip(skip)
 					.limit(parseInt(limit))
 					.select('-processingResult.text -processingLock -__v')
