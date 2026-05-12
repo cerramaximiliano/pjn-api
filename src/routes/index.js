@@ -29,6 +29,7 @@ const saijConfigRoutes = require('./saijConfigRoutes');
 const scrapingStatsRoutes = require('./scrapingStatsRoutes');
 const sentenciasSearchRoutes = require('./sentenciasSearchRoutes');
 const causasElegiblesUpdateRoutes = require('./causasElegiblesUpdateRoutes');
+const captchaDatasetRoutes = require('./captchaDatasetRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -119,5 +120,8 @@ router.use('/sentencias', sentenciasSearchRoutes);
 
 // Causas elegibles para update (lectura admin del caché local del worker)
 router.use('/causas-elegibles-update', causasElegiblesUpdateRoutes);
+
+// Dataset de imágenes de captcha capturadas por los scraping workers
+router.use('/captcha-dataset', captchaDatasetRoutes);
 
 module.exports = router;
