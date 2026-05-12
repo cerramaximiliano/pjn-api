@@ -16,6 +16,8 @@ const ALLOWED_WORKER_FIELDS = [
 	'captcha.apiKeys.twocaptcha.enabled',
 	'captcha.apiKeys.capsolver.key',
 	'captcha.apiKeys.capsolver.enabled',
+	'captcha.apiKeys.captchaai.key',
+	'captcha.apiKeys.captchaai.enabled',
 	'captcha.minimumBalance',
 ];
 
