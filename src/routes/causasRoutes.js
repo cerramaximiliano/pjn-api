@@ -25,6 +25,10 @@ router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
 // Ruta para obtener todas las causas no verificadas (verified: true, isValid: false)
 router.get('/non-verified', verifyToken, causasController.getAllNonVerifiedCausas);
 
+// Causas con protección anti-eliminación activada (count > 0).
+// GET /api/causas/admin/zero-movements-protection?fuero=CIV&page=1&limit=50&sortBy=count&sortOrder=desc
+router.get('/admin/zero-movements-protection', verifyToken, verifyAdmin, causasController.getCausasWithZeroMovementsProtection);
+
 // Rutas principales - todas protegidas con verifyToken
 router.get('/:fuero/buscar/objeto', verifyToken, causasController.findByObjeto);
 router.get('/:fuero/objetos', verifyToken, causasController.listObjetos);

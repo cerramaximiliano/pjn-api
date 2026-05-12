@@ -2105,6 +2105,86 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  /**
+   * Lista causas con la protección anti-eliminación activada
+   * (scrapingProgress.zeroMovementsProtection.count > 0).
+   *
+   * Query params:
+   *   fuero?: CIV|COM|CSS|CNT (si se omite, busca en los 4)
+   *   page, limit
+   *   sortBy: count|lastAt|lastBdCount (default count)
+   *   sortOrder: asc|desc (default desc)
+   */
+  async getCausasWithZeroMovementsProtection(req, res) {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+      const skip = (page - 1) * limit;
+      const fueroParam = req.query.fuero ? req.query.fuero.toUpperCase() : null;
+
+      const sortByMap = {
+        count: 'scrapingProgress.zeroMovementsProtection.count',
+        lastAt: 'scrapingProgress.zeroMovementsProtection.lastAt',
+        lastBdCount: 'scrapingProgress.zeroMovementsProtection.lastBdCount'
+      };
+      const sortByKey = sortByMap[req.query.sortBy] ? req.query.sortBy : 'count';
+      const sortField = sortByMap[sortByKey];
+      const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+
+      const filter = { 'scrapingProgress.zeroMovementsProtection.count': { $gt: 0 } };
+      const projection = 'number year fuero caratula juzgado movimientosCount scrapingProgress.zeroMovementsProtection scrapingProgress.lastErrorType scrapingProgress.lastErrorAt lastUpdate';
+
+      const allModels = { CIV: CausasCivil, COM: CausasComercial, CSS: CausasSegSoc, CNT: CausasTrabajo };
+
+      let target;
+      if (fueroParam) {
+        if (!allModels[fueroParam]) {
+          return res.status(400).json({ success: false, message: `Fuero no soportado: ${fueroParam}` });
+        }
+        target = [[fueroParam, allModels[fueroParam]]];
+      } else {
+        target = Object.entries(allModels);
+      }
+
+      // Reunir documentos de cada modelo (sin paginar al nivel de cada uno —
+      // necesitamos mergear y ordenar globalmente antes de cortar).
+      const buckets = await Promise.all(target.map(async ([fueroName, Model]) => {
+        const docs = await Model.find(filter, projection).sort({ [sortField]: sortOrder }).lean();
+        return docs.map(d => ({ ...d, fuero: d.fuero || fueroName }));
+      }));
+
+      const merged = buckets.flat();
+      merged.sort((a, b) => {
+        const aVal = sortByKey === 'lastAt'
+          ? new Date(a.scrapingProgress?.zeroMovementsProtection?.lastAt || 0).getTime()
+          : (a.scrapingProgress?.zeroMovementsProtection?.[sortByKey] || 0);
+        const bVal = sortByKey === 'lastAt'
+          ? new Date(b.scrapingProgress?.zeroMovementsProtection?.lastAt || 0).getTime()
+          : (b.scrapingProgress?.zeroMovementsProtection?.[sortByKey] || 0);
+        return (aVal - bVal) * sortOrder;
+      });
+
+      const total = merged.length;
+      const causas = merged.slice(skip, skip + limit);
+
+      res.json({
+        success: true,
+        data: {
+          causas,
+          pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+        }
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo causas con zeroMovementsProtection: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
   }
 
 };
