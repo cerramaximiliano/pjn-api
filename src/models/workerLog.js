@@ -37,6 +37,8 @@ const WorkerLogSchema = new Schema(
     },
 
     // Estado de la operación
+    // NOTA: 'error' se mantiene por compatibilidad con logs históricos. Los workers
+    // nuevos sólo deben emitir success/partial/failed/in_progress/skipped.
     status: {
       type: String,
       enum: ["success", "partial", "failed", "in_progress", "skipped", "error"],
@@ -109,6 +111,22 @@ const WorkerLogSchema = new Schema(
       message: String,
       skipReason: String,
       skipped: Boolean,
+
+      // Categoría del error/skip — alimenta el pie chart "Tipo de error" del admin.
+      errorType: {
+        type: String,
+        enum: [
+          "captcha_not_detected",
+          "captcha_solver_failed",
+          "insufficient_balance",
+          "scraping_zero_movements",
+          "not_accessible_publicly",
+          "browser_error",
+          "timeout",
+          "general_error"
+        ],
+        index: true
+      },
 
       error: {
         message: String,

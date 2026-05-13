@@ -21,6 +21,9 @@ router.get("/stats", verifyToken, verifyAdmin, workerLogController.getStats);
 // GET /worker-logs/failed - Logs fallidos con análisis de errores
 router.get("/failed", verifyToken, verifyAdmin, workerLogController.getFailed);
 
+// GET /worker-logs/error-breakdown - Distribución de errores por errorType (pie chart)
+router.get("/error-breakdown", verifyToken, verifyAdmin, workerLogController.getErrorBreakdown);
+
 // GET /worker-logs/activity - Actividad en tiempo real
 router.get("/activity", verifyToken, verifyAdmin, workerLogController.getActivity);
 

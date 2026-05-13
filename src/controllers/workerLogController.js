@@ -183,13 +183,22 @@ const workerLogController = {
         ? Math.round(totalDuration / durationCount)
         : 0;
 
+      // Top errorTypes en la ventana — alimenta el pie chart de "Tipo de error"
+      const byErrorTypeMatch = { ...matchStage, 'result.errorType': { $exists: true, $ne: null } };
+      const byErrorType = await WorkerLog.aggregate([
+        { $match: byErrorTypeMatch },
+        { $group: { _id: '$result.errorType', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]);
+
       res.json({
         success: true,
         period: `${hours} horas`,
         periodStart: since,
         periodEnd: new Date(),
         summary,
-        byWorkerType: stats
+        byWorkerType: stats,
+        byErrorType: byErrorType.map(r => ({ errorType: r._id, count: r.count }))
       });
     } catch (error) {
       logger.error('Error obteniendo estadísticas:', error);
@@ -211,9 +220,14 @@ const workerLogController = {
       const since = new Date();
       since.setHours(since.getHours() - parseInt(hours));
 
+      // Considera "fallido" todo lo que tenga status failed/error O que tenga errorType
+      // clasificado (capta partial+errorType como insufficient_balance/not_accessible).
       const query = {
-        status: { $in: ['failed', 'error'] },
-        startTime: { $gte: since }
+        startTime: { $gte: since },
+        $or: [
+          { status: { $in: ['failed', 'error'] } },
+          { 'result.errorType': { $exists: true, $ne: null } }
+        ]
       };
 
       if (workerType) query.workerType = workerType;
@@ -223,11 +237,12 @@ const workerLogController = {
         .limit(parseInt(limit))
         .lean();
 
-      // Agrupar errores por mensaje para identificar patrones
+      // Agrupar errores: si hay errorType usamos ése como key (estable),
+      // sino caemos al mensaje truncado (legacy).
       const errorPatterns = {};
       logs.forEach(log => {
         const errorMsg = log.result?.error?.message || log.result?.message || 'Error desconocido';
-        const key = errorMsg.substring(0, 100); // Truncar para agrupar
+        const key = log.result?.errorType || errorMsg.substring(0, 100);
 
         if (!errorPatterns[key]) {
           errorPatterns[key] = {
@@ -767,6 +782,108 @@ const workerLogController = {
         success: false,
         error: error.message
       });
+    }
+  },
+
+  /**
+   * GET /worker-logs/error-breakdown
+   * Devuelve la distribución de errores por errorType (para pie chart) y los top patrones
+   * de mensaje cuando el log no tiene errorType clasificado.
+   *
+   * Query params:
+   * - workerType: filtrar por tipo de worker (default: todos)
+   * - hours: ventana temporal (default: 24)
+   * - fuero: filtrar por fuero (CIV, CSS, CNT, COM, etc.)
+   */
+  async getErrorBreakdown(req, res) {
+    try {
+      const { workerType, hours = 24, fuero } = req.query;
+
+      const since = new Date();
+      since.setHours(since.getHours() - parseInt(hours));
+
+      // Considera "problemático" todo lo que no haya sido un success limpio:
+      // failed, error (legacy) y partial con errorType clasificado.
+      const matchStage = {
+        startTime: { $gte: since },
+        $or: [
+          { status: { $in: ['failed', 'error'] } },
+          { 'result.errorType': { $exists: true, $ne: null } }
+        ]
+      };
+      if (workerType) matchStage.workerType = workerType;
+      if (fuero) matchStage['document.fuero'] = fuero;
+
+      const [byErrorType, totalProblems, byStatus] = await Promise.all([
+        WorkerLog.aggregate([
+          { $match: matchStage },
+          {
+            $group: {
+              _id: { $ifNull: ['$result.errorType', 'unclassified'] },
+              count: { $sum: 1 },
+              lastOccurrence: { $max: '$startTime' },
+              sampleMessage: { $first: '$result.message' },
+              sampleErrorMessage: { $first: '$result.error.message' }
+            }
+          },
+          { $sort: { count: -1 } }
+        ]),
+        WorkerLog.countDocuments(matchStage),
+        WorkerLog.aggregate([
+          { $match: matchStage },
+          { $group: { _id: '$status', count: { $sum: 1 } } }
+        ])
+      ]);
+
+      // Patrones de los logs sin errorType (legacy / no clasificados): agrupamos por
+      // los primeros 100 chars del mensaje para que se note qué falta clasificar.
+      const unclassifiedMatch = {
+        ...matchStage,
+        $or: [
+          { 'result.errorType': { $exists: false } },
+          { 'result.errorType': null }
+        ]
+      };
+      const unclassifiedPatterns = await WorkerLog.aggregate([
+        { $match: unclassifiedMatch },
+        {
+          $group: {
+            _id: {
+              $substrCP: [
+                { $ifNull: ['$result.error.message', { $ifNull: ['$result.message', 'desconocido'] }] },
+                0,
+                100
+              ]
+            },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ]);
+
+      res.json({
+        success: true,
+        period: `${hours} horas`,
+        periodStart: since,
+        periodEnd: new Date(),
+        filters: { workerType: workerType || null, fuero: fuero || null },
+        total: totalProblems,
+        byErrorType: byErrorType.map(r => ({
+          errorType: r._id,
+          count: r.count,
+          percentage: totalProblems > 0
+            ? parseFloat(((r.count / totalProblems) * 100).toFixed(1))
+            : 0,
+          lastOccurrence: r.lastOccurrence,
+          sample: r.sampleErrorMessage || r.sampleMessage || null
+        })),
+        byStatus: byStatus.map(s => ({ status: s._id, count: s.count })),
+        unclassifiedPatterns: unclassifiedPatterns.map(p => ({ message: p._id, count: p.count }))
+      });
+    } catch (error) {
+      logger.error('Error obteniendo breakdown de errores:', error);
+      res.status(500).json({ success: false, error: error.message });
     }
   },
 
