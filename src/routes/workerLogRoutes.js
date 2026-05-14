@@ -24,6 +24,9 @@ router.get("/failed", verifyToken, verifyAdmin, workerLogController.getFailed);
 // GET /worker-logs/error-breakdown - Distribución de errores por errorType (pie chart)
 router.get("/error-breakdown", verifyToken, verifyAdmin, workerLogController.getErrorBreakdown);
 
+// GET /worker-logs/error-timeline - Evolución temporal de errores (bar chart apilado)
+router.get("/error-timeline", verifyToken, verifyAdmin, workerLogController.getErrorTimeline);
+
 // GET /worker-logs/activity - Actividad en tiempo real
 router.get("/activity", verifyToken, verifyAdmin, workerLogController.getActivity);
 

@@ -211,11 +211,21 @@ const workerLogController = {
 
   /**
    * GET /worker-logs/failed
-   * Obtiene logs fallidos con análisis de patrones de error
+   * Obtiene logs fallidos con análisis de patrones de error.
+   *
+   * IMPORTANTE: el agrupamiento se hace en Mongo sobre TODO el período, no sobre
+   * los primeros N logs. Antes este endpoint perdía patrones del tail cuando un
+   * tipo de error dominaba (ej: 300+ captcha errors enmascaraban 2
+   * scraping_zero_movements del mismo día).
+   *
+   * Query params:
+   * - workerType, fuero: filtros opcionales
+   * - hours: ventana (default 24)
+   * - limit: cantidad de logs en el tail (default 100, no afecta patterns)
    */
   async getFailed(req, res) {
     try {
-      const { workerType, hours = 24, limit = 100 } = req.query;
+      const { workerType, fuero, hours = 24, limit = 100 } = req.query;
 
       const since = new Date();
       since.setHours(since.getHours() - parseInt(hours));
@@ -231,55 +241,76 @@ const workerLogController = {
       };
 
       if (workerType) query.workerType = workerType;
+      if (fuero) query['document.fuero'] = fuero;
 
+      // Agrupar TODOS los logs del período por errorType (o mensaje truncado si
+      // no hay errorType — logs legacy). Cada pattern trae 3 ejemplos con
+      // documento+log_id para que el admin pueda hacer deep-link.
+      const patternAggregation = await WorkerLog.aggregate([
+        { $match: query },
+        { $sort: { startTime: -1 } },
+        {
+          $group: {
+            _id: {
+              $ifNull: [
+                '$result.errorType',
+                {
+                  $substrCP: [
+                    {
+                      $ifNull: [
+                        '$result.error.message',
+                        { $ifNull: ['$result.message', 'Error desconocido'] }
+                      ]
+                    },
+                    0,
+                    100
+                  ]
+                }
+              ]
+            },
+            count: { $sum: 1 },
+            lastOccurrence: { $max: '$startTime' },
+            workers: { $addToSet: '$workerId' },
+            examples: {
+              $push: {
+                logId: '$_id',
+                workerId: '$workerId',
+                documentId: '$document.documentId',
+                number: '$document.number',
+                year: '$document.year',
+                fuero: '$document.fuero',
+                startTime: '$startTime',
+                status: '$status'
+              }
+            }
+          }
+        },
+        { $sort: { count: -1 } }
+      ]);
+
+      // Recortamos examples a 3 por pattern (más liviano para la UI sin perder
+      // representatividad). Como ordenamos por startTime desc antes del group,
+      // los 3 que sobreviven son los más recientes.
+      const errorPatterns = {};
+      patternAggregation.forEach(p => {
+        errorPatterns[p._id] = {
+          count: p.count,
+          lastOccurrence: p.lastOccurrence,
+          workers: p.workers,
+          examples: p.examples.slice(0, 3)
+        };
+      });
+
+      // Tail con los logs más recientes para la tabla "Logs Fallidos".
       const logs = await WorkerLog.find(query)
         .sort({ startTime: -1 })
         .limit(parseInt(limit))
         .lean();
 
-      // Agrupar errores: si hay errorType usamos ése como key (estable),
-      // sino caemos al mensaje truncado (legacy).
-      const errorPatterns = {};
-      logs.forEach(log => {
-        const errorMsg = log.result?.error?.message || log.result?.message || 'Error desconocido';
-        const key = log.result?.errorType || errorMsg.substring(0, 100);
-
-        if (!errorPatterns[key]) {
-          errorPatterns[key] = {
-            count: 0,
-            lastOccurrence: null,
-            workers: new Set(),
-            examples: []
-          };
-        }
-        errorPatterns[key].count++;
-        errorPatterns[key].workers.add(log.workerId);
-
-        if (!errorPatterns[key].lastOccurrence ||
-            new Date(log.startTime) > new Date(errorPatterns[key].lastOccurrence)) {
-          errorPatterns[key].lastOccurrence = log.startTime;
-        }
-
-        if (errorPatterns[key].examples.length < 3) {
-          errorPatterns[key].examples.push({
-            logId: log._id,
-            workerId: log.workerId,
-            documentId: log.document?.documentId,
-            number: log.document?.number,
-            year: log.document?.year,
-            startTime: log.startTime
-          });
-        }
-      });
-
-      // Convertir Sets a Arrays
-      Object.keys(errorPatterns).forEach(key => {
-        errorPatterns[key].workers = Array.from(errorPatterns[key].workers);
-      });
-
       res.json({
         success: true,
         total: logs.length,
+        totalInPeriod: patternAggregation.reduce((s, p) => s + p.count, 0),
         period: `${hours} horas`,
         errorPatterns,
         logs
@@ -883,6 +914,99 @@ const workerLogController = {
       });
     } catch (error) {
       logger.error('Error obteniendo breakdown de errores:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
+
+  /**
+   * GET /worker-logs/error-timeline
+   * Devuelve la evolución temporal de errores agrupados por errorType.
+   * Granularidad automática: hora si la ventana es ≤48h, día en caso contrario
+   * (configurable con ?bucket=hour|day).
+   *
+   * Sirve para detectar patrones temporales: ej. "los captcha errors se
+   * concentran entre 8am y 11am todos los días".
+   *
+   * Query params:
+   * - workerType, fuero: filtros opcionales
+   * - hours: ventana (default 24)
+   * - bucket: 'hour' | 'day' | 'auto' (default 'auto')
+   */
+  async getErrorTimeline(req, res) {
+    try {
+      const { workerType, fuero, hours = 24, bucket = 'auto' } = req.query;
+
+      const since = new Date();
+      since.setHours(since.getHours() - parseInt(hours));
+
+      const granularity = bucket === 'auto'
+        ? (parseInt(hours) <= 48 ? 'hour' : 'day')
+        : bucket;
+
+      const dateFormat = granularity === 'hour'
+        ? '%Y-%m-%dT%H:00:00Z'
+        : '%Y-%m-%dT00:00:00Z';
+
+      const matchStage = {
+        startTime: { $gte: since },
+        $or: [
+          { status: { $in: ['failed', 'error'] } },
+          { 'result.errorType': { $exists: true, $ne: null } }
+        ]
+      };
+      if (workerType) matchStage.workerType = workerType;
+      if (fuero) matchStage['document.fuero'] = fuero;
+
+      const rows = await WorkerLog.aggregate([
+        { $match: matchStage },
+        {
+          $group: {
+            _id: {
+              bucket: { $dateToString: { format: dateFormat, date: '$startTime', timezone: 'UTC' } },
+              errorType: { $ifNull: ['$result.errorType', 'unclassified'] }
+            },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.bucket': 1 } }
+      ]);
+
+      // Pivot a filas wide para que el frontend pueda renderizar barras
+      // apiladas sin tener que pivotear en JS. Cada fila = 1 bucket con
+      // todos los errorTypes como propiedades.
+      const buckets = {};
+      const errorTypesSet = new Set();
+      rows.forEach(r => {
+        const b = r._id.bucket;
+        const et = r._id.errorType;
+        if (!buckets[b]) buckets[b] = { bucket: b };
+        buckets[b][et] = r.count;
+        errorTypesSet.add(et);
+      });
+
+      // Ordenar y rellenar errorTypes faltantes con 0 para que recharts no
+      // tenga gaps visuales en el stack.
+      const errorTypes = Array.from(errorTypesSet);
+      const series = Object.values(buckets)
+        .sort((a, b) => a.bucket.localeCompare(b.bucket))
+        .map(row => {
+          errorTypes.forEach(et => {
+            if (row[et] === undefined) row[et] = 0;
+          });
+          return row;
+        });
+
+      res.json({
+        success: true,
+        period: `${hours} horas`,
+        periodStart: since,
+        periodEnd: new Date(),
+        granularity,
+        errorTypes,
+        series
+      });
+    } catch (error) {
+      logger.error('Error obteniendo timeline de errores:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   },
