@@ -2,7 +2,7 @@
  * Controller para Manager Config
  * Endpoints para gestionar la configuración del App Update Manager
  */
-const { ManagerConfig } = require('pjn-models');
+const { ManagerConfig, PjnSiteIncident } = require('pjn-models');
 const { logger } = require('../config/pino');
 
 const managerConfigController = {
@@ -357,6 +357,72 @@ const managerConfigController = {
             });
         } catch (error) {
             logger.error(`Error reseteando configuración: ${error.message}`);
+            res.status(500).json({
+                success: false,
+                message: 'Error interno del servidor',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Listar incidents (caídas por mantenimiento) del portal PJN
+     * GET /api/manager-config/incidents
+     *
+     * Query: limit (1-200, default 50), skip (default 0),
+     *        resolved (true|false), sinceDays (number)
+     */
+    async getIncidents(req, res) {
+        try {
+            const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+            const skip = Math.max(parseInt(req.query.skip, 10) || 0, 0);
+            const sinceDays = parseInt(req.query.sinceDays, 10);
+            const since = Number.isFinite(sinceDays) && sinceDays > 0
+                ? new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000)
+                : undefined;
+
+            let resolved;
+            if (req.query.resolved === 'true') resolved = true;
+            else if (req.query.resolved === 'false') resolved = false;
+
+            const items = await PjnSiteIncident.listIncidents({ limit, skip, resolved, since });
+
+            // Resumen agregado sobre incidents cerrados (durationMs conocido).
+            const matchClosed = { endedAt: { $ne: null } };
+            if (since) matchClosed.startedAt = { $gte: since };
+            const [agg] = await PjnSiteIncident.aggregate([
+                { $match: matchClosed },
+                {
+                    $group: {
+                        _id: null,
+                        totalDurationMs: { $sum: '$durationMs' },
+                        avgDurationMs: { $avg: '$durationMs' },
+                        count: { $sum: 1 }
+                    }
+                }
+            ]);
+            const openCount = await PjnSiteIncident.countDocuments({ endedAt: null });
+
+            // Estado actual del sitio para que la UI pueda renderizar
+            // "en curso" sin hacer otra request.
+            const currentStatus = await ManagerConfig.getSiteStatus();
+
+            return res.json({
+                success: true,
+                message: 'Historial de incidents del PJN',
+                data: items,
+                count: items.length,
+                summary: {
+                    totalDurationMs: agg?.totalDurationMs || 0,
+                    avgDurationMs: agg?.avgDurationMs || 0,
+                    closedCount: agg?.count || 0,
+                    openCount
+                },
+                currentStatus: currentStatus || null,
+                serverTime: new Date().toISOString()
+            });
+        } catch (error) {
+            logger.error(`Error obteniendo incidents: ${error.message}`);
             res.status(500).json({
                 success: false,
                 message: 'Error interno del servidor',

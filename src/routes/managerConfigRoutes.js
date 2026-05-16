@@ -43,4 +43,8 @@ router.post('/alerts/:index/acknowledge', managerConfigController.acknowledgeAle
 // POST /api/manager-config/reset
 router.post('/reset', managerConfigController.resetToDefaults);
 
+// Historial de caídas por mantenimiento del PJN
+// GET /api/manager-config/incidents?limit=50&skip=0&resolved=true&sinceDays=30
+router.get('/incidents', managerConfigController.getIncidents);
+
 module.exports = router;
