@@ -153,7 +153,7 @@ const managerConfigController = {
     async getCurrentStatus(req, res) {
         try {
             const config = await ManagerConfig.findOne({ name: 'app-update-manager' })
-                .select('currentState lastUpdate')
+                .select('currentState pjnSiteStatus lastUpdate')
                 .lean();
 
             if (!config) {
@@ -176,6 +176,7 @@ const managerConfigController = {
                 message: 'Estado actual del manager',
                 data: {
                     ...config.currentState,
+                    pjnSiteStatus: config.pjnSiteStatus || null,
                     lastUpdate: config.lastUpdate,
                     lastUpdateAgo: lastUpdateMs ? `${Math.round(lastUpdateMs / 1000)}s` : null,
                     isStale,
