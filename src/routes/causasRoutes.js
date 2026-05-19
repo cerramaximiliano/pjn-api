@@ -19,6 +19,10 @@ router.get('/stats/eligibility', verifyToken, causasController.getEligibilitySta
 // GET /api/causas/stats/capacity?thresholdHours=2&workersPerFuero=3&workHoursPerDay=14
 router.get('/stats/capacity', verifyToken, causasController.getCapacityStats);
 
+// Resumen agregado de causas marcadas privadas (widget admin)
+// GET /api/causas/stats/privacy
+router.get('/stats/privacy', verifyToken, causasController.getPrivacyStats);
+
 // Ruta para obtener todas las causas verificadas
 router.get('/verified', verifyToken, causasController.getAllVerifiedCausas);
 

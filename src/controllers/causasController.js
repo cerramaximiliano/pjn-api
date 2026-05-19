@@ -2185,6 +2185,104 @@ const causasController = {
         data: null
       });
     }
+  },
+
+  /**
+   * GET /api/causas/stats/privacy
+   *
+   * Resumen agregado del estado de privacidad en los 4 fueros principales
+   * para el widget del dashboard admin. Devuelve:
+   *  - total: causas con isPrivate=true en toda la BD (CIV+COM+CSS+CNT)
+   *  - byFuero: breakdown { CIV, COM, CSS, CNT }
+   *  - recentChanges: causas marcadas privadas en las últimas 24h y 7d
+   *  - lastRun, threshold: leídos de la colección `configuracion-privacy-checker`
+   *
+   * Sin parámetros. Acceso: verifyToken (mismo nivel que /stats/eligibility).
+   */
+  async getPrivacyStats(req, res) {
+    try {
+      const mongoose = require('mongoose');
+      const FUERO_MODELS = {
+        CIV: CausasCivil,
+        COM: CausasComercial,
+        CSS: CausasSegSoc,
+        CNT: CausasTrabajo,
+      };
+
+      const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const perFuero = await Promise.all(
+        Object.entries(FUERO_MODELS).map(async ([code, Model]) => {
+          const [total, last24h, last7d] = await Promise.all([
+            Model.countDocuments({ isPrivate: true }),
+            Model.countDocuments({ isPrivate: true, privateDetectedAt: { $gte: since24h } }),
+            Model.countDocuments({ isPrivate: true, privateDetectedAt: { $gte: since7d } }),
+          ]);
+          return { code, total, last24h, last7d };
+        })
+      );
+
+      const total = perFuero.reduce((s, f) => s + f.total, 0);
+      const changes24h = perFuero.reduce((s, f) => s + f.last24h, 0);
+      const changes7d = perFuero.reduce((s, f) => s + f.last7d, 0);
+      const byFuero = perFuero.reduce((acc, f) => {
+        acc[f.code] = { total: f.total, last24h: f.last24h, last7d: f.last7d };
+        return acc;
+      }, {});
+
+      // Listado breve (top 10) de las marcadas más recientemente, ordenado por privateDetectedAt desc.
+      // Útil para el panel: muestra "Últimas privadas" con expediente + cuándo.
+      const recentLists = await Promise.all(
+        Object.entries(FUERO_MODELS).map(async ([code, Model]) =>
+          Model.find({ isPrivate: true, privateDetectedAt: { $exists: true } })
+            .select('_id number year caratula fuero privateDetectedAt')
+            .sort({ privateDetectedAt: -1 })
+            .limit(10)
+            .lean()
+            .then((docs) => docs.map((d) => ({ ...d, causaType: `Causas${code === 'CIV' ? 'Civil' : code === 'COM' ? 'Comercial' : code === 'CSS' ? 'SegSoc' : 'Trabajo'}` })))
+        )
+      );
+      const recent = recentLists
+        .flat()
+        .sort((a, b) => new Date(b.privateDetectedAt) - new Date(a.privateDetectedAt))
+        .slice(0, 10);
+
+      // Config del privacy-checker (lectura directa para no acoplar a pjn-models)
+      let config = null;
+      try {
+        config = await mongoose.connection.db
+          .collection('configuracion-privacy-checker')
+          .findOne({}, { projection: { last_run: 1, consecutive_strikes_threshold: 1, enabled: 1, cron_expression: 1, stats: 1 } });
+      } catch (cfgErr) {
+        logger.warn(`No se pudo leer configuracion-privacy-checker: ${cfgErr.message}`);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          total,
+          byFuero,
+          changes: { last24h: changes24h, last7d: changes7d },
+          recent,
+          checker: config ? {
+            enabled: config.enabled !== false,
+            cronExpression: config.cron_expression || null,
+            threshold: config.consecutive_strikes_threshold || 3,
+            lastRun: config.last_run || null,
+            allTimeStats: config.stats || null,
+          } : null,
+        },
+      });
+    } catch (error) {
+      logger.error(`Error obteniendo privacy stats: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null,
+      });
+    }
   }
 
 };
