@@ -14,6 +14,7 @@ const cleanupConfigRoutes = require('./cleanupConfigRoutes');
 const intervinientesRoutes = require('./intervinientesRoutes');
 const workerStatsRoutes = require('./workerStatsRoutes');
 const managerConfigRoutes = require('./managerConfigRoutes');
+const htmlDriftRoutes = require('./htmlDriftRoutes');
 const extraInfoConfigRoutes = require('./extraInfoConfigRoutes');
 const scrapingManagerRoutes = require('./scrapingManagerRoutes');
 const scrapingWorkerManagerRoutes = require('./scrapingWorkerManagerRoutes');
@@ -78,6 +79,9 @@ router.use('/workers', workerStatsRoutes);
 
 // Montar las rutas de configuración del manager
 router.use('/manager-config', managerConfigRoutes);
+
+// Montar las rutas de HTML drift (incidentes estructurales del portal PJN)
+router.use('/html-drift', htmlDriftRoutes);
 
 // Montar las rutas de configuración del extra-info worker
 router.use('/extra-info-config', extraInfoConfigRoutes);
