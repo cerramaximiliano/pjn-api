@@ -17,4 +17,8 @@ router.get('/alerts', controller.getAlerts);
 router.post('/alerts/:index/acknowledge', controller.acknowledgeAlert);
 router.post('/reset', controller.resetToDefaults);
 
+// PM2 control (admin-only — el router.use(verifyAdmin) arriba ya protege todo)
+router.get('/pm2-status', controller.pm2Status);
+router.post('/pm2/:action', controller.pm2Action);
+
 module.exports = router;

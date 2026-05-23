@@ -6,6 +6,7 @@
  */
 const { LiquidacionWorkerConfig } = require('pjn-models');
 const { logger } = require('../config/pino');
+const pm2Control = require('../services/pm2Control');
 
 const ALLOWED_TOP_LEVEL = ['enabled', 'workerNames', 'manager', 'urlExtractor', 'pdfProcessor', 'alerts'];
 
@@ -171,6 +172,40 @@ const controller = {
     } catch (err) {
       logger.error(`liq-config acknowledgeAlert: ${err.message}`);
       res.status(500).json({ success: false, message: 'Error interno', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/liquidacion-worker-config/pm2-status
+   * Estado en vivo de los 3 procesos PM2 vía `pm2 jlist`.
+   */
+  async pm2Status(req, res) {
+    try {
+      const data = await pm2Control.listFiltered();
+      res.json({ success: true, data });
+    } catch (err) {
+      logger.error(`liq-config pm2Status: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error ejecutando pm2 jlist', error: err.message });
+    }
+  },
+
+  /**
+   * POST /api/liquidacion-worker-config/pm2/:action
+   * action ∈ { start | stop | restart }.
+   * Body opcional: { workers: ['manager','url-extractor','pdf-processor'] }
+   * Sin body = aplica a todos.
+   */
+  async pm2Action(req, res) {
+    try {
+      const { action } = req.params;
+      const { workers } = req.body || {};
+      const results = await pm2Control.executeAction(action, workers);
+      const allOk = results.every((r) => r.ok);
+      logger.info(`liq-config pm2 ${action} → ${JSON.stringify(results)}`);
+      res.status(allOk ? 200 : 207).json({ success: allOk, message: `pm2 ${action} ejecutado`, data: results });
+    } catch (err) {
+      logger.error(`liq-config pm2Action: ${err.message}`);
+      res.status(400).json({ success: false, message: 'Error ejecutando acción PM2', error: err.message });
     }
   },
 
