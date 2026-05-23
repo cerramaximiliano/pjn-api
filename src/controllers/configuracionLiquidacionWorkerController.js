@@ -4,9 +4,50 @@
  * Endpoints admin para inspeccionar/editar la configuración del sistema
  * pjn-liquidacion-worker (manager + url-extractor + pdf-processor).
  */
-const { LiquidacionWorkerConfig } = require('pjn-models');
+const mongoose = require('mongoose');
+const { LiquidacionWorkerConfig, CausasSegSoc } = require('pjn-models');
 const { logger } = require('../config/pino');
 const pm2Control = require('../services/pm2Control');
+
+// Modelo loose para queries genéricas a la colección previsional-liquidacion-urls.
+// (No vivimos en pjn-models porque el schema completo está en pjn-liquidacion-worker
+// y acá solo necesitamos leer.)
+const PrevisionalLiquidacionUrl = mongoose.models.PrevisionalLiquidacionUrl ||
+  mongoose.model(
+    'PrevisionalLiquidacionUrl',
+    new mongoose.Schema({}, { strict: false, collection: 'previsional-liquidacion-urls' })
+  );
+
+const DOC_PROJECTION_LIST = {
+  causaId: 1,
+  causaNumber: 1,
+  causaYear: 1,
+  fuero: 1,
+  caratula: 1,
+  juzgado: 1,
+  secretaria: 1,
+  movFecha: 1,
+  tipo: 1,
+  detalleNorm: 1,
+  url: 1,
+  tipoDoc: 1,
+  category: 1,
+  pdfStatus: 1,
+  pdfPages: 1,
+  pdfProducer: 1,
+  sectionMix: 1,
+  hasHaberCaja: 1,
+  hasHaberReajustado: 1,
+  hasRetroactivo: 1,
+  'extracted.persona': 1,
+  'extracted.expediente': 1,
+  'extracted.retroactivo.capital': 1,
+  'extracted.retroactivo.intereses': 1,
+  'extracted.retroactivo.total': 1,
+  processedAt: 1
+};
+
+const ALLOWED_SORT_FIELDS = new Set(['movFecha', 'processedAt', 'pdfPages', 'caratula', 'category', 'sectionMix']);
 
 const ALLOWED_TOP_LEVEL = ['enabled', 'workerNames', 'manager', 'urlExtractor', 'pdfProcessor', 'alerts'];
 
@@ -172,6 +213,114 @@ const controller = {
     } catch (err) {
       logger.error(`liq-config acknowledgeAlert: ${err.message}`);
       res.status(500).json({ success: false, message: 'Error interno', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/liquidacion-worker-config/documents
+   *
+   * Lista paginada de docs de previsional-liquidacion-urls con filtros.
+   * Query params:
+   *   page (default 1), limit (default 50, max 200)
+   *   pdfStatus, sectionMix, category, fuero (exact match)
+   *   caratula (regex case-insensitive)
+   *   fechaFrom, fechaTo (ISO date string, contra movFecha)
+   *   causaId (ObjectId)
+   *   hasData=true  →  excluye sectionMix in [COVER, NONE, null]
+   *   sortBy (default movFecha), sortOrder (asc|desc, default desc)
+   */
+  async listDocuments(req, res) {
+    try {
+      const page = Math.max(1, parseInt(req.query.page || '1', 10));
+      const limit = Math.min(200, Math.max(1, parseInt(req.query.limit || '50', 10)));
+      const skip = (page - 1) * limit;
+
+      const filter = {};
+      if (req.query.pdfStatus) filter.pdfStatus = req.query.pdfStatus;
+      if (req.query.sectionMix) filter.sectionMix = req.query.sectionMix;
+      if (req.query.category) filter.category = req.query.category;
+      if (req.query.fuero) filter.fuero = req.query.fuero;
+      if (req.query.caratula) {
+        const esc = String(req.query.caratula).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        filter.caratula = { $regex: esc, $options: 'i' };
+      }
+      if (req.query.causaId && mongoose.isValidObjectId(req.query.causaId)) {
+        filter.causaId = new mongoose.Types.ObjectId(req.query.causaId);
+      }
+      if (req.query.fechaFrom || req.query.fechaTo) {
+        filter.movFecha = {};
+        if (req.query.fechaFrom) filter.movFecha.$gte = new Date(req.query.fechaFrom);
+        if (req.query.fechaTo) filter.movFecha.$lte = new Date(req.query.fechaTo);
+      }
+      if (req.query.hasData === 'true') {
+        filter.pdfStatus = filter.pdfStatus || 'extracted';
+        filter.sectionMix = { $nin: ['COVER', 'NONE', null] };
+      }
+
+      const sortBy = ALLOWED_SORT_FIELDS.has(req.query.sortBy) ? req.query.sortBy : 'movFecha';
+      const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+
+      const [docs, total] = await Promise.all([
+        PrevisionalLiquidacionUrl.find(filter, DOC_PROJECTION_LIST)
+          .sort({ [sortBy]: sortOrder, _id: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        PrevisionalLiquidacionUrl.countDocuments(filter)
+      ]);
+
+      res.json({ success: true, data: { docs, total, page, limit, pages: Math.ceil(total / limit) } });
+    } catch (err) {
+      logger.error(`liq-config listDocuments: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error listando documentos', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/liquidacion-worker-config/documents/:id
+   * Detalle completo del doc (incluye sections + extracted).
+   */
+  async getDocument(req, res) {
+    try {
+      const { id } = req.params;
+      if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ success: false, message: 'id inválido' });
+      }
+      const doc = await PrevisionalLiquidacionUrl.findById(id).lean();
+      if (!doc) return res.status(404).json({ success: false, message: 'documento no encontrado' });
+      res.json({ success: true, data: doc });
+    } catch (err) {
+      logger.error(`liq-config getDocument: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error obteniendo documento', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/liquidacion-worker-config/documents/:id/causa
+   * Devuelve subset de la causa origen (causas-segsocial) para trazabilidad.
+   */
+  async getDocumentCausa(req, res) {
+    try {
+      const { id } = req.params;
+      if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ success: false, message: 'id inválido' });
+      }
+      const doc = await PrevisionalLiquidacionUrl.findById(id).select('causaId').lean();
+      if (!doc) return res.status(404).json({ success: false, message: 'documento no encontrado' });
+
+      const causa = await CausasSegSoc.findById(doc.causaId, {
+        number: 1, year: 1, incidente: 1, caratula: 1, objeto: 1, fuero: 1,
+        juzgado: 1, secretaria: 1, situacion: 1, partes: 1, intervinientes: 1,
+        movimientosCount: 1, fechaUltimoMovimiento: 1, lastUpdate: 1,
+        instanciaOrigen: 1, instanciaRevisora: 1, instanciaExtraordinaria: 1,
+        isPrivate: 1, isArchived: 1, verified: 1, isValid: 1
+      }).lean();
+
+      if (!causa) return res.status(404).json({ success: false, message: 'causa origen no encontrada' });
+      res.json({ success: true, data: causa });
+    } catch (err) {
+      logger.error(`liq-config getDocumentCausa: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error obteniendo causa', error: err.message });
     }
   },
 

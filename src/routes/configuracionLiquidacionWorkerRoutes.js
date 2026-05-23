@@ -21,4 +21,9 @@ router.post('/reset', controller.resetToDefaults);
 router.get('/pm2-status', controller.pm2Status);
 router.post('/pm2/:action', controller.pm2Action);
 
+// Documents exploration
+router.get('/documents', controller.listDocuments);
+router.get('/documents/:id', controller.getDocument);
+router.get('/documents/:id/causa', controller.getDocumentCausa);
+
 module.exports = router;
