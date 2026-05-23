@@ -31,6 +31,7 @@ const scrapingStatsRoutes = require('./scrapingStatsRoutes');
 const sentenciasSearchRoutes = require('./sentenciasSearchRoutes');
 const causasElegiblesUpdateRoutes = require('./causasElegiblesUpdateRoutes');
 const captchaDatasetRoutes = require('./captchaDatasetRoutes');
+const configuracionLiquidacionWorkerRoutes = require('./configuracionLiquidacionWorkerRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -127,5 +128,8 @@ router.use('/causas-elegibles-update', causasElegiblesUpdateRoutes);
 
 // Dataset de imágenes de captcha capturadas por los scraping workers
 router.use('/captcha-dataset', captchaDatasetRoutes);
+
+// Configuración + estado del sistema pjn-liquidacion-worker
+router.use('/liquidacion-worker-config', configuracionLiquidacionWorkerRoutes);
 
 module.exports = router;
