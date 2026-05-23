@@ -21,25 +21,33 @@ function validateConfigPayload(payload) {
   const errors = [];
 
   if (payload.pdfProcessor) {
-    const { concurrency, downloadTimeoutMs, maxBytes, ocrCharsPerPageThreshold, retryAttempts } = payload.pdfProcessor;
+    const { concurrency, downloadTimeoutMs, maxBytes, ocrCharsPerPageThreshold, retryAttempts, requestDelayMs, dailyLimit } = payload.pdfProcessor;
     if (concurrency !== undefined && (concurrency < 1 || concurrency > 20)) errors.push('pdfProcessor.concurrency debe estar entre 1 y 20');
     if (downloadTimeoutMs !== undefined && downloadTimeoutMs < 5_000) errors.push('pdfProcessor.downloadTimeoutMs >= 5000');
     if (maxBytes !== undefined && (maxBytes < 1024 || maxBytes > 100 * 1024 * 1024)) errors.push('pdfProcessor.maxBytes entre 1KB y 100MB');
     if (ocrCharsPerPageThreshold !== undefined && ocrCharsPerPageThreshold < 0) errors.push('pdfProcessor.ocrCharsPerPageThreshold >= 0');
     if (retryAttempts !== undefined && (retryAttempts < 1 || retryAttempts > 10)) errors.push('pdfProcessor.retryAttempts entre 1 y 10');
+    if (requestDelayMs !== undefined && (requestDelayMs < 0 || requestDelayMs > 60_000)) errors.push('pdfProcessor.requestDelayMs entre 0 y 60000');
+    if (dailyLimit !== undefined && (dailyLimit < 0 || dailyLimit > 10_000_000)) errors.push('pdfProcessor.dailyLimit entre 0 y 10000000 (0 = sin límite)');
   }
   if (payload.urlExtractor) {
-    const { cronExpression, caratulaPattern, movDetallePattern } = payload.urlExtractor;
+    const { cronExpression, caratulaPattern, movDetallePattern, enqueueBatchSize, enqueueBatchDelayMs } = payload.urlExtractor;
     if (cronExpression !== undefined && typeof cronExpression !== 'string') errors.push('urlExtractor.cronExpression debe ser string');
     if (caratulaPattern !== undefined) { try { new RegExp(caratulaPattern, 'i'); } catch (e) { errors.push(`urlExtractor.caratulaPattern regex inválida: ${e.message}`); } }
     if (movDetallePattern !== undefined) { try { new RegExp(movDetallePattern, 'i'); } catch (e) { errors.push(`urlExtractor.movDetallePattern regex inválida: ${e.message}`); } }
+    if (enqueueBatchSize !== undefined && (enqueueBatchSize < 1 || enqueueBatchSize > 100_000)) errors.push('urlExtractor.enqueueBatchSize entre 1 y 100000');
+    if (enqueueBatchDelayMs !== undefined && (enqueueBatchDelayMs < 0 || enqueueBatchDelayMs > 300_000)) errors.push('urlExtractor.enqueueBatchDelayMs entre 0 y 300000');
   }
   if (payload.manager) {
-    const { configPollIntervalMs, heartbeatIntervalMs, workStartHour, workEndHour } = payload.manager;
+    const { configPollIntervalMs, heartbeatIntervalMs, workStartHour, workEndHour, workDays } = payload.manager;
     if (configPollIntervalMs !== undefined && configPollIntervalMs < 1000) errors.push('manager.configPollIntervalMs >= 1000');
     if (heartbeatIntervalMs !== undefined && heartbeatIntervalMs < 1000) errors.push('manager.heartbeatIntervalMs >= 1000');
     if (workStartHour !== undefined && workStartHour !== null && (workStartHour < 0 || workStartHour > 23)) errors.push('manager.workStartHour entre 0 y 23 o null');
     if (workEndHour !== undefined && workEndHour !== null && (workEndHour < 0 || workEndHour > 23)) errors.push('manager.workEndHour entre 0 y 23 o null');
+    if (workDays !== undefined) {
+      if (!Array.isArray(workDays)) errors.push('manager.workDays debe ser array');
+      else if (workDays.some((d) => typeof d !== 'number' || d < 0 || d > 6)) errors.push('manager.workDays: cada día entre 0 (Dom) y 6 (Sáb)');
+    }
   }
 
   return errors;
