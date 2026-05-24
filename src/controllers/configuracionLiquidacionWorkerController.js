@@ -39,8 +39,13 @@ const DOC_PROJECTION_LIST = {
   hasHaberCaja: 1,
   hasHaberReajustado: 1,
   hasRetroactivo: 1,
+  hasRegimenDependencia: 1,
+  hasRegimenAutonomo: 1,
   'extracted.persona': 1,
   'extracted.expediente': 1,
+  'extracted.regimen': 1,
+  'extracted.regimenSource': 1,
+  'extracted.regimenConfidence': 1,
   'extracted.retroactivo.capital': 1,
   'extracted.retroactivo.intereses': 1,
   'extracted.retroactivo.total': 1,
@@ -255,6 +260,20 @@ const controller = {
       if (req.query.hasData === 'true') {
         filter.pdfStatus = filter.pdfStatus || 'extracted';
         filter.sectionMix = { $nin: ['COVER', 'NONE', null] };
+      }
+      // Filtro de régimen: 'dependencia' | 'autonomo' | 'mixto' | 'unknown'
+      // Acepta tanto matching exacto contra extracted.regimen como por los flags top-level.
+      if (req.query.regimen) {
+        const r = String(req.query.regimen);
+        if (['dependencia', 'autonomo', 'mixto', 'unknown'].includes(r)) {
+          filter['extracted.regimen'] = r;
+        }
+      }
+      // Atajos por flags (compatibles con uno o varios valores: hasRegimen=dependencia,autonomo)
+      if (req.query.hasRegimen) {
+        const flags = String(req.query.hasRegimen).split(',').map((s) => s.trim());
+        if (flags.includes('dependencia')) filter.hasRegimenDependencia = true;
+        if (flags.includes('autonomo')) filter.hasRegimenAutonomo = true;
       }
 
       const sortBy = ALLOWED_SORT_FIELDS.has(req.query.sortBy) ? req.query.sortBy : 'movFecha';
