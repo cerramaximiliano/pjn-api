@@ -25,11 +25,14 @@ const schema = new Schema(
 			default: 'otro',
 		},
 
-		category: { type: String, enum: ['novelty', 'rutina'], default: 'novelty' },
+		// 'novelty' = update-movimientos, 'rutina' = sentencias-collector, 'saij' = saij-importer
+		category: { type: String, enum: ['novelty', 'rutina', 'saij'], default: 'novelty' },
 		source: {
 			worker: { type: String },
 			collectionName: { type: String },
 			collectedAt: { type: Date },
+			origin: { type: String, enum: ['pjn', 'saij'], default: 'pjn' },
+			saijDocId: { type: Schema.Types.ObjectId },
 		},
 
 		detectedAt: { type: Date, default: Date.now },
@@ -139,5 +142,7 @@ schema.index({ processedAt: -1 });
 schema.index({ ocrStatus: 1, processingStatus: 1 });
 schema.index({ 'noveltyCheck.status': 1, category: 1 });
 schema.index({ publicationStatus: 1, category: 1, embeddingStatus: 1 });
+schema.index({ 'source.origin': 1, category: 1 });
+schema.index({ 'source.saijDocId': 1 }, { sparse: true });
 
 module.exports = mongoose.model('SentenciaCapturada', schema);
