@@ -947,6 +947,13 @@ const workerLogController = {
         ? '%Y-%m-%dT%H:00:00Z'
         : '%Y-%m-%dT00:00:00Z';
 
+      // Bucketing en hora local de Argentina (ART, UTC-3) para que el patrón
+      // AM-heavy de captcha errors quede agrupado por la hora del día tal como
+      // la ve el operador, no por UTC. El `Z` del format string queda como
+      // sufijo nominal — el frontend debe leer el valor con getUTC*() porque
+      // ya está en hora local pre-shifted.
+      const TZ = 'America/Argentina/Buenos_Aires';
+
       const matchStage = {
         startTime: { $gte: since },
         $or: [
@@ -962,7 +969,7 @@ const workerLogController = {
         {
           $group: {
             _id: {
-              bucket: { $dateToString: { format: dateFormat, date: '$startTime', timezone: 'UTC' } },
+              bucket: { $dateToString: { format: dateFormat, date: '$startTime', timezone: TZ } },
               errorType: { $ifNull: ['$result.errorType', 'unclassified'] }
             },
             count: { $sum: 1 }
@@ -1002,6 +1009,7 @@ const workerLogController = {
         periodStart: since,
         periodEnd: new Date(),
         granularity,
+        timezone: TZ,
         errorTypes,
         series
       });
