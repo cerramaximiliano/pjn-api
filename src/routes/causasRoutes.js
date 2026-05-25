@@ -54,6 +54,9 @@ router.delete('/:fuero/:id', verifyToken, verifyAdmin, causasController.deleteCa
 // Ruta para actualizar una causa - requiere autenticación y rol de administrador
 router.patch('/:fuero/:id', verifyToken, verifyAdmin, causasController.updateCausa);
 
+// Marca una causa como vinculada/originada por SAIJ (consumida por saij-workers via X-Api-Key)
+router.patch('/:fuero/:id/saij', verifyToken, verifyAdmin, causasController.markAsSaij);
+
 // Ruta para eliminar un movimiento específico de una causa - requiere autenticación y rol de administrador
 router.delete('/:fuero/:id/movimientos/:movimientoIndex', verifyToken, verifyAdmin, causasController.deleteMovimiento);
 

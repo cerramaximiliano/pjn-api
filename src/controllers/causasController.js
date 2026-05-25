@@ -1117,6 +1117,64 @@ const causasController = {
     }
   },
 
+  // Marca una causa como vinculada/originada por SAIJ.
+  // Setea sub-doc `saij` (pjn-models 1.14.0+).
+  // Body: { saijSentenciaId, saijJurisdiccion?, createdViaSaij? }
+  async markAsSaij(req, res) {
+    try {
+      const { fuero, id } = req.params;
+      const { saijSentenciaId, saijJurisdiccion, createdViaSaij } = req.body || {};
+
+      if (!saijSentenciaId) {
+        return res.status(400).json({
+          success: false,
+          message: 'saijSentenciaId es requerido',
+          data: null,
+        });
+      }
+
+      const Model = getModel(fuero);
+
+      const setFields = {
+        'saij.isFromSaij': true,
+        'saij.linkedAt': new Date(),
+      };
+      if (saijJurisdiccion !== undefined) setFields['saij.saijJurisdiccion'] = saijJurisdiccion;
+      if (createdViaSaij !== undefined)   setFields['saij.createdViaSaij']   = !!createdViaSaij;
+
+      const causaActualizada = await Model.findByIdAndUpdate(
+        id,
+        {
+          $set: setFields,
+          $addToSet: { 'saij.saijSentenciaIds': saijSentenciaId },
+        },
+        { new: true, runValidators: true, projection: { _id: 1, saij: 1, caratula: 1, fuero: 1, number: 1, year: 1 } }
+      ).lean();
+
+      if (!causaActualizada) {
+        return res.status(404).json({
+          success: false,
+          message: 'Causa no encontrada',
+          data: null,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Causa vinculada a SAIJ',
+        data: causaActualizada,
+      });
+    } catch (error) {
+      logger.error(`Error markAsSaij (${req.params?.fuero}/${req.params?.id}): ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null,
+      });
+    }
+  },
+
   // Eliminar un movimiento específico de una causa
   async deleteMovimiento(req, res) {
     try {
