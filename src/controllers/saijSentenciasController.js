@@ -79,11 +79,14 @@ const saijSentenciasController = {
             if (embeddingStatus) {
                 postLookupMatch['sentenciaCapturada.embeddingStatus'] = embeddingStatus;
             }
+            // Después del $arrayElemAt el campo siempre existe (null si el
+            // lookup no devolvió nada). Filtramos por sub-field _id en true y
+            // por igualdad a null en false.
             if (hasSentenciaCapturada === 'true') {
                 postLookupMatch['sentenciaCapturada._id'] = { $exists: true };
             }
             if (hasSentenciaCapturada === 'false') {
-                postLookupMatch['sentenciaCapturada'] = { $exists: false };
+                postLookupMatch['sentenciaCapturada'] = null;
             }
             const hasPostMatch = Object.keys(postLookupMatch).length > 0;
 
