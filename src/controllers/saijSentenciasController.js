@@ -31,6 +31,9 @@ const saijSentenciasController = {
                 causaId,
                 linked,
                 saijSentenciaId,
+                pipelineStatus,
+                hasExpediente,
+                expedienteSource,
                 q,
             } = req.query;
 
@@ -47,6 +50,10 @@ const saijSentenciasController = {
             if (saijSentenciaId)   filter.saijSentenciaId = saijSentenciaId;
             if (linked === 'true')  filter['causaRefs.0'] = { $exists: true };
             if (linked === 'false') filter.$or = [{ causaRefs: { $exists: false } }, { causaRefs: { $size: 0 } }];
+            if (pipelineStatus)    filter.pipelineStatus = pipelineStatus;
+            if (hasExpediente === 'true')  filter['expediente.numero'] = { $exists: true };
+            if (hasExpediente === 'false') filter['expediente.numero'] = { $exists: false };
+            if (expedienteSource)  filter['expediente.source'] = expedienteSource;
 
             if (yearFrom || yearTo || monthFrom || monthTo) {
                 filter.fecha = {};
@@ -65,13 +72,37 @@ const saijSentenciasController = {
             const skip = (parseInt(page) - 1) * parseInt(limit);
             const lim  = Math.min(parseInt(limit), 100);
 
+            // Aggregate con $lookup a sentencias-capturadas — adjunta el SC
+            // asociado (si existe) para que la UI vea el estado del pipeline
+            // de embeddings sin hacer N+1 requests.
+            const pipeline = [
+                { $match: filter },
+                { $sort: { fecha: -1 } },
+                { $skip: skip },
+                { $limit: lim },
+                { $project: { rawContent: 0, descriptoresCompletos: 0 } },
+                { $lookup: {
+                    from: 'sentencias-capturadas',
+                    localField: '_id',
+                    foreignField: 'source.saijDocId',
+                    as: 'sentenciaCapturada',
+                    pipeline: [{
+                        $project: {
+                            processingStatus: 1, embeddingStatus: 1,
+                            embeddedAt: 1, embeddingChunksCount: 1,
+                            processedAt: 1, category: 1,
+                            'source.origin': 1, 'source.saijDocId': 1,
+                            causaId: 1, fuero: 1, number: 1, year: 1,
+                        },
+                    }],
+                }},
+                { $addFields: {
+                    sentenciaCapturada: { $arrayElemAt: ['$sentenciaCapturada', 0] },
+                }},
+            ];
+
             const [data, total] = await Promise.all([
-                SaijSentencia.find(filter)
-                    .select('-rawContent -descriptoresCompletos')
-                    .sort({ fecha: -1 })
-                    .skip(skip)
-                    .limit(lim)
-                    .lean(),
+                SaijSentencia.aggregate(pipeline),
                 SaijSentencia.countDocuments(filter),
             ]);
 
@@ -93,11 +124,25 @@ const saijSentenciasController = {
 
     /**
      * GET /api/saij/sentencias/stats
-     * Conteos agrupados por tipo, status, año.
+     * Conteos agrupados — incluye pipeline downstream:
+     *   - byType / byStatus / byYear         (legacy)
+     *   - byPipelineStatus / byFuero          (nuevos)
+     *   - withCausaRef / withExpediente / withExpedientePdf  (counts)
+     *   - sentenciasCapturadas: cross-join con la colección sentencias-capturadas
+     *     filtrando source.origin='saij'. Trae byProcessingStatus + byEmbeddingStatus
+     *     + total para visualizar el avance del pipeline de embeddings.
      */
     async stats(req, res) {
         try {
-            const [byType, byStatus, byYear] = await Promise.all([
+            const scCollection = SaijSentencia.db.collection('sentencias-capturadas');
+
+            const [
+                byType, byStatus, byYear,
+                byPipelineStatus, byFuero,
+                withCausaRef, withExpediente, withExpedientePdf,
+                total,
+                scTotal, scByProcessing, scByEmbedding,
+            ] = await Promise.all([
                 SaijSentencia.aggregate([
                     { $group: { _id: '$saijType', count: { $sum: 1 } } },
                     { $sort: { count: -1 } },
@@ -111,13 +156,45 @@ const saijSentenciasController = {
                     { $group: { _id: { $year: '$fecha' }, count: { $sum: 1 } } },
                     { $sort: { _id: -1 } },
                 ]),
+                SaijSentencia.aggregate([
+                    { $group: { _id: '$pipelineStatus', count: { $sum: 1 } } },
+                    { $sort: { count: -1 } },
+                ]),
+                SaijSentencia.aggregate([
+                    { $match: { fuero: { $ne: null, $ne: '' } } },
+                    { $group: { _id: '$fuero', count: { $sum: 1 } } },
+                    { $sort: { count: -1 } },
+                ]),
+                SaijSentencia.countDocuments({ 'causaRefs.0': { $exists: true } }),
+                SaijSentencia.countDocuments({ 'expediente.numero': { $exists: true } }),
+                SaijSentencia.countDocuments({ 'expediente.source': 'pdf' }),
+                SaijSentencia.countDocuments(),
+                scCollection.countDocuments({ 'source.origin': 'saij' }),
+                scCollection.aggregate([
+                    { $match: { 'source.origin': 'saij' } },
+                    { $group: { _id: '$processingStatus', count: { $sum: 1 } } },
+                    { $sort: { count: -1 } },
+                ]).toArray(),
+                scCollection.aggregate([
+                    { $match: { 'source.origin': 'saij' } },
+                    { $group: { _id: '$embeddingStatus', count: { $sum: 1 } } },
+                    { $sort: { count: -1 } },
+                ]).toArray(),
             ]);
-
-            const total = await SaijSentencia.countDocuments();
 
             res.json({
                 success: true,
-                data: { total, byType, byStatus, byYear },
+                data: {
+                    total,
+                    byType, byStatus, byYear,
+                    byPipelineStatus, byFuero,
+                    withCausaRef, withExpediente, withExpedientePdf,
+                    sentenciasCapturadas: {
+                        total: scTotal,
+                        byProcessingStatus: scByProcessing,
+                        byEmbeddingStatus: scByEmbedding,
+                    },
+                },
             });
         } catch (error) {
             logger.error(`[saij] Error obteniendo stats: ${error.message}`);
