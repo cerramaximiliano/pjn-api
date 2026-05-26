@@ -1,15 +1,35 @@
-const { CausasCivil, CausasComercial, CausasSegSoc, CausasTrabajo } = require("pjn-models")
+const {
+  // Principales (4)
+  CausasCivil, CausasComercial, CausasSegSoc, CausasTrabajo,
+  // Federales y especiales (24)
+  CausasCAF, CausasCCF, CausasCNE, CausasCPE, CausasCFP,
+  CausasCCC, CausasCSJ, CausasFSM, CausasCPF, CausasCPN,
+  CausasFBB, CausasFCR, CausasFCB, CausasFCT, CausasFGR,
+  CausasFLP, CausasFMP, CausasFMZ, CausasFPO, CausasFPA,
+  CausasFRE, CausasFSA, CausasFRO, CausasFTU,
+} = require("pjn-models");
 const { logger} = require('../config/pino');
 const axios = require('axios');
 
+// Mapa completo FUERO → Modelo Mongoose (28 fueros).
+// Histórico: el sistema arrancó con solo 4 fueros (CIV/COM/CSS/CNT). Los
+// otros 24 se exponen ahora para soportar el flujo SAIJ que importa
+// jurisprudencia de Cámara Criminal, Electoral, Penal Económico, federales
+// regionales, etc.
+const FUERO_MODELS = {
+  CIV: CausasCivil,    COM: CausasComercial, CSS: CausasSegSoc,  CNT: CausasTrabajo,
+  CAF: CausasCAF,      CCF: CausasCCF,       CNE: CausasCNE,     CPE: CausasCPE,
+  CFP: CausasCFP,      CCC: CausasCCC,       CSJ: CausasCSJ,     FSM: CausasFSM,
+  CPF: CausasCPF,      CPN: CausasCPN,       FBB: CausasFBB,     FCR: CausasFCR,
+  FCB: CausasFCB,      FCT: CausasFCT,       FGR: CausasFGR,     FLP: CausasFLP,
+  FMP: CausasFMP,      FMZ: CausasFMZ,       FPO: CausasFPO,     FPA: CausasFPA,
+  FRE: CausasFRE,      FSA: CausasFSA,       FRO: CausasFRO,     FTU: CausasFTU,
+};
+
 const getModel = (fuero) => {
-  switch (fuero) {
-    case 'CIV': return CausasCivil;
-    case 'COM': return CausasComercial;
-    case 'CSS': return CausasSegSoc;
-    case 'CNT': return CausasTrabajo;
-    default: throw new Error('Fuero no válido');
-  }
+  const M = FUERO_MODELS[fuero];
+  if (!M) throw new Error(`Fuero no válido: ${fuero}`);
+  return M;
 };
 
 /**
@@ -282,7 +302,7 @@ const causasController = {
       } catch (error) {
         return res.status(400).json({
           success: false,
-          message: 'Fuero no válido. Debe ser CIV, CSS o CNT'
+          message: error.message,
         });
       }
 
