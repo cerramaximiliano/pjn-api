@@ -208,7 +208,8 @@ const saijConfigController = {
     async updateScraping(req, res) {
         try {
             const allowed = [
-                'batchSize', 'delayBetweenRequests', 'rateLimit',
+                'cronPattern', 'batchSize', 'pageSize',
+                'delayBetweenRequests', 'rateLimit',
                 'pageTimeout', 'maxRetries', 'downloadPdf', 'yearFrom',
             ];
 
@@ -240,6 +241,43 @@ const saijConfigController = {
             res.json({ success: true, message: 'Configuración actualizada', data: { scraping: doc.scraping } });
         } catch (error) {
             logger.error(`[saij] Error updateScraping: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    /**
+     * PATCH /api/saij/config/:workerId/pipeline
+     * Actualizar flags del pipeline downstream (link → marcar causa →
+     * movimiento → SentenciaCapturada). Reloadables en cada tick del worker.
+     */
+    async updatePipeline(req, res) {
+        try {
+            const allowed = [
+                'enabled', 'linkToCausa', 'markCausa', 'addMovimiento',
+                'downloadPdf', 'createSentenciaCapturada', 'createMissingCausas',
+            ];
+            const updates = {};
+            for (const key of allowed) {
+                if (req.body[key] !== undefined) updates[`pipeline.${key}`] = !!req.body[key];
+            }
+
+            if (Object.keys(updates).length === 0) {
+                return res.status(400).json({ success: false, message: 'Sin campos válidos', allowedFields: allowed });
+            }
+
+            updates.lastUpdate = new Date();
+
+            const doc = await ConfiguracionScrapingSaij.findOneAndUpdate(
+                { worker_id: req.params.workerId },
+                { $set: updates },
+                { new: true }
+            );
+            if (!doc) return res.status(404).json({ success: false, message: 'Worker no encontrado' });
+
+            logger.info(`[saij] Pipeline de ${req.params.workerId} actualizado por ${req.userId}`);
+            res.json({ success: true, message: 'Pipeline actualizado', data: { pipeline: doc.pipeline } });
+        } catch (error) {
+            logger.error(`[saij] Error updatePipeline: ${error.message}`);
             res.status(500).json({ success: false, message: error.message });
         }
     },

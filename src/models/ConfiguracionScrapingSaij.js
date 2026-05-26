@@ -19,6 +19,8 @@ const ConfiguracionScrapingSaijSchema = new mongoose.Schema(
         scraping: {
             url:                    { type: String, default: 'https://www.saij.gob.ar/home' },
             apiUrl:                 { type: String, default: 'https://www.saij.gob.ar/busqueda' },
+            // Cron pattern del worker (reloadable con restart). node-cron syntax.
+            cronPattern:            { type: String, default: '*/3 * * * *' },
             yearFrom:               { type: Number, default: 2010 },
             currentYear:            { type: Number, default: 2010 },
             currentMonth:           { type: Number, default: 1 },
@@ -30,6 +32,19 @@ const ConfiguracionScrapingSaijSchema = new mongoose.Schema(
             pageTimeout:            { type: Number, default: 60000 },
             maxRetries:             { type: Number, default: 3 },
             downloadPdf:            { type: Boolean, default: false },
+        },
+
+        // Switches del pipeline downstream del worker SAIJ (link → marcar
+        // causa → push movimiento → upsert SentenciaCapturada). Reloadables
+        // en cada tick del cron.
+        pipeline: {
+            enabled:                  { type: Boolean, default: true },
+            linkToCausa:              { type: Boolean, default: true },
+            markCausa:                { type: Boolean, default: true },
+            addMovimiento:            { type: Boolean, default: true },
+            downloadPdf:              { type: Boolean, default: true },
+            createSentenciaCapturada: { type: Boolean, default: true },
+            createMissingCausas:      { type: Boolean, default: false }, // Fase 3 gated
         },
 
         history: { type: [MonthHistorySchema], default: [] },

@@ -18,6 +18,7 @@ router.post('/:workerId/pause',           ctrl.pause);
 router.post('/:workerId/resume',          ctrl.resume);
 router.patch('/:workerId/cursor',         ctrl.resetCursor);
 router.patch('/:workerId/scraping',       ctrl.updateScraping);
+router.patch('/:workerId/pipeline',       ctrl.updatePipeline);
 router.patch('/:workerId/notification',   ctrl.updateNotification);
 
 module.exports = router;
