@@ -34,6 +34,8 @@ const saijSentenciasController = {
                 pipelineStatus,
                 hasExpediente,
                 expedienteSource,
+                embeddingStatus,
+                hasSentenciaCapturada,
                 q,
             } = req.query;
 
@@ -72,38 +74,72 @@ const saijSentenciasController = {
             const skip = (parseInt(page) - 1) * parseInt(limit);
             const lim  = Math.min(parseInt(limit), 100);
 
-            // Aggregate con $lookup a sentencias-capturadas — adjunta el SC
-            // asociado (si existe) para que la UI vea el estado del pipeline
-            // de embeddings sin hacer N+1 requests.
-            const pipeline = [
+            // Filtros post-lookup (dependen del SC asociado)
+            const postLookupMatch = {};
+            if (embeddingStatus) {
+                postLookupMatch['sentenciaCapturada.embeddingStatus'] = embeddingStatus;
+            }
+            if (hasSentenciaCapturada === 'true') {
+                postLookupMatch['sentenciaCapturada._id'] = { $exists: true };
+            }
+            if (hasSentenciaCapturada === 'false') {
+                postLookupMatch['sentenciaCapturada'] = { $exists: false };
+            }
+            const hasPostMatch = Object.keys(postLookupMatch).length > 0;
+
+            const lookupStage = { $lookup: {
+                from: 'sentencias-capturadas',
+                localField: '_id',
+                foreignField: 'source.saijDocId',
+                as: 'sentenciaCapturada',
+                pipeline: [{
+                    $project: {
+                        processingStatus: 1, embeddingStatus: 1,
+                        embeddedAt: 1, embeddingChunksCount: 1,
+                        processedAt: 1, category: 1,
+                        'source.origin': 1, 'source.saijDocId': 1,
+                        causaId: 1, fuero: 1, number: 1, year: 1,
+                    },
+                }],
+            }};
+            const addFieldsStage = { $addFields: {
+                sentenciaCapturada: { $arrayElemAt: ['$sentenciaCapturada', 0] },
+            }};
+
+            // Data pipeline — orden importante: pre-match → lookup → post-match →
+            // sort → skip/limit. El lookup es caro, así que el pre-match (que
+            // usa índices) filtra primero. Si hay post-match, se aplica después.
+            const dataPipeline = [
                 { $match: filter },
+                lookupStage,
+                addFieldsStage,
+                ...(hasPostMatch ? [{ $match: postLookupMatch }] : []),
                 { $sort: { fecha: -1 } },
                 { $skip: skip },
                 { $limit: lim },
                 { $project: { rawContent: 0, descriptoresCompletos: 0 } },
-                { $lookup: {
-                    from: 'sentencias-capturadas',
-                    localField: '_id',
-                    foreignField: 'source.saijDocId',
-                    as: 'sentenciaCapturada',
-                    pipeline: [{
-                        $project: {
-                            processingStatus: 1, embeddingStatus: 1,
-                            embeddedAt: 1, embeddingChunksCount: 1,
-                            processedAt: 1, category: 1,
-                            'source.origin': 1, 'source.saijDocId': 1,
-                            causaId: 1, fuero: 1, number: 1, year: 1,
-                        },
-                    }],
-                }},
-                { $addFields: {
-                    sentenciaCapturada: { $arrayElemAt: ['$sentenciaCapturada', 0] },
-                }},
             ];
 
+            // Count pipeline. Si no hay post-match, alcanza con countDocuments
+            // directo del filter (más barato). Si hay, hay que armar pipeline
+            // equivalente con $count al final.
+            let totalPromise;
+            if (hasPostMatch) {
+                const countPipeline = [
+                    { $match: filter },
+                    lookupStage,
+                    addFieldsStage,
+                    { $match: postLookupMatch },
+                    { $count: 'total' },
+                ];
+                totalPromise = SaijSentencia.aggregate(countPipeline).then(r => r[0]?.total || 0);
+            } else {
+                totalPromise = SaijSentencia.countDocuments(filter);
+            }
+
             const [data, total] = await Promise.all([
-                SaijSentencia.aggregate(pipeline),
-                SaijSentencia.countDocuments(filter),
+                SaijSentencia.aggregate(dataPipeline),
+                totalPromise,
             ]);
 
             res.json({
