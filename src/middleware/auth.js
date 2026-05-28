@@ -114,7 +114,12 @@ const verifyAdmin = async (req, res, next) => {
     if (user.role !== 'ADMIN_ROLE') {
       return res.status(403).json({
         status: 'error',
-        message: 'Acceso denegado, se requiere rol de administrador'
+        message: 'Acceso denegado, se requiere rol de administrador',
+        // Flag para que el frontend distinga "cuenta autenticada pero sin admin"
+        // de "request prohibida por otra razón". Lo usan los interceptors de
+        // axios en law-analytics-admin para disparar el modal de re-login.
+        accountNotAdmin: true,
+        requireLogin: true
       });
     }
 
