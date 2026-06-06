@@ -144,5 +144,9 @@ schema.index({ 'noveltyCheck.status': 1, category: 1 });
 schema.index({ publicationStatus: 1, category: 1, embeddingStatus: 1 });
 schema.index({ 'source.origin': 1, category: 1 });
 schema.index({ 'source.saijDocId': 1 }, { sparse: true });
+// Query Targeting fix: el retry-worker filtra { embeddingStatus:'error', updatedAt:{$lt} }
+// y el embeddings-worker { processingStatus:'processed', embeddingStatus } cada ~1 min.
+schema.index({ embeddingStatus: 1, updatedAt: -1 });
+schema.index({ processingStatus: 1, embeddingStatus: 1 });
 
 module.exports = mongoose.model('SentenciaCapturada', schema);
