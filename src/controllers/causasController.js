@@ -2290,22 +2290,38 @@ const causasController = {
       const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+      // Credenciales activas (enabled + isValid) para distinguir las privadas que
+      // pjn-mis-causas NO puede actualizar (sin credencial activa: deshabilitada,
+      // inválida, o removida del sync). Una causa privada solo se accede vía login,
+      // así que sin credencial activa queda fuera de cobertura.
+      const validCreds = await mongoose.connection.db
+        .collection('pjn-credentials')
+        .find({ enabled: true, isValid: true }, { projection: { _id: 1 } })
+        .toArray();
+      const validCredIds = validCreds.map((c) => c._id);
+      const hasActiveCredFilter = {
+        linkedCredentials: { $elemMatch: { credentialsId: { $in: validCredIds }, removedFromSync: { $ne: true } } },
+      };
+
       const perFuero = await Promise.all(
         Object.entries(FUERO_MODELS).map(async ([code, Model]) => {
-          const [total, last24h, last7d] = await Promise.all([
+          const [total, last24h, last7d, withActiveCred] = await Promise.all([
             Model.countDocuments({ isPrivate: true }),
             Model.countDocuments({ isPrivate: true, privateDetectedAt: { $gte: since24h } }),
             Model.countDocuments({ isPrivate: true, privateDetectedAt: { $gte: since7d } }),
+            Model.countDocuments({ isPrivate: true, ...hasActiveCredFilter }),
           ]);
-          return { code, total, last24h, last7d };
+          return { code, total, last24h, last7d, withActiveCred };
         })
       );
 
       const total = perFuero.reduce((s, f) => s + f.total, 0);
       const changes24h = perFuero.reduce((s, f) => s + f.last24h, 0);
       const changes7d = perFuero.reduce((s, f) => s + f.last7d, 0);
+      const withActiveCredential = perFuero.reduce((s, f) => s + f.withActiveCred, 0);
+      const withoutActiveCredential = total - withActiveCredential;
       const byFuero = perFuero.reduce((acc, f) => {
-        acc[f.code] = { total: f.total, last24h: f.last24h, last7d: f.last7d };
+        acc[f.code] = { total: f.total, last24h: f.last24h, last7d: f.last7d, withoutActiveCredential: f.total - f.withActiveCred };
         return acc;
       }, {});
 
@@ -2340,6 +2356,10 @@ const causasController = {
         success: true,
         data: {
           total,
+          // Privadas con/sin credencial activa: las "sin" no son actualizables por
+          // pjn-mis-causas (credencial deshabilitada/inválida o removida del sync).
+          withActiveCredential,
+          withoutActiveCredential,
           byFuero,
           changes: { last24h: changes24h, last7d: changes7d },
           recent,
