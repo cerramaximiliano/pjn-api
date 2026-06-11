@@ -5,6 +5,40 @@
 const { WorkerDailyStats } = require('pjn-models');
 const { logger } = require('../config/pino');
 
+/**
+ * Calcula la fecha (YYYY-MM-DD) y hora en zona horaria de Argentina (UTC-3).
+ * Los WorkerDailyStats se guardan keyeados por fecha ART, por lo que "hoy"
+ * debe calcularse en ART y no en UTC (que rolea el día a las 21:00 ART).
+ * Mismo helper que workerStatsExtendedController.getArgentinaDateTime().
+ */
+function getArgentinaDateTime() {
+    const now = new Date();
+    const argentinaOffset = -3 * 60; // -180 minutos
+    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const argentinaMinutes = utcMinutes + argentinaOffset;
+
+    let argentinaHour = Math.floor(argentinaMinutes / 60);
+    let dayOffset = 0;
+
+    if (argentinaHour < 0) {
+        argentinaHour += 24;
+        dayOffset = -1;
+    } else if (argentinaHour >= 24) {
+        argentinaHour -= 24;
+        dayOffset = 1;
+    }
+
+    const argentinaDate = new Date(now);
+    argentinaDate.setUTCDate(argentinaDate.getUTCDate() + dayOffset);
+
+    const year = argentinaDate.getUTCFullYear();
+    const month = String(argentinaDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(argentinaDate.getUTCDate()).padStart(2, '0');
+    const date = `${year}-${month}-${day}`;
+
+    return { date, hour: argentinaHour };
+}
+
 const workerStatsController = {
     /**
      * Obtener fechas disponibles con estadísticas
@@ -70,7 +104,7 @@ const workerStatsController = {
     async getTodaySummary(req, res) {
         try {
             const { workerType } = req.query;
-            const today = new Date().toISOString().split('T')[0];
+            const { date: today } = getArgentinaDateTime();
 
             const query = { date: today };
             if (workerType) {
@@ -275,7 +309,7 @@ const workerStatsController = {
         try {
             const { fuero } = req.params;
             const { workerType } = req.query;
-            const today = new Date().toISOString().split('T')[0];
+            const { date: today } = getArgentinaDateTime();
 
             const query = {
                 date: today,
@@ -366,7 +400,7 @@ const workerStatsController = {
      */
     async getActiveAlerts(req, res) {
         try {
-            const today = new Date().toISOString().split('T')[0];
+            const { date: today } = getArgentinaDateTime();
 
             const statsWithAlerts = await WorkerDailyStats.find({
                 date: today,
@@ -415,7 +449,7 @@ const workerStatsController = {
         try {
             const { fuero, alertType } = req.params;
             const { workerType } = req.query;
-            const today = new Date().toISOString().split('T')[0];
+            const { date: today } = getArgentinaDateTime();
 
             const query = {
                 date: today,
@@ -458,7 +492,7 @@ const workerStatsController = {
         try {
             const { fuero } = req.params;
             const { workerType, limit = 50 } = req.query;
-            const today = new Date().toISOString().split('T')[0];
+            const { date: today } = getArgentinaDateTime();
 
             const query = {
                 date: today,
