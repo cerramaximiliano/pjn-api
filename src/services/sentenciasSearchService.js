@@ -4,10 +4,16 @@ const AWS = require('aws-sdk');
 const SentenciaCapturada = require('../models/SentenciaCapturada');
 const { logger } = require('../config/pino');
 const { getHydeEmbedding } = require('./hydeCache');
+const { queryQdrant } = require('./qdrantSentencias');
+
+// Cutover Pinecone → Qdrant (gated por VECTOR_BACKEND=qdrant).
+// La colección Qdrant 'sentencias' es text-embedding-3-large @ 3072 (igual que pjn-sentencias-v1).
+const USE_QDRANT = (process.env.VECTOR_BACKEND || '').toLowerCase() === 'qdrant';
 
 const EMBEDDING_MODEL_SMALL = 'text-embedding-3-small';
 const EMBEDDING_MODEL_LARGE = 'text-embedding-3-large';
 const EMBEDDING_DIMENSIONS = 1024;
+const EMBEDDING_DIMENSIONS_LARGE = 3072;
 const MAX_INPUT_CHARS = 20000;
 const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 20;
@@ -255,13 +261,13 @@ function augmentQueryWithSynonyms(query) {
 	return [...new Set(allTerms)].join(' | ');
 }
 
-async function embedQuery(text, model) {
+async function embedQuery(text, model, dimensions) {
 	const start = Date.now();
 	const openai = getOpenAI();
 	const response = await openai.embeddings.create({
 		model: model || EMBEDDING_MODEL_SMALL,
 		input: text.slice(0, MAX_INPUT_CHARS),
-		dimensions: EMBEDDING_DIMENSIONS,
+		dimensions: dimensions || EMBEDDING_DIMENSIONS,
 	});
 	return {
 		embedding: response.data[0].embedding,
@@ -293,6 +299,13 @@ function buildPineconeFilter(filters = {}) {
 
 async function queryPinecone(embedding, { topK, filter, namespace }) {
 	const start = Date.now();
+
+	// Cutover: cuando VECTOR_BACKEND=qdrant, consultar la colección Qdrant 'sentencias'.
+	if (USE_QDRANT) {
+		const { matches } = await queryQdrant(embedding, { topK, filter });
+		return { matches, latencyMs: Date.now() - start };
+	}
+
 	const index = getSentenciasIndex(namespace);
 
 	const queryParams = { vector: embedding, topK, includeMetadata: true };
@@ -442,21 +455,25 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	topK = Math.min(topK, MAX_TOP_K);
 	const pineconeTopK = topK * PINECONE_MULTIPLIER;
 
-	// Determinar modelo de embedding según namespace
+	// Determinar modelo de embedding según namespace.
+	// Con Qdrant el corpus es text-embedding-3-large @ 3072; HyDE (cacheado a 1024)
+	// no aplica → embedding directo a 3072.
 	const isLargeNamespace = namespace === NAMESPACE_LARGE;
-	const embeddingModel = isLargeNamespace ? EMBEDDING_MODEL_LARGE : EMBEDDING_MODEL_SMALL;
+	const useLarge = USE_QDRANT || isLargeNamespace;
+	const embeddingModel = useLarge ? EMBEDDING_MODEL_LARGE : EMBEDDING_MODEL_SMALL;
+	const embeddingDims = USE_QDRANT ? EMBEDDING_DIMENSIONS_LARGE : EMBEDDING_DIMENSIONS;
 
 	// 1. Intentar embedding HyDE desde caché Redis (0ms si hit, null si miss)
-	//    HyDE solo aplica al namespace estándar (small) — el large usa embedding directo
-	//    ya que el corpus large fue indexado sin HyDE.
-	const hydeEmbedding = !isLargeNamespace ? await getHydeEmbedding(query, filters) : null;
+	//    HyDE solo aplica al namespace estándar (small) en Pinecone — el large y Qdrant
+	//    usan embedding directo (corpus indexado sin HyDE / dims distintas).
+	const hydeEmbedding = (!isLargeNamespace && !USE_QDRANT) ? await getHydeEmbedding(query, filters) : null;
 
 	// 2. Si no hay HyDE cacheado: embedding directo del query (sin augmentQueryWithSynonyms).
 	//    La augmentación de sinónimos perjudica la recuperación en búsquedas de jurisprudencia
-	//    porque desplaza el embedding lejos del texto exacto indexado en Pinecone.
+	//    porque desplaza el embedding lejos del texto exacto indexado.
 	const { embedding, latencyMs: embeddingLatencyMs } = hydeEmbedding
 		? { embedding: hydeEmbedding, latencyMs: 0 }
-		: await embedQuery(query, embeddingModel);
+		: await embedQuery(query, embeddingModel, embeddingDims);
 
 	const filter = buildPineconeFilter(filters);
 	const { matches, latencyMs: pineconeLatencyMs } = await queryPinecone(embedding, {
@@ -538,7 +555,11 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
 		.map(c => c.text)
 		.join('\n\n');
 
-	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(queryText);
+	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(
+		queryText,
+		USE_QDRANT ? EMBEDDING_MODEL_LARGE : undefined,
+		USE_QDRANT ? EMBEDDING_DIMENSIONS_LARGE : undefined,
+	);
 
 	const filter = buildPineconeFilter({ excludeSentenciaId: sentenciaId });
 	const pineconeTopK = topK * PINECONE_MULTIPLIER;
