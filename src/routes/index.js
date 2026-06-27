@@ -32,6 +32,7 @@ const sentenciasSearchRoutes = require('./sentenciasSearchRoutes');
 const causasElegiblesUpdateRoutes = require('./causasElegiblesUpdateRoutes');
 const captchaDatasetRoutes = require('./captchaDatasetRoutes');
 const configuracionLiquidacionWorkerRoutes = require('./configuracionLiquidacionWorkerRoutes');
+const configuracionNotifWorkerRoutes = require('./configuracionNotifWorkerRoutes');
 
 // Ruta para verificar el estado de la aplicación
 router.get('/', (req, res) => {
@@ -131,5 +132,12 @@ router.use('/captcha-dataset', captchaDatasetRoutes);
 
 // Configuración + estado del sistema pjn-liquidacion-worker
 router.use('/liquidacion-worker-config', configuracionLiquidacionWorkerRoutes);
+
+// Configuración + estado del sistema pjn-notificaciones-laborales-worker
+router.use('/notif-worker-config', configuracionNotifWorkerRoutes);
+
+// Trayectoria judicial de causas (vista admin /admin/causas/trayectorias)
+const trayectoriasRoutes = require('./trayectoriasRoutes');
+router.use('/admin/trayectorias', trayectoriasRoutes);
 
 module.exports = router;
