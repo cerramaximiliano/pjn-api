@@ -29,6 +29,7 @@ const saijSentenciasRoutes = require('./saijSentenciasRoutes');
 const saijConfigRoutes = require('./saijConfigRoutes');
 const scrapingStatsRoutes = require('./scrapingStatsRoutes');
 const sentenciasSearchRoutes = require('./sentenciasSearchRoutes');
+const monitoringRoutes = require('./monitoringRoutes');
 const causasElegiblesUpdateRoutes = require('./causasElegiblesUpdateRoutes');
 const captchaDatasetRoutes = require('./captchaDatasetRoutes');
 const configuracionLiquidacionWorkerRoutes = require('./configuracionLiquidacionWorkerRoutes');
@@ -121,8 +122,11 @@ router.use('/saij/config',     saijConfigRoutes);
 // Métricas globales de scraping (captchas y documentos por hora/día/mes)
 router.use('/scraping-stats', scrapingStatsRoutes);
 
-// Búsqueda semántica de sentencias (Pinecone)
+// Búsqueda semántica de sentencias (Qdrant)
 router.use('/sentencias', sentenciasSearchRoutes);
+
+// Monitoreo de infraestructura (Qdrant + Mongo local/Atlas + host) para la UI ADMIN
+router.use('/monitoring', monitoringRoutes);
 
 // Causas elegibles para update (lectura admin del caché local del worker)
 router.use('/causas-elegibles-update', causasElegiblesUpdateRoutes);

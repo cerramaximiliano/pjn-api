@@ -70,6 +70,11 @@ async function initializeServer() {
     const { initHydeCache } = require('./services/hydeCache');
     initHydeCache();
 
+    // Collector de monitoreo de infraestructura: solo recolecta en la instancia local
+    // (NODE_ENV=local, worker_01) que ve Qdrant + Mongo local; escribe snapshots a Atlas.
+    const { startCollector } = require('./services/monitoringService');
+    startCollector(logger);
+
   } catch (err) {
     logger.error(`Error initializing server: ${err}`);
     process.exit(1);
