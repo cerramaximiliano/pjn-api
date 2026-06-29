@@ -17,21 +17,29 @@ const { exec } = require('child_process');
 const mongoose = require('mongoose');
 
 const SNAP_COLLECTION   = 'infra-monitoring-snapshots';
-const QDRANT_URL        = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
-const QDRANT_API_KEY    = process.env.QDRANT_API_KEY || '';
-const QDRANT_STORAGE    = process.env.QDRANT_STORAGE_PATH || '/home/worker_01/qdrant/storage';
-const COLLECT_INTERVAL  = parseInt(process.env.MONITORING_INTERVAL_MS || '600000', 10); // 10 min
-const SNAPSHOT_TTL_DAYS = parseInt(process.env.MONITORING_TTL_DAYS || '90', 10);
 const isLocalInstance   = () => (process.env.NODE_ENV === 'local');
 
+// Config leída en TIEMPO DE LLAMADA (este módulo se carga vía routes ANTES de
+// dotenv.config() en server.js, por eso no se puede capturar en constantes a module-load).
+function qcfg() {
+  return {
+    url:     process.env.QDRANT_URL || 'http://127.0.0.1:6333',
+    key:     process.env.QDRANT_API_KEY || '',
+    storage: process.env.QDRANT_STORAGE_PATH || '/home/worker_01/qdrant/storage',
+  };
+}
+const COLLECT_INTERVAL  = () => parseInt(process.env.MONITORING_INTERVAL_MS || '600000', 10); // 10 min
+const SNAPSHOT_TTL_DAYS = () => parseInt(process.env.MONITORING_TTL_DAYS || '90', 10);
+
 // ── Conexión Atlas (para leer/escribir snapshots) ──────────────────────────────
-// En cloud, la conexión primaria YA es Atlas. En local, abrimos una secundaria a URLDB.
+// En cloud, la conexión primaria YA es Atlas. En local, abrimos una secundaria a URLDB
+// y esperamos a que esté lista (asPromise) antes de usar conn.db.
 let _atlasConn = null;
-function getAtlasConn() {
+async function getAtlasConn() {
   if (!isLocalInstance()) return mongoose.connection;            // cloud: primaria = Atlas
   if (_atlasConn) return _atlasConn;
   if (!process.env.URLDB) throw new Error('URLDB (Atlas) no configurada en instancia local');
-  _atlasConn = mongoose.createConnection(process.env.URLDB);
+  _atlasConn = await mongoose.createConnection(process.env.URLDB).asPromise();
   return _atlasConn;
 }
 
@@ -45,20 +53,21 @@ function execP(cmd, timeoutMs = 15000) {
 
 async function collectQdrant() {
   try {
-    const h = { 'api-key': QDRANT_API_KEY };
-    const listR = await fetch(`${QDRANT_URL}/collections`, { headers: h });
+    const { url, key, storage } = qcfg();
+    const h = { 'api-key': key };
+    const listR = await fetch(`${url}/collections`, { headers: h });
     if (!listR.ok) throw new Error(`list ${listR.status}`);
     const names = (await listR.json()).result.collections.map(c => c.name);
     const collections = [];
     let totalVectors = 0;
     for (const name of names) {
-      const r = await fetch(`${QDRANT_URL}/collections/${name}`, { headers: h });
+      const r = await fetch(`${url}/collections/${name}`, { headers: h });
       if (!r.ok) continue;
       const d = (await r.json()).result;
       const vectorsCfg = d.config?.params?.vectors || {};
       const quant = d.config?.quantization_config ? Object.keys(d.config.quantization_config)[0] : null;
       let diskBytes = null;
-      const du = await execP(`du -sb ${QDRANT_STORAGE}/collections/${name} 2>/dev/null`);
+      const du = await execP(`du -sb ${storage}/collections/${name} 2>/dev/null`);
       if (du) diskBytes = parseInt(du.split(/\s+/)[0], 10) || null;
       totalVectors += d.points_count || 0;
       collections.push({
@@ -118,9 +127,10 @@ async function collectHost() {
     uptimeSec: Math.round(os.uptime()),
   };
   try {
-    const fsst = await fsp.statfs(QDRANT_STORAGE);
+    const storage = qcfg().storage;
+    const fsst = await fsp.statfs(storage);
     host.disk = {
-      path: QDRANT_STORAGE,
+      path: storage,
       totalBytes: fsst.blocks * fsst.bsize,
       freeBytes: fsst.bavail * fsst.bsize,
       usedBytes: (fsst.blocks - fsst.bavail) * fsst.bsize,
@@ -132,7 +142,7 @@ async function collectHost() {
 
 // ── Snapshot completo (corre en la instancia LOCAL) ────────────────────────────
 async function collectSnapshot() {
-  const atlas = getAtlasConn();
+  const atlas = await getAtlasConn();
   const [qdrant, mongoLocal, mongoCloud, host] = await Promise.all([
     collectQdrant(),
     collectMongo(mongoose.connection, 'local'),   // primaria = Mongo local en worker_01
@@ -143,19 +153,19 @@ async function collectSnapshot() {
 }
 
 async function writeSnapshot(snap) {
-  const col = getAtlasConn().collection(SNAP_COLLECTION);
-  try { await col.createIndex({ createdAt: 1 }, { expireAfterSeconds: SNAPSHOT_TTL_DAYS * 86400 }); } catch { /* ya existe */ }
+  const col = (await getAtlasConn()).collection(SNAP_COLLECTION);
+  try { await col.createIndex({ createdAt: 1 }, { expireAfterSeconds: SNAPSHOT_TTL_DAYS() * 86400 }); } catch { /* ya existe */ }
   await col.insertOne(snap);
 }
 
 async function getLatestSnapshot() {
-  const col = getAtlasConn().collection(SNAP_COLLECTION);
+  const col = (await getAtlasConn()).collection(SNAP_COLLECTION);
   return col.find({}).sort({ createdAt: -1 }).limit(1).next();
 }
 
 async function getHistory({ hours = 168, limit = 500 } = {}) {
   const since = new Date(Date.now() - hours * 3600 * 1000);
-  const col = getAtlasConn().collection(SNAP_COLLECTION);
+  const col = (await getAtlasConn()).collection(SNAP_COLLECTION);
   // Proyección liviana para tendencia (evita traer topCollections completos)
   return col.find({ createdAt: { $gte: since } })
     .project({ createdAt: 1, 'qdrant.totalVectors': 1, 'qdrant.collections.name': 1, 'qdrant.collections.points': 1,
@@ -174,8 +184,8 @@ function startCollector(logger) {
     } catch (e) { logger?.error?.(`[monitoring] snapshot falló: ${e.message}`); }
   };
   run(); // inmediato al arrancar
-  _timer = setInterval(run, COLLECT_INTERVAL);
-  logger?.info?.(`[monitoring] collector activo cada ${COLLECT_INTERVAL}ms`);
+  _timer = setInterval(run, COLLECT_INTERVAL());
+  logger?.info?.(`[monitoring] collector activo cada ${COLLECT_INTERVAL()}ms`);
 }
 
 module.exports = {
