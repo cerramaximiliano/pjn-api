@@ -283,6 +283,12 @@ function buildPineconeFilter(filters = {}) {
 	if (filters.sentenciaTipo) filter.sentenciaTipo = { $eq: filters.sentenciaTipo };
 	if (filters.category) filter.category = { $eq: filters.category };
 
+	// Órgano judicial (payload discreto en Qdrant, backfilleado). Acepta valor
+	// único o array (→ $in). Ver [[sentencias-juzgado-sala-filter]].
+	if (filters.juzgado != null) filter.juzgado = Array.isArray(filters.juzgado) ? { $in: filters.juzgado.map(Number) } : { $eq: Number(filters.juzgado) };
+	if (filters.sala != null) filter.sala = Array.isArray(filters.sala) ? { $in: filters.sala.map(Number) } : { $eq: Number(filters.sala) };
+	if (filters.secretaria != null) filter.secretaria = Array.isArray(filters.secretaria) ? { $in: filters.secretaria.map(Number) } : { $eq: Number(filters.secretaria) };
+
 	if (filters.dateFrom || filters.dateTo) {
 		filter.movimientoFecha = {};
 		if (filters.dateFrom) filter.movimientoFecha.$gte = new Date(filters.dateFrom).toISOString();
