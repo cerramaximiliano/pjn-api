@@ -13,6 +13,14 @@ const schema = new mongoose.Schema(
 		topK: { type: Number, default: 10, min: 1, max: 100 },
 		batchSize: { type: Number, default: 10, min: 1, max: 100 },
 		cronPattern: { type: String, default: '*/10 * * * *' },
+		// Router de consulta por prompt (planQuery con LLM). Opcional/experimental:
+		// con enabled=true, POST /sentencias/ask interpreta el prompt del usuario
+		// (deriva filtros juzgado/sala/fecha/tipo + estrategia). ON/OFF desde admin
+		// para evaluar y desactivar si no rinde. Ver services/queryPlanner.js.
+		searchQueryPlanner: {
+			enabled: { type: Boolean, default: false },
+			model:   { type: String, default: 'gpt-4o-mini' },
+		},
 		currentState: {
 			isRunning:       { type: Boolean, default: false },
 			workerId:        { type: String },

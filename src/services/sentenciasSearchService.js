@@ -5,6 +5,8 @@ const SentenciaCapturada = require('../models/SentenciaCapturada');
 const { logger } = require('../config/pino');
 const { getHydeEmbedding } = require('./hydeCache');
 const { queryQdrant } = require('./qdrantSentencias');
+const { planQuery } = require('./queryPlanner');
+const ConfiguracionSemanticWorker = require('../models/ConfiguracionSemanticWorker');
 
 // Cutover Pinecone → Qdrant (gated por VECTOR_BACKEND=qdrant).
 // La colección Qdrant 'sentencias' es text-embedding-3-large @ 3072 (igual que pjn-sentencias-v1).
@@ -619,4 +621,55 @@ async function getChunks(sentenciaId) {
 	return chunks.sort((a, b) => a.index - b.index);
 }
 
-module.exports = { searchByQuery, searchBySimilarity, getChunks };
+// ── Router de consulta por prompt (opcional, gated por config) ────────────────
+
+// Cache del flag para no leer Mongo en cada request (TTL corto).
+let _plannerCfg = { value: null, ts: 0 };
+const PLANNER_CFG_TTL_MS = 30000;
+async function getPlannerConfig() {
+	if (Date.now() - _plannerCfg.ts < PLANNER_CFG_TTL_MS && _plannerCfg.value) return _plannerCfg.value;
+	let cfg = { enabled: false, model: 'gpt-4o-mini' };
+	try {
+		const doc = await ConfiguracionSemanticWorker.findOne({ name: 'sentencias-semantic' })
+			.select('searchQueryPlanner').lean();
+		if (doc && doc.searchQueryPlanner) cfg = { enabled: !!doc.searchQueryPlanner.enabled, model: doc.searchQueryPlanner.model || 'gpt-4o-mini' };
+	} catch (e) { logger.warn(`[ask] no se pudo leer config planner: ${e.message}`); }
+	_plannerCfg = { value: cfg, ts: Date.now() };
+	return cfg;
+}
+
+/**
+ * Búsqueda por PROMPT en lenguaje natural. Si el planner está habilitado
+ * (config), interpreta el prompt (deriva filtros juzgado/sala/fecha/tipo +
+ * estrategia) y luego ejecuta la búsqueda. Si está deshabilitado o el planner
+ * falla, cae a búsqueda semántica simple sobre el prompt crudo.
+ *
+ * @param {string} prompt
+ * @param {{ topK?, minScore?, includeFullText?, filters? }} [opts]
+ *   filters = overrides explícitos del cliente (tienen prioridad sobre el plan).
+ */
+async function askSentencias(prompt, opts = {}) {
+	const { topK, minScore, includeFullText, filters: explicitFilters = {} } = opts;
+	const cfg = await getPlannerConfig();
+
+	let plan = null;
+	if (cfg.enabled) plan = await planQuery(prompt, { model: cfg.model });
+
+	// Filtros: los del plan (no nulos) + overrides explícitos del cliente (ganan).
+	const planFilters = {};
+	if (plan) for (const [k, v] of Object.entries(plan.filters)) if (v !== null && v !== undefined) planFilters[k] = v;
+	const filters = { ...planFilters, ...explicitFilters };
+
+	const searchText = (plan && plan.semanticQuery) ? plan.semanticQuery : prompt;
+	const result = await searchByQuery(searchText, { filters, topK, minScore, includeFullText });
+
+	return {
+		...result,
+		plannerUsed: !!plan,
+		plannerEnabled: cfg.enabled,
+		plan: plan || undefined,   // expuesto para evaluación desde la UI/admin
+		filters,
+	};
+}
+
+module.exports = { searchByQuery, searchBySimilarity, getChunks, askSentencias };

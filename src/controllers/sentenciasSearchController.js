@@ -1,7 +1,36 @@
-const { searchByQuery, searchBySimilarity, getChunks } = require('../services/sentenciasSearchService');
+const { searchByQuery, searchBySimilarity, getChunks, askSentencias } = require('../services/sentenciasSearchService');
 const { logger } = require('../config/pino');
 
 const sentenciasSearchController = {
+
+	// POST /sentencias/ask — búsqueda por PROMPT en lenguaje natural.
+	// Si el query planner está habilitado (ConfiguracionSemanticWorker.
+	// searchQueryPlanner.enabled), interpreta el prompt y deriva filtros +
+	// estrategia. Si no, cae a búsqueda semántica simple. El flag es un ON/OFF
+	// administrable para evaluar el planner y desactivarlo si no rinde.
+	async ask(req, res) {
+		try {
+			const { prompt, filters = {}, options = {} } = req.body;
+			if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 3) {
+				return res.status(400).json({ success: false, message: 'El campo "prompt" es requerido (mín. 3 caracteres)' });
+			}
+			const topK = Math.min(parseInt(options.topK) || 5, 20);
+			const clientMinScore = parseFloat(options.minScore);
+			const minScore = isNaN(clientMinScore) ? 0.55 : Math.min(clientMinScore, 0.60);
+			const includeFullText = options.includeFullText === true;
+
+			const result = await askSentencias(prompt.trim(), { topK, minScore, includeFullText, filters });
+
+			logger.info(
+				{ prompt: prompt.trim().slice(0, 120), plannerUsed: result.plannerUsed, filters: result.filters, results: result.total },
+				'[SentenciasSearch] ask (prompt)'
+			);
+			res.json({ success: true, ...result, prompt: prompt.trim() });
+		} catch (error) {
+			logger.error({ err: error.message }, '[SentenciasSearch] error en ask');
+			res.status(500).json({ success: false, message: 'Error al ejecutar la búsqueda', error: error.message });
+		}
+	},
 
 	// POST /sentencias/buscar
 	async buscar(req, res) {

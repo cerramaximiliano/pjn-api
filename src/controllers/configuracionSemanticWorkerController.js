@@ -12,6 +12,7 @@ const ALLOWED_FIELDS = [
 	'topK',
 	'batchSize',
 	'cronPattern',
+	'searchQueryPlanner',
 ];
 
 const configuracionSemanticWorkerController = {

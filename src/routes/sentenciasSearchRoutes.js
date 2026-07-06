@@ -3,6 +3,10 @@ const router = express.Router();
 const ctrl = require('../controllers/sentenciasSearchController');
 const { verifyToken } = require('../middleware/auth');
 
+// POST /sentencias/ask — búsqueda por prompt en lenguaje natural (query planner
+// opcional: deriva filtros juzgado/sala/fecha/tipo + estrategia del prompt).
+router.post('/ask', verifyToken, ctrl.ask);
+
 // POST /sentencias/buscar — búsqueda semántica por texto libre
 router.post('/buscar', verifyToken, ctrl.buscar);
 
