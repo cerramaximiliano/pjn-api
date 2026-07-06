@@ -6,6 +6,7 @@ const { logger } = require('../config/pino');
 const { getHydeEmbedding } = require('./hydeCache');
 const { queryQdrant } = require('./qdrantSentencias');
 const { planQuery } = require('./queryPlanner');
+const { normalizeTerms } = require('./citations');
 const ConfiguracionSemanticWorker = require('../models/ConfiguracionSemanticWorker');
 
 // Cutover Pinecone → Qdrant (gated por VECTOR_BACKEND=qdrant).
@@ -290,6 +291,9 @@ function buildPineconeFilter(filters = {}) {
 	if (filters.juzgado != null) filter.juzgado = Array.isArray(filters.juzgado) ? { $in: filters.juzgado.map(Number) } : { $eq: Number(filters.juzgado) };
 	if (filters.sala != null) filter.sala = Array.isArray(filters.sala) ? { $in: filters.sala.map(Number) } : { $eq: Number(filters.sala) };
 	if (filters.secretaria != null) filter.secretaria = Array.isArray(filters.secretaria) ? { $in: filters.secretaria.map(Number) } : { $eq: Number(filters.secretaria) };
+
+	// Capa léxica: filtro por citas exactas (art/ley) normalizadas. Array → any.
+	if (Array.isArray(filters.citations) && filters.citations.length) filter.citations = { $in: filters.citations };
 
 	if (filters.dateFrom || filters.dateTo) {
 		filter.movimientoFecha = {};
@@ -628,11 +632,13 @@ let _plannerCfg = { value: null, ts: 0 };
 const PLANNER_CFG_TTL_MS = 30000;
 async function getPlannerConfig() {
 	if (Date.now() - _plannerCfg.ts < PLANNER_CFG_TTL_MS && _plannerCfg.value) return _plannerCfg.value;
-	let cfg = { enabled: false, model: 'gpt-4o-mini' };
+	let cfg = { enabled: false, model: 'gpt-4o-mini', lexical: false };
 	try {
 		const doc = await ConfiguracionSemanticWorker.findOne({ name: 'sentencias-semantic' })
-			.select('searchQueryPlanner').lean();
-		if (doc && doc.searchQueryPlanner) cfg = { enabled: !!doc.searchQueryPlanner.enabled, model: doc.searchQueryPlanner.model || 'gpt-4o-mini' };
+			.select('searchQueryPlanner searchLexicalLayer').lean();
+		if (doc && doc.searchQueryPlanner) cfg.enabled = !!doc.searchQueryPlanner.enabled;
+		if (doc && doc.searchQueryPlanner) cfg.model = doc.searchQueryPlanner.model || 'gpt-4o-mini';
+		if (doc && doc.searchLexicalLayer) cfg.lexical = !!doc.searchLexicalLayer.enabled;
 	} catch (e) { logger.warn(`[ask] no se pudo leer config planner: ${e.message}`); }
 	_plannerCfg = { value: cfg, ts: Date.now() };
 	return cfg;
@@ -660,6 +666,14 @@ async function askSentencias(prompt, opts = {}) {
 	if (plan) for (const [k, v] of Object.entries(plan.filters)) if (v !== null && v !== undefined) planFilters[k] = v;
 	const filters = { ...planFilters, ...explicitFilters };
 
+	// Capa léxica: si está habilitada y el plan trae citas exactas, exigirlas como
+	// filtro `citations` (payload Qdrant). El override explícito del cliente gana.
+	let lexicalTerms = [];
+	if (cfg.lexical && plan && Array.isArray(plan.lexicalTerms) && plan.lexicalTerms.length) {
+		lexicalTerms = normalizeTerms(plan.lexicalTerms);
+		if (lexicalTerms.length && filters.citations === undefined) filters.citations = lexicalTerms;
+	}
+
 	const searchText = (plan && plan.semanticQuery) ? plan.semanticQuery : prompt;
 	const result = await searchByQuery(searchText, { filters, topK, minScore, includeFullText });
 
@@ -667,6 +681,8 @@ async function askSentencias(prompt, opts = {}) {
 		...result,
 		plannerUsed: !!plan,
 		plannerEnabled: cfg.enabled,
+		lexicalEnabled: cfg.lexical,
+		lexicalTerms,
 		plan: plan || undefined,   // expuesto para evaluación desde la UI/admin
 		filters,
 	};

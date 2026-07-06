@@ -21,6 +21,13 @@ const schema = new mongoose.Schema(
 			enabled: { type: Boolean, default: false },
 			model:   { type: String, default: 'gpt-4o-mini' },
 		},
+		// Capa léxica: filtra por citas exactas (art/ley) usando el payload
+		// `citations` de Qdrant + los lexicalTerms del planner. ON/OFF admin.
+		// Ver services/citations.js + queryPlanner.js. Requiere el backfill de
+		// `citations` en Qdrant para rendir sobre el corpus histórico.
+		searchLexicalLayer: {
+			enabled: { type: Boolean, default: false },
+		},
 		currentState: {
 			isRunning:       { type: Boolean, default: false },
 			workerId:        { type: String },

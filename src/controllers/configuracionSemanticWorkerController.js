@@ -13,6 +13,7 @@ const ALLOWED_FIELDS = [
 	'batchSize',
 	'cronPattern',
 	'searchQueryPlanner',
+	'searchLexicalLayer',
 ];
 
 const configuracionSemanticWorkerController = {
