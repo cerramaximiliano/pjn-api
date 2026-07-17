@@ -10,11 +10,20 @@
  *
  * Activación: VECTOR_BACKEND=qdrant. Requiere QDRANT_URL + QDRANT_API_KEY.
  */
-const QDRANT_URL = process.env.QDRANT_URL || 'http://127.0.0.1:6333';
-const QDRANT_API_KEY = process.env.QDRANT_API_KEY || '';
-const COLLECTION = process.env.QDRANT_SENTENCIAS_COLLECTION || 'sentencias';
-const OVERSAMPLING = parseFloat(process.env.QDRANT_SENTENCIAS_OVERSAMPLING || '2.0');
-const HNSW_EF = parseInt(process.env.QDRANT_SENTENCIAS_HNSW_EF || '256', 10);
+// La config se lee en tiempo de EJECUCIÓN (no al cargar el módulo): server.js
+// requiere las rutas —y por ende este módulo— ANTES de correr dotenv.config()
+// (los secrets se bajan de AWS async en initializeServer). Si se leyera acá al
+// tope, QDRANT_URL/API_KEY quedarían en sus defaults y la búsqueda pegaría al
+// Qdrant equivocado (o Pinecone).
+function qdrantConfig() {
+  return {
+    url: process.env.QDRANT_URL || 'http://127.0.0.1:6333',
+    apiKey: process.env.QDRANT_API_KEY || '',
+    collection: process.env.QDRANT_SENTENCIAS_COLLECTION || 'sentencias',
+    oversampling: parseFloat(process.env.QDRANT_SENTENCIAS_OVERSAMPLING || '2.0'),
+    hnswEf: parseInt(process.env.QDRANT_SENTENCIAS_HNSW_EF || '256', 10),
+  };
+}
 
 function translateFilter(f) {
   if (!f || typeof f !== 'object') return undefined;
@@ -46,18 +55,19 @@ function translateFilter(f) {
  * con la misma forma que Pinecone.
  */
 async function queryQdrant(vector, { topK = 20, filter } = {}) {
+  const cfg = qdrantConfig();
   const body = {
     vector,
     limit: topK,
     with_payload: true,
     with_vector: false,
-    params: { hnsw_ef: HNSW_EF, quantization: { rescore: true, oversampling: OVERSAMPLING } },
+    params: { hnsw_ef: cfg.hnswEf, quantization: { rescore: true, oversampling: cfg.oversampling } },
   };
   const qf = translateFilter(filter);
   if (qf) body.filter = qf;
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+  const res = await fetch(`${cfg.url}/collections/${cfg.collection}/points/search`, {
     method: 'POST',
-    headers: { 'api-key': QDRANT_API_KEY, 'Content-Type': 'application/json' },
+    headers: { 'api-key': cfg.apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) {

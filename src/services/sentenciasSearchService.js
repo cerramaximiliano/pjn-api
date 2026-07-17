@@ -1,17 +1,52 @@
 const OpenAI = require('openai').default;
 const { Pinecone } = require('@pinecone-database/pinecone');
 const AWS = require('aws-sdk');
-const SentenciaCapturada = require('../models/SentenciaCapturada');
 const { logger } = require('../config/pino');
 const { getHydeEmbedding } = require('./hydeCache');
 const { queryQdrant } = require('./qdrantSentencias');
 const { planQuery } = require('./queryPlanner');
 const { normalizeTerms } = require('./citations');
-const ConfiguracionSemanticWorker = require('../models/ConfiguracionSemanticWorker');
+const mongoose = require('mongoose');
+
+// ── Conexión Mongo dedicada al corpus de sentencias (Atlas) ───────────────────
+// El corpus (colección `sentencias-capturadas` + la config del semantic worker)
+// vive en Atlas (URLDB), NO en la Mongo local del scraper. En worker_01 pjn-api
+// corre con NODE_ENV=local, por lo que la conexión mongoose por DEFECTO apunta a
+// URLDB_LOCAL, que solo tiene un puñado de sentencias de trabajo y NO las que
+// referencian los embeddings de Qdrant. Sin esta conexión dedicada, el enrichment
+// no encuentra los documentos y la búsqueda devuelve 0 resultados.
+// Usa SENTENCIAS_MONGO_URI si está seteada; por defecto URLDB (Atlas).
+// Se cachea la PROMESA (no la conexión) para que llamadas concurrentes —p. ej.
+// varios enrichGroup en Promise.all— compartan una sola conexión y no abran una
+// por cada una (race en el primer request).
+let _sentenciasConnPromise = null;
+function getSentenciasDb() {
+	if (_sentenciasConnPromise) {
+		return _sentenciasConnPromise.then((conn) => {
+			if (conn.readyState === 1) return conn.db;
+			_sentenciasConnPromise = null; // conexión caída → reconectar
+			return getSentenciasDb();
+		});
+	}
+	const uri = process.env.SENTENCIAS_MONGO_URI || process.env.URLDB;
+	if (!uri) return Promise.reject(new Error('SENTENCIAS_MONGO_URI/URLDB (Atlas) no configurada para la búsqueda de sentencias'));
+	_sentenciasConnPromise = mongoose.createConnection(uri, { serverSelectionTimeoutMS: 20000 }).asPromise()
+		.then((conn) => {
+			logger.info('[SentenciasSearch] conexión Atlas dedicada para enrichment inicializada');
+			return conn;
+		})
+		.catch((err) => { _sentenciasConnPromise = null; throw err; });
+	return _sentenciasConnPromise.then((conn) => conn.db);
+}
 
 // Cutover Pinecone → Qdrant (gated por VECTOR_BACKEND=qdrant).
 // La colección Qdrant 'sentencias' es text-embedding-3-large @ 3072 (igual que pjn-sentencias-v1).
-const USE_QDRANT = (process.env.VECTOR_BACKEND || '').toLowerCase() === 'qdrant';
+// Evaluado en tiempo de EJECUCIÓN: server.js requiere este módulo antes de
+// correr dotenv.config() (secrets async de AWS), por lo que leer VECTOR_BACKEND
+// al cargar el módulo lo dejaría siempre en '' → caería a Pinecone por error.
+function useQdrant() {
+	return (process.env.VECTOR_BACKEND || '').toLowerCase() === 'qdrant';
+}
 
 const EMBEDDING_MODEL_SMALL = 'text-embedding-3-small';
 const EMBEDDING_MODEL_LARGE = 'text-embedding-3-large';
@@ -313,7 +348,7 @@ async function queryPinecone(embedding, { topK, filter, namespace }) {
 	const start = Date.now();
 
 	// Cutover: cuando VECTOR_BACKEND=qdrant, consultar la colección Qdrant 'sentencias'.
-	if (USE_QDRANT) {
+	if (useQdrant()) {
 		const { matches } = await queryQdrant(embedding, { topK, filter });
 		return { matches, latencyMs: Date.now() - start };
 	}
@@ -377,11 +412,11 @@ async function downloadChunksFromS3(causaId, sentenciaId) {
 async function enrichGroup(group, includeFullText) {
 	const { sentenciaId, score, matchedChunksByIndex } = group;
 
-	// Usar el driver nativo para evitar problemas de inicialización del modelo Mongoose
-	// en entornos donde dotenv carga después del require() de los modelos (ej: PM2).
-	const mongoose = require('mongoose');
+	// Usar el driver nativo sobre la conexión Atlas dedicada (ver getSentenciasDb):
+	// el corpus de sentencias vive en Atlas, no en la Mongo local del worker.
 	const { ObjectId } = require('mongoose').Types;
-	const doc = await mongoose.connection.db.collection('sentencias-capturadas').findOne(
+	const db = await getSentenciasDb();
+	const doc = await db.collection('sentencias-capturadas').findOne(
 		{ _id: new ObjectId(sentenciaId) },
 		{ projection: { causaId: 1, number: 1, year: 1, fuero: 1, caratula: 1, juzgado: 1, sala: 1, organizacionTextoCompleto: 1, movimientoFecha: 1, movimientoTipo: 1, movimientoDetalle: 1, sentenciaTipo: 1, category: 1, aiSummary: 1, embeddingChunksCount: 1, embeddedAt: 1 } }
 	);
@@ -471,14 +506,14 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	// Con Qdrant el corpus es text-embedding-3-large @ 3072; HyDE (cacheado a 1024)
 	// no aplica → embedding directo a 3072.
 	const isLargeNamespace = namespace === NAMESPACE_LARGE;
-	const useLarge = USE_QDRANT || isLargeNamespace;
+	const useLarge = useQdrant() || isLargeNamespace;
 	const embeddingModel = useLarge ? EMBEDDING_MODEL_LARGE : EMBEDDING_MODEL_SMALL;
-	const embeddingDims = USE_QDRANT ? EMBEDDING_DIMENSIONS_LARGE : EMBEDDING_DIMENSIONS;
+	const embeddingDims = useQdrant() ? EMBEDDING_DIMENSIONS_LARGE : EMBEDDING_DIMENSIONS;
 
 	// 1. Intentar embedding HyDE desde caché Redis (0ms si hit, null si miss)
 	//    HyDE solo aplica al namespace estándar (small) en Pinecone — el large y Qdrant
 	//    usan embedding directo (corpus indexado sin HyDE / dims distintas).
-	const hydeEmbedding = (!isLargeNamespace && !USE_QDRANT) ? await getHydeEmbedding(query, filters) : null;
+	const hydeEmbedding = (!isLargeNamespace && !useQdrant()) ? await getHydeEmbedding(query, filters) : null;
 
 	// 2. Si no hay HyDE cacheado: embedding directo del query (sin augmentQueryWithSynonyms).
 	//    La augmentación de sinónimos perjudica la recuperación en búsquedas de jurisprudencia
@@ -543,9 +578,9 @@ function deduplicateResults(results) {
 async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore = DEFAULT_MIN_SCORE, includeFullText = false } = {}) {
 	topK = Math.min(topK, MAX_TOP_K);
 
-	const mongoose = require('mongoose');
 	const { ObjectId } = require('mongoose').Types;
-	const sourceSentencia = await mongoose.connection.db.collection('sentencias-capturadas').findOne(
+	const db = await getSentenciasDb();
+	const sourceSentencia = await db.collection('sentencias-capturadas').findOne(
 		{ _id: new ObjectId(sentenciaId) },
 		{ projection: { causaId: 1, fuero: 1, sentenciaTipo: 1, embeddingStatus: 1 } }
 	);
@@ -569,8 +604,8 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
 
 	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(
 		queryText,
-		USE_QDRANT ? EMBEDDING_MODEL_LARGE : undefined,
-		USE_QDRANT ? EMBEDDING_DIMENSIONS_LARGE : undefined,
+		useQdrant() ? EMBEDDING_MODEL_LARGE : undefined,
+		useQdrant() ? EMBEDDING_DIMENSIONS_LARGE : undefined,
 	);
 
 	const filter = buildPineconeFilter({ excludeSentenciaId: sentenciaId });
@@ -609,9 +644,9 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
  * @param {string} sentenciaId - _id de la sentencia
  */
 async function getChunks(sentenciaId) {
-	const mongoose = require('mongoose');
 	const { ObjectId } = require('mongoose').Types;
-	const doc = await mongoose.connection.db.collection('sentencias-capturadas').findOne(
+	const db = await getSentenciasDb();
+	const doc = await db.collection('sentencias-capturadas').findOne(
 		{ _id: new ObjectId(sentenciaId) },
 		{ projection: { causaId: 1, embeddingStatus: 1 } }
 	);
@@ -634,8 +669,12 @@ async function getPlannerConfig() {
 	if (Date.now() - _plannerCfg.ts < PLANNER_CFG_TTL_MS && _plannerCfg.value) return _plannerCfg.value;
 	let cfg = { enabled: false, model: 'gpt-4o-mini', lexical: false };
 	try {
-		const doc = await ConfiguracionSemanticWorker.findOne({ name: 'sentencias-semantic' })
-			.select('searchQueryPlanner searchLexicalLayer').lean();
+		// La config del semantic worker vive en Atlas (misma DB que el corpus).
+		const db = await getSentenciasDb();
+		const doc = await db.collection('configuracion-semantic-worker').findOne(
+			{ name: 'sentencias-semantic' },
+			{ projection: { searchQueryPlanner: 1, searchLexicalLayer: 1 } }
+		);
 		if (doc && doc.searchQueryPlanner) cfg.enabled = !!doc.searchQueryPlanner.enabled;
 		if (doc && doc.searchQueryPlanner) cfg.model = doc.searchQueryPlanner.model || 'gpt-4o-mini';
 		if (doc && doc.searchLexicalLayer) cfg.lexical = !!doc.searchLexicalLayer.enabled;
