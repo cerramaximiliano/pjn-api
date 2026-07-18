@@ -35,6 +35,6 @@
     "openai": "^4.104.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
-    "pjn-models": "github:cerramaximiliano/pjn-models"
+    "pjn-models": "github:cerramaximiliano/pjn-models#v1.20.0"
   }
 }
