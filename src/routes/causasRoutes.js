@@ -33,6 +33,9 @@ router.get('/non-verified', verifyToken, causasController.getAllNonVerifiedCausa
 // GET /api/causas/admin/zero-movements-protection?fuero=CIV&page=1&limit=50&sortBy=count&sortOrder=desc
 router.get('/admin/zero-movements-protection', verifyToken, verifyAdmin, causasController.getCausasWithZeroMovementsProtection);
 
+// GET /api/causas/admin/retry-queue -> pendientes y descartados de la cola del retry worker
+router.get('/admin/retry-queue', verifyToken, verifyAdmin, causasController.getRetryQueueStatus);
+
 // Rutas principales - todas protegidas con verifyToken
 router.get('/:fuero/buscar/objeto', verifyToken, causasController.findByObjeto);
 router.get('/:fuero/objetos', verifyToken, causasController.listObjetos);

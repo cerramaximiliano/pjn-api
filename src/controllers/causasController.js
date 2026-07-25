@@ -2381,6 +2381,43 @@ const causasController = {
         data: null,
       });
     }
+  },
+
+  /**
+   * Estado de la cola del retry worker por fuero: cuántos siguen siendo
+   * elegibles y cuántos quedaron descartados por agotar los reintentos
+   * (retryProgress.exhausted). Sin ese corte la cola no drenaba: un documento
+   * con una causa persistente se reintentaba indefinidamente.
+   */
+  async getRetryQueueStatus(req, res) {
+    try {
+      const elegible = {
+        verified: false,
+        isValid: false,
+        isError: true,
+        'error.type': { $in: ['captcha_failed', 'captcha_skipped', 'captcha_skipped_error'] },
+      };
+      const models = { CIV: CausasCivil, COM: CausasComercial, CSS: CausasSegSoc, CNT: CausasTrabajo, CCF: CausasCCF, CAF: CausasCAF };
+
+      const porFuero = {};
+      let pendientes = 0;
+      let agotados = 0;
+      for (const [fuero, Model] of Object.entries(models)) {
+        if (!Model) continue;
+        const [p, a] = await Promise.all([
+          Model.countDocuments({ ...elegible, 'retryProgress.exhausted': { $ne: true } }),
+          Model.countDocuments({ ...elegible, 'retryProgress.exhausted': true }),
+        ]);
+        porFuero[fuero] = { pendientes: p, agotados: a };
+        pendientes += p;
+        agotados += a;
+      }
+
+      return res.json({ success: true, data: { pendientes, agotados, porFuero, updatedAt: new Date() } });
+    } catch (error) {
+      logger.error(`[getRetryQueueStatus] ${error.message}`);
+      return res.status(500).json({ success: false, message: error.message });
+    }
   }
 
 };
