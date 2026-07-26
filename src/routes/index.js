@@ -144,4 +144,9 @@ router.use('/notif-worker-config', configuracionNotifWorkerRoutes);
 const trayectoriasRoutes = require('./trayectoriasRoutes');
 router.use('/admin/trayectorias', trayectoriasRoutes);
 
+// Estadísticas de etapas procesales (vistas admin /admin/causas/etapa-stats y
+// /admin/causas/etapas) — resúmenes replicados desde worker_01 + timeline por causa
+const etapaStatsRoutes = require('./etapaStatsRoutes');
+router.use('/admin/etapa-stats', etapaStatsRoutes);
+
 module.exports = router;
