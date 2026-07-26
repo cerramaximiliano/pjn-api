@@ -25,13 +25,15 @@ const { logger } = require('../config/pino');
 const DATASET_ROOT = process.env.CAPTCHA_DATASET_PATH
 	|| '/var/www/pjn-workers-scraping/captcha-dataset';
 const MANIFEST_PATH = path.join(DATASET_ROOT, 'manifest.jsonl');
-const VALID_SUBDIRS = new Set(['verified', 'unverified']);
+// 'hard' son los que el modelo derivó por baja confianza; los que además
+// el proveedor falló quedan sin etiqueta y se etiquetan a mano desde la admin.
+const VALID_SUBDIRS = new Set(['verified', 'unverified', 'hard']);
 // Filename seguro: alfanuméricos + _ - . — ningún path traversal posible.
 const SAFE_FILENAME = /^[A-Za-z0-9_.\-]+\.png$/;
 
 // Lee manifest.jsonl como stream y aplica filtros + paginación.
 // Para datasets de hasta cientos de miles de líneas esto es suficiente.
-async function readManifestFiltered({ verified, workerId, fuero, search, skip, limit }) {
+async function readManifestFiltered({ verified, workerId, fuero, search, skip, limit, needsLabel }) {
 	const entries = [];
 	let totalMatched = 0;
 
@@ -52,6 +54,10 @@ async function readManifestFiltered({ verified, workerId, fuero, search, skip, l
 		}
 
 		if (verified !== undefined && entry.verified !== verified) continue;
+		// Pendientes de etiquetado manual: ni el modelo ni el proveedor los
+		// resolvieron, así que no hay etiqueta automática posible.
+		if (needsLabel === true && entry.needsLabel !== true) continue;
+		if (needsLabel === false && entry.needsLabel === true) continue;
 		if (workerId && entry.worker_id !== workerId) continue;
 		if (fuero && entry.fuero !== fuero) continue;
 		if (search) {
@@ -80,6 +86,9 @@ const captchaDatasetController = {
 			const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 10));
 
 			let verified;
+			let needsLabel;
+			if (req.query.needsLabel === 'true') needsLabel = true;
+			else if (req.query.needsLabel === 'false') needsLabel = false;
 			if (req.query.verified === 'true') verified = true;
 			else if (req.query.verified === 'false') verified = false;
 
@@ -88,7 +97,7 @@ const captchaDatasetController = {
 			const search = req.query.search ? String(req.query.search) : undefined;
 
 			const { entries, total } = await readManifestFiltered({
-				verified, workerId, fuero, search, skip, limit,
+				verified, workerId, fuero, search, skip, limit, needsLabel,
 			});
 
 			res.json({
@@ -160,6 +169,51 @@ const captchaDatasetController = {
 		}
 	},
 
+	/**
+	 * Etiqueta manualmente un captcha que quedó sin etiqueta automática.
+	 *
+	 * No se reescribe el manifest (es append-only y lo leen varios procesos):
+	 * se appendea una corrección con la etiqueta y el mismo `file`. Los lectores
+	 * se quedan con la última entrada de cada archivo, así que la corrección
+	 * pisa a la original sin tocar lo ya escrito.
+	 */
+	async label(req, res) {
+		try {
+			const { subdir, filename } = req.params;
+			const label = String(req.body?.label ?? '').trim();
+
+			if (!VALID_SUBDIRS.has(subdir) || !SAFE_FILENAME.test(filename)) {
+				return res.status(400).json({ success: false, message: 'Ruta de imagen inválida' });
+			}
+			if (!/^\d{4}$/.test(label)) {
+				return res.status(400).json({ success: false, message: 'La etiqueta debe ser exactamente 4 dígitos' });
+			}
+			const filePath = path.join(DATASET_ROOT, subdir, filename);
+			if (!fs.existsSync(filePath)) {
+				return res.status(404).json({ success: false, message: 'La imagen no existe' });
+			}
+
+			await fsp.appendFile(
+				MANIFEST_PATH,
+				JSON.stringify({
+					ts: new Date().toISOString(),
+					file: path.join(subdir, filename),
+					label,
+					verified: true,
+					needsLabel: false,
+					hard: true,
+					labeledBy: req.user?.email || req.user?.id || 'admin',
+					manualLabel: true,
+				}) + '\n'
+			);
+
+			logger.info(`[captcha-dataset] etiquetado manual ${subdir}/${filename} -> ${label}`);
+			return res.json({ success: true, data: { file: path.join(subdir, filename), label } });
+		} catch (error) {
+			logger.error(`[captcha-dataset] label: ${error.message}`);
+			return res.status(500).json({ success: false, message: error.message });
+		}
+	},
 	async image(req, res) {
 		try {
 			const { subdir, filename } = req.params;
