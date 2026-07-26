@@ -62,6 +62,9 @@ async function readManifestFiltered({ verified, workerId, fuero, search, skip, l
 
 	const entries = [];
 	for (const entry of ultimaPorArchivo.values()) {
+		// Descartadas: no son captchas (desafío expirado, render roto). Salen del
+		// dataset y de la cola de etiquetado.
+		if (entry.discarded === true) continue;
 		if (verified !== undefined && entry.verified !== verified) continue;
 		// Pendientes de etiquetado manual: ni el modelo ni el proveedor los
 		// resolvieron, así que no hay etiqueta automática posible.
@@ -121,7 +124,7 @@ const captchaDatasetController = {
 
 	async stats(req, res) {
 		try {
-			let total = 0, verified = 0, unverified = 0;
+			let total = 0, verified = 0, unverified = 0, descartadas = 0;
 			const byWorker = {};
 			const byFuero = {};
 			let diskBytes = 0;
@@ -141,6 +144,7 @@ const captchaDatasetController = {
 					} catch (_) { /* skip */ }
 				}
 				for (const e of ultimaPorArchivo.values()) {
+					if (e.discarded === true) { descartadas++; continue; }
 					total++;
 					if (e.verified) verified++; else unverified++;
 					if (e.worker_id) byWorker[e.worker_id] = (byWorker[e.worker_id] || 0) + 1;
@@ -226,6 +230,37 @@ const captchaDatasetController = {
 			return res.status(500).json({ success: false, message: error.message });
 		}
 	},
+	/**
+	 * Descarta una imagen que no es un captcha (desafío expirado, render roto).
+	 * Igual que el etiquetado, se appendea al manifest en vez de reescribirlo.
+	 */
+	async discard(req, res) {
+		try {
+			const { subdir, filename } = req.params;
+			if (!VALID_SUBDIRS.has(subdir) || !SAFE_FILENAME.test(filename)) {
+				return res.status(400).json({ success: false, message: 'Ruta de imagen inválida' });
+			}
+			await fsp.appendFile(
+				MANIFEST_PATH,
+				JSON.stringify({
+					ts: new Date().toISOString(),
+					file: path.join(subdir, filename),
+					label: null,
+					verified: false,
+					needsLabel: false,
+					discarded: true,
+					discardReason: String(req.body?.reason || 'no es un captcha'),
+					discardedBy: req.user?.email || req.user?.id || 'admin',
+				}) + '\n'
+			);
+			logger.info(`[captcha-dataset] descartada ${subdir}/${filename}`);
+			return res.json({ success: true, data: { file: path.join(subdir, filename) } });
+		} catch (error) {
+			logger.error(`[captcha-dataset] discard: ${error.message}`);
+			return res.status(500).json({ success: false, message: error.message });
+		}
+	},
+
 	async image(req, res) {
 		try {
 			const { subdir, filename } = req.params;

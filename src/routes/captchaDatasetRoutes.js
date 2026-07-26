@@ -16,4 +16,8 @@ router.get('/image/:subdir/:filename', verifyToken, verifyAdmin, captchaDatasetC
 // los captchas que ni el modelo ni el proveedor pudieron resolver.
 router.patch('/label/:subdir/:filename', verifyToken, verifyAdmin, captchaDatasetController.label);
 
+// PATCH /api/captcha-dataset/discard/:subdir/:filename -> saca del dataset las
+// imágenes que no son captchas (desafío expirado, render roto).
+router.patch('/discard/:subdir/:filename', verifyToken, verifyAdmin, captchaDatasetController.discard);
+
 module.exports = router;
