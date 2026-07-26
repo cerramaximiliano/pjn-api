@@ -34,13 +34,15 @@ const SAFE_FILENAME = /^[A-Za-z0-9_.\-]+\.png$/;
 // Lee manifest.jsonl como stream y aplica filtros + paginación.
 // Para datasets de hasta cientos de miles de líneas esto es suficiente.
 async function readManifestFiltered({ verified, workerId, fuero, search, skip, limit, needsLabel }) {
-	const entries = [];
-	let totalMatched = 0;
-
 	if (!fs.existsSync(MANIFEST_PATH)) {
 		return { entries: [], total: 0 };
 	}
 
+	// El manifest es append-only: las correcciones (etiquetado manual y
+	// pre-etiquetado) se agregan al final con el mismo `file`. Hay que quedarse
+	// con la ÚLTIMA entrada de cada archivo, si no las originales sin etiqueta
+	// siguen apareciendo como pendientes y se repiten una y otra vez.
+	const ultimaPorArchivo = new Map();
 	const stream = fs.createReadStream(MANIFEST_PATH, { encoding: 'utf8' });
 	const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
@@ -52,7 +54,14 @@ async function readManifestFiltered({ verified, workerId, fuero, search, skip, l
 		} catch (err) {
 			continue; // saltear líneas corruptas
 		}
+		if (!entry.file) continue;
+		// Se conserva el orden de primera aparición: Map mantiene el orden de
+		// inserción y set() sobre una clave existente no lo altera.
+		ultimaPorArchivo.set(entry.file, entry);
+	}
 
+	const entries = [];
+	for (const entry of ultimaPorArchivo.values()) {
 		if (verified !== undefined && entry.verified !== verified) continue;
 		// Pendientes de etiquetado manual: ni el modelo ni el proveedor los
 		// resolvieron, así que no hay etiqueta automática posible.
@@ -65,10 +74,6 @@ async function readManifestFiltered({ verified, workerId, fuero, search, skip, l
 			const hay = `${entry.label || ''} ${entry.expediente || ''}`.toLowerCase();
 			if (!hay.includes(s)) continue;
 		}
-
-		totalMatched++;
-		// Acumular solo las que caen en la ventana skip..skip+limit
-		// PERO leemos desde el final (newest-first), así que invertimos al final.
 		entries.push(entry);
 	}
 
@@ -76,7 +81,7 @@ async function readManifestFiltered({ verified, workerId, fuero, search, skip, l
 	// del archivo son los más nuevos. Invertimos y aplicamos paginación.
 	entries.reverse();
 	const sliced = entries.slice(skip, skip + limit);
-	return { entries: sliced, total: totalMatched };
+	return { entries: sliced, total: entries.length };
 }
 
 const captchaDatasetController = {
@@ -124,15 +129,22 @@ const captchaDatasetController = {
 			if (fs.existsSync(MANIFEST_PATH)) {
 				const stream = fs.createReadStream(MANIFEST_PATH, { encoding: 'utf8' });
 				const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+				// Igual que en el listado: el manifest es append-only y las
+				// correcciones repiten el `file`. Contar línea por línea inflaba
+				// los totales y dejaba como "sin verificar" a los ya corregidos.
+				const ultimaPorArchivo = new Map();
 				for await (const line of rl) {
 					if (!line.trim()) continue;
 					try {
 						const e = JSON.parse(line);
-						total++;
-						if (e.verified) verified++; else unverified++;
-						if (e.worker_id) byWorker[e.worker_id] = (byWorker[e.worker_id] || 0) + 1;
-						if (e.fuero) byFuero[e.fuero] = (byFuero[e.fuero] || 0) + 1;
+						if (e.file) ultimaPorArchivo.set(e.file, e);
 					} catch (_) { /* skip */ }
+				}
+				for (const e of ultimaPorArchivo.values()) {
+					total++;
+					if (e.verified) verified++; else unverified++;
+					if (e.worker_id) byWorker[e.worker_id] = (byWorker[e.worker_id] || 0) + 1;
+					if (e.fuero) byFuero[e.fuero] = (byFuero[e.fuero] || 0) + 1;
 				}
 			}
 
