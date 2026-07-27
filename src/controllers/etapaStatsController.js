@@ -31,6 +31,8 @@ const TIPOS_VALIDOS = [
     "duracion-sala-etapa",
     "transicion",
     "resultado",
+    "conformidad",
+    "firma",
 ];
 
 function statsCol() {
