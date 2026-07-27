@@ -30,6 +30,7 @@ const TIPOS_VALIDOS = [
     "duracion-juzgado-etapa",
     "duracion-sala-etapa",
     "transicion",
+    "transicion-objeto",
     "resultado",
     "conformidad",
     "firma",
