@@ -33,7 +33,7 @@ const SAFE_FILENAME = /^[A-Za-z0-9_.\-]+\.png$/;
 
 // Lee manifest.jsonl como stream y aplica filtros + paginación.
 // Para datasets de hasta cientos de miles de líneas esto es suficiente.
-async function readManifestFiltered({ verified, workerId, fuero, search, skip, limit, needsLabel }) {
+async function readManifestFiltered({ verified, workerId, fuero, search, skip, limit, needsLabel, illegible }) {
 	if (!fs.existsSync(MANIFEST_PATH)) {
 		return { entries: [], total: 0 };
 	}
@@ -65,6 +65,14 @@ async function readManifestFiltered({ verified, workerId, fuero, search, skip, l
 		// Descartadas: no son captchas (desafío expirado, render roto). Salen del
 		// dataset y de la cola de etiquetado.
 		if (entry.discarded === true) continue;
+		// Ilegibles: SÍ son captchas, pero un humano no puede leerlos (algún
+		// dígito queda tapado por las rayas). Se apartan de la cola para no
+		// volver a mostrarlos, pero no se descartan: con un modelo mejor, o
+		// revisándolos con calma, todavía pueden servir. Con illegible=true se
+		// consulta justamente ese apartado.
+		if (illegible === true) {
+			if (entry.illegible !== true) continue;
+		} else if (entry.illegible === true) continue;
 		if (verified !== undefined && entry.verified !== verified) continue;
 		// Pendientes de etiquetado manual: ni el modelo ni el proveedor los
 		// resolvieron, así que no hay etiqueta automática posible.
@@ -104,8 +112,10 @@ const captchaDatasetController = {
 			const fuero = req.query.fuero ? String(req.query.fuero) : undefined;
 			const search = req.query.search ? String(req.query.search) : undefined;
 
+			const illegible = req.query.illegible === 'true' ? true : undefined;
+
 			const { entries, total } = await readManifestFiltered({
-				verified, workerId, fuero, search, skip, limit, needsLabel,
+				verified, workerId, fuero, search, skip, limit, needsLabel, illegible,
 			});
 
 			res.json({
@@ -124,7 +134,7 @@ const captchaDatasetController = {
 
 	async stats(req, res) {
 		try {
-			let total = 0, verified = 0, unverified = 0, descartadas = 0;
+			let total = 0, verified = 0, unverified = 0, descartadas = 0, ilegibles = 0;
 			const byWorker = {};
 			const byFuero = {};
 			let diskBytes = 0;
@@ -145,6 +155,9 @@ const captchaDatasetController = {
 				}
 				for (const e of ultimaPorArchivo.values()) {
 					if (e.discarded === true) { descartadas++; continue; }
+					// Los ilegibles no cuentan como pendientes: no hay nada que
+					// etiquetar ahí, y sumarlos daba una cola que nunca bajaba.
+					if (e.illegible === true) { ilegibles++; continue; }
 					total++;
 					if (e.verified) verified++; else unverified++;
 					if (e.worker_id) byWorker[e.worker_id] = (byWorker[e.worker_id] || 0) + 1;
@@ -172,6 +185,8 @@ const captchaDatasetController = {
 					total,
 					verified,
 					unverified,
+					descartadas,
+					ilegibles,
 					byWorker,
 					byFuero,
 					diskBytes,
@@ -257,6 +272,46 @@ const captchaDatasetController = {
 			return res.json({ success: true, data: { file: path.join(subdir, filename) } });
 		} catch (error) {
 			logger.error(`[captcha-dataset] discard: ${error.message}`);
+			return res.status(500).json({ success: false, message: error.message });
+		}
+	},
+
+	/**
+	 * Marca un captcha como ilegible para una persona: es un captcha válido,
+	 * pero algún dígito quedó tapado por las rayas y no se puede leer.
+	 *
+	 * Se separa de `discard` a propósito. Descartado = no es un captcha, basura
+	 * que sale del dataset. Ilegible = es un captcha real que no sabemos leer
+	 * hoy; se guarda aparte (consultable con ?illegible=true) porque son
+	 * justamente los casos difíciles que pueden servir más adelante.
+	 *
+	 * Sacarlos de la cola es lo que importa: saltearlos no alcanzaba, porque el
+	 * lote siguiente se pide con verified=false desde el principio y volvían a
+	 * aparecer una y otra vez.
+	 */
+	async illegible(req, res) {
+		try {
+			const { subdir, filename } = req.params;
+			if (!VALID_SUBDIRS.has(subdir) || !SAFE_FILENAME.test(filename)) {
+				return res.status(400).json({ success: false, message: 'Ruta de imagen inválida' });
+			}
+			await fsp.appendFile(
+				MANIFEST_PATH,
+				JSON.stringify({
+					ts: new Date().toISOString(),
+					file: path.join(subdir, filename),
+					label: null,
+					verified: false,
+					needsLabel: false,
+					illegible: true,
+					illegibleReason: String(req.body?.reason || 'no se lee'),
+					illegibleBy: req.user?.email || req.user?.id || 'admin',
+				}) + '\n'
+			);
+			logger.info(`[captcha-dataset] ilegible ${subdir}/${filename}`);
+			return res.json({ success: true, data: { file: path.join(subdir, filename) } });
+		} catch (error) {
+			logger.error(`[captcha-dataset] illegible: ${error.message}`);
 			return res.status(500).json({ success: false, message: error.message });
 		}
 	},

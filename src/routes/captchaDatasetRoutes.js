@@ -20,4 +20,8 @@ router.patch('/label/:subdir/:filename', verifyToken, verifyAdmin, captchaDatase
 // imágenes que no son captchas (desafío expirado, render roto).
 router.patch('/discard/:subdir/:filename', verifyToken, verifyAdmin, captchaDatasetController.discard);
 
+// PATCH /api/captcha-dataset/illegible/:subdir/:filename -> aparta los captchas
+// que son válidos pero no hay forma humana de leerlos.
+router.patch('/illegible/:subdir/:filename', verifyToken, verifyAdmin, captchaDatasetController.illegible);
+
 module.exports = router;
