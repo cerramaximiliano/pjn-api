@@ -8,6 +8,7 @@ const { verifyToken, verifyAdmin } = require("../middleware/auth");
 router.get("/resumen", verifyToken, verifyAdmin, ctrl.getResumen);
 router.get("/filtros", verifyToken, verifyAdmin, ctrl.getFiltros);
 router.get("/causas", verifyToken, verifyAdmin, ctrl.getCausas);
+router.get("/taxonomia", verifyToken, verifyAdmin, ctrl.getTaxonomia);
 router.get("/causa/:causaType/:id", verifyToken, verifyAdmin, ctrl.getCausaContext);
 
 module.exports = router;

@@ -20,9 +20,14 @@ const MODELS = {
     CausasComercial: pjn.CausasComercial,
     CausasSegSoc: pjn.CausasSegSoc,
     CausasTrabajo: pjn.CausasTrabajo,
+    CausasCAF: pjn.CausasCAF,
+    CausasCCF: pjn.CausasCCF,
 };
 
-const FUERO_MODEL = { CIV: pjn.CausasCivil, COM: pjn.CausasComercial, CSS: pjn.CausasSegSoc, CNT: pjn.CausasTrabajo };
+const FUERO_MODEL = {
+    CIV: pjn.CausasCivil, COM: pjn.CausasComercial, CSS: pjn.CausasSegSoc, CNT: pjn.CausasTrabajo,
+    CAF: pjn.CausasCAF, CCF: pjn.CausasCCF,
+};
 
 const TIPOS_VALIDOS = [
     "duracion-fuero-etapa",
@@ -136,6 +141,22 @@ exports.getCausas = async (req, res) => {
         });
     } catch (error) {
         logger.error(`[etapa-stats] getCausas: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// GET /api/admin/etapa-stats/taxonomia
+// Catálogo data-driven del árbol de etapas (colección etapa-taxonomia,
+// sembrada por seed-etapa-taxonomia.js). La UI dibuja el árbol leyéndolo.
+exports.getTaxonomia = async (req, res) => {
+    try {
+        const docs = await mongoose.connection.db.collection("etapa-taxonomia").find({}).toArray();
+        const meta = docs.find((d) => d.tipo === "meta") || null;
+        const etapas = docs.filter((d) => d.tipo === "etapa").sort((a, b) => a.rank - b.rank);
+        const interruptores = docs.filter((d) => d.tipo === "interruptor").sort((a, b) => (a.orden || 0) - (b.orden || 0));
+        res.json({ success: true, data: { meta, etapas, interruptores } });
+    } catch (error) {
+        logger.error(`[etapa-stats] getTaxonomia: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 };
