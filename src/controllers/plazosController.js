@@ -58,6 +58,7 @@ exports.listNotificaciones = async (req, res) => {
 			filter.causaId = new mongoose.Types.ObjectId(req.query.causaId);
 		}
 		if (req.query.fuente) filter["plazo.fuente"] = req.query.fuente;
+		if (req.query.objeto) filter.objeto = new RegExp(String(req.query.objeto).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 		if (req.query.desde || req.query.hasta) {
 			filter.detectedAt = {};
 			if (req.query.desde) filter.detectedAt.$gte = new Date(req.query.desde);
@@ -118,7 +119,7 @@ exports.listVencimientos = async (req, res) => {
 		const [data, total] = await Promise.all([
 			PlazoNotificacion.find(filter)
 				.select({
-					causaId: 1, number: 1, year: 1, fuero: 1, caratula: 1, tipoNotificacion: 1,
+					causaId: 1, number: 1, year: 1, fuero: 1, objeto: 1, caratula: 1, tipoNotificacion: 1,
 					"movimiento.fecha": 1, "movimiento.detalle": 1, plazo: 1, detectedAt: 1,
 				})
 				.sort({ "plazo.vencimiento": 1 })

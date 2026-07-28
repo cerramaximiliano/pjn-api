@@ -156,4 +156,8 @@ router.use('/admin/etapa-stats', etapaStatsRoutes);
 const plazosRoutes = require('./plazosRoutes');
 router.use('/admin/plazos', plazosRoutes);
 
+// Configuración + estado del plazos-worker (vista admin Workers PJN)
+const plazosWorkerConfigRoutes = require('./plazosWorkerConfigRoutes');
+router.use('/plazos-worker-config', plazosWorkerConfigRoutes);
+
 module.exports = router;
