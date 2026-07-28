@@ -54,9 +54,19 @@ if [ "$BEFORE" = "$AFTER" ]; then
 fi
 
 # npm ci SOLO si cambió el lock (deps deterministas gracias al pin de pjn-models).
+# Se instala en staging y se swapea node_modules con mv atómico: npm ci in-place
+# con la app viva provoca crash-loop MODULE_NOT_FOUND (requires lazy fallan
+# mientras el árbol está a medio instalar).
 if ! git diff --quiet "$BEFORE" "$AFTER" -- package-lock.json; then
-  echo "package-lock.json cambió → npm ci --omit=dev"
-  npm ci --omit=dev
+  echo "package-lock.json cambió → npm ci --omit=dev (staging + swap atómico)"
+  rm -rf .deps-staging node_modules.old
+  mkdir .deps-staging
+  cp package.json package-lock.json .deps-staging/
+  [ -f .npmrc ] && cp .npmrc .deps-staging/ || true
+  (cd .deps-staging && npm ci --omit=dev)
+  [ -d node_modules ] && mv node_modules node_modules.old || true
+  mv .deps-staging/node_modules node_modules
+  rm -rf .deps-staging node_modules.old
 else
   echo "package-lock.json sin cambios → skip npm ci"
 fi
