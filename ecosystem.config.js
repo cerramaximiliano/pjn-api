@@ -6,21 +6,10 @@ module.exports = {
             exec_mode: "fork", 
             instances: 1,
             autorestart: true,
-            watch: [
-                "src", // Monitorea solo el directorio 'server'
-            ],
-            ignore_watch: [
-                "node_modules",
-                "src/logger.log",
-                "src/logs",
-                "logs",
-                "*.log",
-                "temp",
-                "uploads"
-            ],
-            watch_options: {
-                followSymlinks: false
-            },
+            // watch deshabilitado: el deploy (CI en hub / deploy-worker01.sh en worker_01)
+            // hace reload explícito; con watch ON el git reset del CI reiniciaba la app
+            // en medio del npm ci → crash-loop MODULE_NOT_FOUND en cada deploy
+            watch: false,
             max_memory_restart: "1G",
             env: {
                 NODE_ENV: "production",
