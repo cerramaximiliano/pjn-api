@@ -18,7 +18,7 @@ const mongoose = require("mongoose");
 const pjn = require("pjn-models");
 const { logger } = require("../config/pino");
 
-const { PlazoNotificacion, PlazoNormativa, FeriadoJudicial } = pjn;
+const { PlazoNotificacion, PlazoNormativa, FeriadoJudicial, PlazoDatasetEjemplo } = pjn;
 
 const parsePagination = (req, maxLimit = 100) => {
 	const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -318,6 +318,141 @@ exports.createFeriados = async (req, res) => {
 		return res.status(201).json({ success: true, data: { dias: dias.length, upserts } });
 	} catch (error) {
 		return fail(res, "createFeriados", error);
+	}
+};
+
+// ── Dataset de plazos expresos (minería de reglas empíricas) ─────────────────
+
+// GET /admin/plazos/dataset — ejemplos, paginado.
+exports.listDataset = async (req, res) => {
+	try {
+		const { page, limit, skip } = parsePagination(req);
+		const filter = {};
+		if (req.query.fuero) filter.fuero = req.query.fuero;
+		if (req.query.acto) filter.acto = req.query.acto;
+		if (req.query.objeto) filter.objeto = new RegExp(String(req.query.objeto).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+		if (req.query.conPlazo !== undefined) filter.sinPlazo = req.query.conPlazo !== "true";
+
+		const [data, total] = await Promise.all([
+			PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).skip(skip).limit(limit).lean(),
+			PlazoDatasetEjemplo.countDocuments(filter),
+		]);
+		return paginated(res, data, total, page, limit);
+	} catch (error) {
+		return fail(res, "listDataset", error);
+	}
+};
+
+// GET /admin/plazos/dataset/stats
+exports.statsDataset = async (req, res) => {
+	try {
+		const [total, conPlazo, porFuero, porActo] = await Promise.all([
+			PlazoDatasetEjemplo.countDocuments({}),
+			PlazoDatasetEjemplo.countDocuments({ sinPlazo: false }),
+			PlazoDatasetEjemplo.aggregate([{ $group: { _id: "$fuero", n: { $sum: 1 }, conPlazo: { $sum: { $cond: ["$sinPlazo", 0, 1] } } } }]),
+			PlazoDatasetEjemplo.aggregate([
+				{ $match: { sinPlazo: false } },
+				{ $group: { _id: "$acto", n: { $sum: 1 } } },
+				{ $sort: { n: -1 } },
+			]),
+		]);
+		return res.json({
+			success: true,
+			data: {
+				total,
+				conPlazo,
+				sinPlazo: total - conPlazo,
+				porFuero: porFuero.map((f) => ({ fuero: f._id, total: f.n, conPlazo: f.conPlazo })),
+				porActo: porActo.map((a) => ({ acto: a._id, n: a.n })),
+			},
+		});
+	} catch (error) {
+		return fail(res, "statsDataset", error);
+	}
+};
+
+// GET /admin/plazos/dataset/candidatos?minN=5&minShare=0.8
+// Agrupa por (fuero, objeto, acto): donde el plazo dominante supera los
+// umbrales, es un candidato a regla empírica. Se anota si ya existe una
+// regla que cubre la combinación y si coincide el plazo.
+exports.candidatosDataset = async (req, res) => {
+	try {
+		const minN = Math.max(parseInt(req.query.minN, 10) || 5, 2);
+		const minShare = Math.min(Math.max(parseFloat(req.query.minShare) || 0.8, 0.5), 1);
+
+		const grupos = await PlazoDatasetEjemplo.aggregate([
+			{ $match: { sinPlazo: false, plazoDias: { $ne: null } } },
+			{
+				$group: {
+					_id: { fuero: "$fuero", objeto: "$objeto", acto: "$acto", plazoDias: "$plazoDias", tipoPlazo: "$tipoPlazo" },
+					n: { $sum: 1 },
+					snippets: { $push: "$snippet" },
+				},
+			},
+			{
+				$group: {
+					_id: { fuero: "$_id.fuero", objeto: "$_id.objeto", acto: "$_id.acto" },
+					total: { $sum: "$n" },
+					variantes: { $push: { plazoDias: "$_id.plazoDias", tipoPlazo: "$_id.tipoPlazo", n: "$n", ejemplos: { $slice: ["$snippets", 3] } } },
+				},
+			},
+			{ $match: { total: { $gte: minN } } },
+			{ $sort: { total: -1 } },
+			{ $limit: 200 },
+		]);
+
+		const reglas = await PlazoNormativa.find({ habilitado: true }).sort({ prioridad: 1 }).lean();
+		const norm = (s) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+		const candidatos = [];
+		for (const g of grupos) {
+			const variantes = g.variantes.sort((a, b) => b.n - a.n);
+			const dominante = variantes[0];
+			const share = dominante.n / g.total;
+			if (share < minShare) continue;
+
+			// ¿Alguna regla vigente ya cubre esta combinación?
+			const objetoNorm = norm(g._id.objeto);
+			const reglaExistente = reglas.find((r) => {
+				if (r.acto !== g._id.acto) return false;
+				const fueros = r.fuero?.length ? r.fuero : ["*"];
+				if (!fueros.includes("*") && !fueros.includes(g._id.fuero)) return false;
+				const objetos = r.objetos?.length ? r.objetos : ["*"];
+				if (objetos.includes("*")) return true;
+				if (!objetoNorm) return false;
+				return objetos.some((p) => {
+					try {
+						return new RegExp(p).test(objetoNorm);
+					} catch (_) {
+						return false;
+					}
+				});
+			});
+
+			candidatos.push({
+				fuero: g._id.fuero,
+				objeto: g._id.objeto,
+				acto: g._id.acto,
+				n: g.total,
+				plazoDias: dominante.plazoDias,
+				tipoPlazo: dominante.tipoPlazo,
+				share: Math.round(share * 100) / 100,
+				variantes: variantes.map(({ ejemplos, ...v }) => v),
+				ejemplos: dominante.ejemplos.filter(Boolean).slice(0, 3),
+				reglaExistente: reglaExistente
+					? {
+							clave: reglaExistente._id,
+							plazoDias: reglaExistente.plazoDias,
+							tipoPlazo: reglaExistente.tipoPlazo,
+							coincide: reglaExistente.plazoDias === dominante.plazoDias && (reglaExistente.tipoPlazo || "habiles") === (dominante.tipoPlazo || "habiles"),
+						}
+					: null,
+			});
+		}
+
+		return res.json({ success: true, count: candidatos.length, data: candidatos });
+	} catch (error) {
+		return fail(res, "candidatosDataset", error);
 	}
 };
 

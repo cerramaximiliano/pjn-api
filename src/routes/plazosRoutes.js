@@ -25,6 +25,11 @@ router.get("/normativa", verifyToken, verifyAdmin, ctrl.listNormativa);
 router.post("/normativa", verifyToken, verifyAdmin, ctrl.createNormativa);
 router.patch("/normativa/:id", verifyToken, verifyAdmin, ctrl.updateNormativa);
 
+// Dataset de plazos expresos (minería de reglas empíricas)
+router.get("/dataset", verifyToken, verifyAdmin, ctrl.listDataset);
+router.get("/dataset/stats", verifyToken, verifyAdmin, ctrl.statsDataset);
+router.get("/dataset/candidatos", verifyToken, verifyAdmin, ctrl.candidatosDataset);
+
 // Feriados (calendario de días inhábiles)
 router.get("/feriados", verifyToken, verifyAdmin, ctrl.listFeriados);
 router.post("/feriados", verifyToken, verifyAdmin, ctrl.createFeriados);
