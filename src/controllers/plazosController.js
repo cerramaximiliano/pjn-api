@@ -474,13 +474,14 @@ exports.candidatosDataset = async (req, res) => {
 					_id: { fuero: "$fuero", objeto: "$objeto", acto: "$acto", plazoDias: "$plazoDias", tipoPlazo: "$tipoPlazo" },
 					n: { $sum: 1 },
 					snippets: { $push: "$snippet" },
+					normas: { $addToSet: "$normaCitada" },
 				},
 			},
 			{
 				$group: {
 					_id: { fuero: "$_id.fuero", objeto: "$_id.objeto", acto: "$_id.acto" },
 					total: { $sum: "$n" },
-					variantes: { $push: { plazoDias: "$_id.plazoDias", tipoPlazo: "$_id.tipoPlazo", n: "$n", ejemplos: { $slice: ["$snippets", 3] } } },
+					variantes: { $push: { plazoDias: "$_id.plazoDias", tipoPlazo: "$_id.tipoPlazo", n: "$n", ejemplos: { $slice: ["$snippets", 3] }, normas: "$normas" } },
 				},
 			},
 			{ $match: { total: { $gte: minN } } },
@@ -524,8 +525,11 @@ exports.candidatosDataset = async (req, res) => {
 				plazoDias: dominante.plazoDias,
 				tipoPlazo: dominante.tipoPlazo,
 				share: Math.round(share * 100) / 100,
-				variantes: variantes.map(({ ejemplos, ...v }) => v),
+				variantes: variantes.map(({ ejemplos, normas, ...v }) => v),
 				ejemplos: dominante.ejemplos.filter(Boolean).slice(0, 3),
+				// Origen normativo observado: citas legales que acompañan al
+				// plazo dominante en los textos (norma especial o código).
+				normasCitadas: (dominante.normas || []).filter(Boolean).slice(0, 4),
 				reglaExistente: reglaExistente
 					? {
 							clave: reglaExistente._id,
@@ -540,6 +544,43 @@ exports.candidatosDataset = async (req, res) => {
 		return res.json({ success: true, count: candidatos.length, data: candidatos });
 	} catch (error) {
 		return fail(res, "candidatosDataset", error);
+	}
+};
+
+// ── Config del harvester del dataset (plazos-dataset-worker) ─────────────────
+
+const DATASET_CFG_EDITABLE = ["enabled", "cronPattern", "batchSize", "maxPerCausa", "dailyLimit", "requestDelayMs", "fueros"];
+
+// GET /admin/plazos/dataset-config
+exports.getDatasetConfig = async (req, res) => {
+	try {
+		const doc = await mongoose.connection.db.collection("plazos-dataset-config").findOne({ _id: "global" });
+		return res.json({ success: true, data: doc || null });
+	} catch (error) {
+		return fail(res, "getDatasetConfig", error);
+	}
+};
+
+// PATCH /admin/plazos/dataset-config — tune del harvester en caliente.
+exports.updateDatasetConfig = async (req, res) => {
+	try {
+		const $set = {};
+		for (const k of DATASET_CFG_EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
+		// Reset de cursor por fuero (para re-escanear un fuero agotado):
+		// body.resetCursor = 'CIV' | ['CIV','CSS'] | '*'
+		if (req.body.resetCursor) {
+			const fueros = req.body.resetCursor === "*" ? null : [].concat(req.body.resetCursor);
+			if (fueros) for (const f of fueros) $set[`cursor.${f}`] = null;
+			else $set.cursor = {};
+		}
+		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
+
+		await mongoose.connection.db.collection("plazos-dataset-config").updateOne({ _id: "global" }, { $set }, { upsert: true });
+		const doc = await mongoose.connection.db.collection("plazos-dataset-config").findOne({ _id: "global" });
+		logger.info(`[plazos] dataset-config por user ${req.userId}: ${Object.keys($set).join(",")}`);
+		return res.json({ success: true, data: doc });
+	} catch (error) {
+		return fail(res, "updateDatasetConfig", error);
 	}
 };
 
