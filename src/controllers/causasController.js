@@ -32,6 +32,11 @@ const getModel = (fuero) => {
   return M;
 };
 
+// Fueros con scraping activo: los listados agregados (verified / non-verified)
+// consultan estas colecciones cuando no se filtra por fuero. Los 24 restantes
+// de FUERO_MODELS siguen accesibles vía rutas con :fuero explícito.
+const SCRAPING_FUEROS = ['CIV', 'COM', 'CSS', 'CNT', 'CCF', 'CAF'];
+
 /**
  * Helper para obtener fecha en zona horaria de Argentina (UTC-3)
  * Esto es necesario porque updateStats.today.date se guarda con la fecha de Argentina
@@ -539,22 +544,18 @@ const causasController = {
       // Filtros base sin búsqueda para obtener total general de la base de datos
       const baseFilters = { verified: true, isValid: true };
 
+      // Fueros a consultar: el filtrado si se especificó (cualquiera de los 28
+      // con modelo), o todos los de scraping cuando se pide "todos"
+      const fuerosAConsultar = fuero ? (FUERO_MODELS[fuero] ? [fuero] : []) : SCRAPING_FUEROS;
+
       // Obtener conteos totales en paralelo: con filtros aplicados y total de la base de datos
-      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo, totalCivilDB, totalComercialDB, totalSegSocDB, totalTrabajoDB] = await Promise.all([
-        // Conteos con filtros de búsqueda aplicados
-        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(searchFilters),
-        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(searchFilters),
-        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(searchFilters),
-        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters),
-        // Conteos totales de la base de datos (sin filtros de búsqueda)
-        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(baseFilters),
-        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(baseFilters),
-        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(baseFilters),
-        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(baseFilters)
+      const [countsFiltrados, countsDB] = await Promise.all([
+        Promise.all(fuerosAConsultar.map(f => FUERO_MODELS[f].countDocuments(searchFilters))),
+        Promise.all(fuerosAConsultar.map(f => FUERO_MODELS[f].countDocuments(baseFilters)))
       ]);
 
-      const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
-      const totalInDatabase = totalCivilDB + totalComercialDB + totalSegSocDB + totalTrabajoDB;
+      const totalCausasReal = countsFiltrados.reduce((sum, c) => sum + c, 0);
+      const totalInDatabase = countsDB.reduce((sum, c) => sum + c, 0);
       const totalPages = Math.ceil(totalCausasReal / limit);
 
       // Estrategia híbrida: traer suficientes documentos de cada colección
@@ -568,32 +569,17 @@ const causasController = {
       const maxDocsToFetch = skip + limit;
 
       // Consultar documentos con ordenamiento de MongoDB y límite razonable
-      const [causasCivil, causasComercial, causasSegSoc, causasTrabajo] = await Promise.all([
-        fuero && fuero !== 'CIV' ? [] : CausasCivil.find(searchFilters)
+      const resultadosPorFuero = await Promise.all(
+        fuerosAConsultar.map(f => FUERO_MODELS[f].find(searchFilters)
           .sort(sortOptions)
           .limit(maxDocsToFetch)
-          .lean(),
-        fuero && fuero !== 'COM' ? [] : CausasComercial.find(searchFilters)
-          .sort(sortOptions)
-          .limit(maxDocsToFetch)
-          .lean(),
-        fuero && fuero !== 'CSS' ? [] : CausasSegSoc.find(searchFilters)
-          .sort(sortOptions)
-          .limit(maxDocsToFetch)
-          .lean(),
-        fuero && fuero !== 'CNT' ? [] : CausasTrabajo.find(searchFilters)
-          .sort(sortOptions)
-          .limit(maxDocsToFetch)
-          .lean()
-      ]);
+          .lean())
+      );
 
       // Combinar y agregar fuero
-      const allCausas = [
-        ...causasCivil.map(causa => ({ ...causa, fuero: 'CIV' })),
-        ...causasComercial.map(causa => ({ ...causa, fuero: 'COM' })),
-        ...causasSegSoc.map(causa => ({ ...causa, fuero: 'CSS' })),
-        ...causasTrabajo.map(causa => ({ ...causa, fuero: 'CNT' }))
-      ];
+      const allCausas = resultadosPorFuero.flatMap((causasFuero, i) =>
+        causasFuero.map(causa => ({ ...causa, fuero: fuerosAConsultar[i] }))
+      );
 
       // Ordenar los documentos combinados usando el mismo criterio de sortOptions
       allCausas.sort((a, b) => {
@@ -647,11 +633,7 @@ const causasController = {
           hasNextPage: page < totalPages,
           hasPrevPage: page > 1
         },
-        breakdown: {
-          civil: totalCivil,
-          seguridad_social: totalSegSoc,
-          trabajo: totalTrabajo
-        },
+        breakdown: Object.fromEntries(fuerosAConsultar.map((f, i) => [f, countsFiltrados[i]])),
         filters: {
           fuero: fuero || 'todos'
         },
@@ -726,64 +708,37 @@ const causasController = {
         sortOptions.number = -1;
       }
 
-      // Filtros base sin búsqueda para obtener total general de la base de datos
-      const baseFilters = { verified: true, isValid: true };
+      // Fueros a consultar: el filtrado si se especificó (cualquiera de los 28
+      // con modelo), o todos los de scraping cuando se pide "todos"
+      const fuerosAConsultar = fuero ? (FUERO_MODELS[fuero] ? [fuero] : []) : SCRAPING_FUEROS;
 
-      // Obtener conteos totales en paralelo: con filtros aplicados y total de la base de datos
-      const [totalCivil, totalComercial, totalSegSoc, totalTrabajo, totalCivilDB, totalComercialDB, totalSegSocDB, totalTrabajoDB] = await Promise.all([
-        // Conteos con filtros de búsqueda aplicados
-        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(searchFilters),
-        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(searchFilters),
-        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(searchFilters),
-        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(searchFilters),
-        // Conteos totales de la base de datos (sin filtros de búsqueda)
-        fuero && fuero !== 'CIV' ? 0 : CausasCivil.countDocuments(baseFilters),
-        fuero && fuero !== 'COM' ? 0 : CausasComercial.countDocuments(baseFilters),
-        fuero && fuero !== 'CSS' ? 0 : CausasSegSoc.countDocuments(baseFilters),
-        fuero && fuero !== 'CNT' ? 0 : CausasTrabajo.countDocuments(baseFilters)
-      ]);
+      // Obtener conteos con filtros de búsqueda aplicados en paralelo
+      const countsFiltrados = await Promise.all(
+        fuerosAConsultar.map(f => FUERO_MODELS[f].countDocuments(searchFilters))
+      );
 
-      const totalCausasReal = totalCivil + totalComercial + totalSegSoc + totalTrabajo;
-      const totalInDatabase = totalCivilDB + totalComercialDB + totalSegSocDB + totalTrabajoDB;
+      const totalCausasReal = countsFiltrados.reduce((sum, c) => sum + c, 0);
       const totalPages = Math.ceil(totalCausasReal / limit);
 
-      logger.info(`Conteo total real de causas no verificadas: ${totalCausasReal} (Civil: ${totalCivil}, Comercial: ${totalComercial}, SegSoc: ${totalSegSoc}, Trabajo: ${totalTrabajo})`);
+      logger.info(`Conteo total real de causas no verificadas: ${totalCausasReal} (${fuerosAConsultar.map((f, i) => `${f}: ${countsFiltrados[i]}`).join(', ')})`);
 
-      // Realizar búsquedas en paralelo en las colecciones necesarias
-      const promises = [];
-
-      if (!fuero || fuero === 'CIV') {
-        promises.push(CausasCivil.find(searchFilters).sort(sortOptions).lean());
-      }
-      if (!fuero || fuero === 'COM') {
-        promises.push(CausasComercial.find(searchFilters).sort(sortOptions).lean());
-      }
-      if (!fuero || fuero === 'CSS') {
-        promises.push(CausasSegSoc.find(searchFilters).sort(sortOptions).lean());
-      }
-      if (!fuero || fuero === 'CNT') {
-        promises.push(CausasTrabajo.find(searchFilters).sort(sortOptions).lean());
-      }
-
-      const results = await Promise.all(promises);
+      // Traer hasta skip + limit documentos de cada colección para poder
+      // paginar globalmente sin cargar colecciones enteras en memoria
+      const maxDocsToFetch = skip + limit;
+      const results = await Promise.all(
+        fuerosAConsultar.map(f => FUERO_MODELS[f].find(searchFilters)
+          .sort(sortOptions)
+          .limit(maxDocsToFetch)
+          .lean())
+      );
 
       // Combinar todos los resultados y agregar el campo fuero
-      let allCausas = [];
-      let fueroIndex = 0;
-      const fueros = !fuero ? ['CIV', 'COM', 'CSS', 'CNT'] : [fuero];
-
-      results.forEach((causasArray, index) => {
-        const currentFuero = fueros[fueroIndex];
-        const causasWithFuero = causasArray.map(causa => ({
-          ...causa,
-          fuero: currentFuero
-        }));
-        allCausas = allCausas.concat(causasWithFuero);
-        fueroIndex++;
-      });
+      let allCausas = results.flatMap((causasFuero, i) =>
+        causasFuero.map(causa => ({ ...causa, fuero: fuerosAConsultar[i] }))
+      );
 
       // Aplicar ordenamiento global si estamos consultando múltiples fueros
-      if (!fuero) {
+      if (fuerosAConsultar.length > 1) {
         allCausas.sort((a, b) => {
           for (const key in sortOptions) {
             const order = sortOptions[key];
@@ -811,12 +766,7 @@ const causasController = {
           hasNextPage: page < totalPages,
           hasPrevPage: page > 1
         },
-        breakdown: {
-          civil: totalCivil,
-          comercial: totalComercial,
-          seguridad_social: totalSegSoc,
-          trabajo: totalTrabajo
-        },
+        breakdown: Object.fromEntries(fuerosAConsultar.map((f, i) => [f, countsFiltrados[i]])),
         filters: {
           fuero: fuero || 'todos'
         },
