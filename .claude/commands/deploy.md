@@ -1,71 +1,50 @@
-Hace deploy de pjn-api en worker_01 y reinicia el proceso PM2.
+Deploy de pjn-api.
 
-## 1. Cargar credenciales
+> **⚠️ Arquitectura dual — UN proyecto, DOS implementaciones en producción con deploys DISTINTOS y desacoplados:**
+>
+> | Instancia | Server | Rol | Deploy |
+> |---|---|---|---|
+> | **Hub** ("Atlas") | 🔵 `15.229.93.121` | API pública `api.lawanalytics.app`, Mongo Atlas | **Automático** — GitHub Actions al pushear a `main` (`.github/workflows/deploy.yml`) |
+> | **worker_01** ("Local") | 🟢 `100.111.73.56` (Tailscale) | Caché PJN en Mongo local + workers del box (sentencias, escritos, liquidaciones) | **Manual** — `bash scripts/deploy-worker01.sh` (worker_01 es inalcanzable desde runners de GitHub) |
+>
+> **REGLA DE ORO: después de CADA `git push origin main`, correr `bash scripts/deploy-worker01.sh`.** El hub se actualiza solo; worker_01 no — si te olvidás, quedan en commits distintos.
+
+## Flujo
+
+### 1. Push (despliega el hub automáticamente)
 
 ```bash
+git push origin main
+# seguir el run:
+gh run list --workflow=deploy.yml --limit 1
+gh run watch <run-id> --exit-status
+```
+
+### 2. Desplegar worker_01
+
+```bash
+bash scripts/deploy-worker01.sh
+```
+
+El script hace: `git reset --hard origin/main`, `npm ci` **solo si cambió el lock** (en staging dir + swap atómico de `node_modules` — nunca in-place con la app viva), y `pm2 restart` **sin** `--update-env` (preserva `NODE_ENV=local`; con `--update-env` la instancia local podría terminar apuntando a Atlas).
+
+### 3. Verificar que ambas quedaron en el mismo commit
+
+```bash
+echo "HUB:"; ssh -i /home/mcerra/www/lawanalytics.app.pem ubuntu@15.229.93.121 'git -C /var/www/pjn-api rev-parse --short HEAD'
 export $(grep -v '^#' /home/mcerra/www/pjn-api/.env.local | xargs)
+echo "WORKER_01:"; sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST 'git -C /var/www/pjn-api rev-parse --short HEAD'
 ```
 
-## 2. Verificar conectividad
+### 4. Health check
 
 ```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "echo 'Conexión OK'"
+curl -sS -o /dev/null -w "HTTP %{http_code} en %{time_total}s\n" https://api.lawanalytics.app/api/causas/test --max-time 10
 ```
 
-Si falla, informá al usuario y abortá.
+## Cosas que NO hacer
 
-## 3. Mostrar estado actual del proceso
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "$PM2_BIN show 'pjn/api' | grep -E 'status|uptime|restarts|memory'"
-```
-
-## 4. Hacer git pull en el servidor
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "cd $SSH_PROJECT_DIR && git pull origin \$(git branch --show-current)"
-```
-
-Si dice "Already up to date", preguntale al usuario si igualmente quiere reiniciar. Si hubo cambios, continuá.
-
-## 5. Verificar si cambió package.json
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "cd $SSH_PROJECT_DIR && git diff HEAD@{1} HEAD -- package.json"
-```
-
-Si hay diferencias:
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "cd $SSH_PROJECT_DIR && npm install --omit=dev"
-```
-
-## 5b. Refrescar `pjn-models` desde GitHub
-
-`pjn-models` viene como dep de GitHub sin pin de versión (`github:cerramaximiliano/pjn-models`). El paso 5 sólo la actualiza si cambió `package.json`, lo cual nunca pasa porque el spec es fijo — y el lockfile mantiene pegado el SHA anterior. Este paso fuerza el refresh al último commit del default branch:
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "cd $SSH_PROJECT_DIR && npm install pjn-models@github:cerramaximiliano/pjn-models --no-save --omit=dev"
-```
-
-Verificá la versión instalada e informála al usuario:
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "grep '\"version\"' $SSH_PROJECT_DIR/node_modules/pjn-models/package.json"
-```
-
-## 6. Reiniciar el proceso PM2
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "$PM2_BIN restart 'pjn/api' && $PM2_BIN save"
-```
-
-## 7. Verificar que levantó correctamente
-
-```bash
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "sleep 3 && $PM2_BIN show 'pjn/api' | grep -E 'status|uptime|restarts'"
-```
-
-## 8. Resumen final
-
-Informá: commit deployado (`git rev-parse --short HEAD`), rama, si se reinstalaron dependencias, y estado del proceso. Si hay errores sugerí `/logs`.
+- **NO hacer `git pull` + `npm install` a mano en los servers** — usar los dos flujos de arriba. Un `npm ci`/`npm install` in-place con la app viva causa crash-loop `MODULE_NOT_FOUND` (por eso ambos flujos instalan en staging y swapean atómico).
+- **NO refrescar `pjn-models` con `npm install pjn-models@github:...` suelto** — desde 2026-07-17 está **pineado a un tag** en `package.json` (`#vX.Y.Z`). Para bumpearlo: taggear en el repo pjn-models, cambiar el ref en `package.json`, `npm install`, commit + push + deploy de ambas instancias (ver skill `monitor-pjn-api` §2.5).
+- **NO usar `pm2 restart --update-env` en worker_01** — pisa `NODE_ENV=local`.
+- **NO reactivar `watch` en `ecosystem.config.js`** — causaba crash-loops en cada deploy del hub.

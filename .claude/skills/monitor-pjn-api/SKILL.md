@@ -40,7 +40,7 @@ Contexto operacional vivo de **pjn-api**, la API REST principal de causas PJN. L
 - Express.js + Mongoose + JWT. Puerto **8083** en ambos servers.
 - Entry: `src/server.js`.
 - Routing principal: monta `app.use('/api', indexRoutes)`. Todos los routers cuelgan de `/api`.
-- **PM2 watch = OFF** en ambos (verificado 2026-07-18 en worker_01). Un edit de `src/` NO auto-restartea → el deploy debe hacer restart explícito.
+- **PM2 watch = OFF en ambos** desde 2026-07-28 (`watch: false` en `ecosystem.config.js`, commit `27f8e11`). Un edit de `src/` NO auto-restartea → el deploy debe hacer restart explícito. Históricamente el hub tenía `watch: ["src"]`, lo que causaba crash-loops `MODULE_NOT_FOUND` en cada deploy (ver §8) — no volver a activarlo.
 - Max memory restart: 1GB.
 - **Env en runtime**: `server.js` baja secrets de AWS, los escribe a `.env` y recién ahí corre `dotenv.config()` — DESPUÉS de `require('./routes/index')`. ⇒ cualquier `const X = process.env.FOO` evaluado al cargar un módulo (top-level) queda con el env VACÍO. Los flags que dependen del env (ej. `VECTOR_BACKEND`, `QDRANT_URL`) deben leerse en tiempo de ejecución, no al cargar el módulo. Ver gotcha en §5.
 
@@ -124,8 +124,10 @@ Cambios de `pjn-models` son siempre **aditivos** (modelos/campos/enums nuevos) �
 
 ```bash
 curl -sS -o /dev/null -w "HTTP %{http_code} en %{time_total}s\n" \
-  "https://api.lawanalytics.com.ar/api/causas/test" --max-time 10
+  "https://api.lawanalytics.app/api/causas/test" --max-time 10
 ```
+
+⚠️ Verificado 2026-07-28: `api.lawanalytics.com.ar` NO resuelve (ni siquiera desde el hub) — el dominio público real es `api.lawanalytics.app`. Desde dentro del hub también sirve `http://localhost:8083/api/causas/test`.
 
 ## 4. Errores conocidos
 <!-- Cada entrada: descripción + patrón grep + dominio afectado + acción típica -->
@@ -188,13 +190,33 @@ echo "WORKER_01:"; sshpass -p "$SSH_PASSWORD" ssh worker_01@100.111.73.56 \
 <!-- Valores esperables en operación normal -->
 <!-- APPEND HERE -->
 
-_(Sin baselines todavía. Capturables en primer monitoreo: req/min promedio, RAM estable de la API, latencia p95 de endpoints calientes.)_
+### Baseline 2026-07-28 (post-fix watch)
+- **Hub**: online, ~127 MB RAM (límite 1 GB), CPU ~0.3%, restarts acumulados = **325** (al 2026-07-28 21:31 UTC; contador NO se resetea con reload; +1 esperado por cada deploy del CI). `unstable_restarts` = 0.
+- **worker_01**: online, restarts acumulados = **35**.
+- Health `https://api.lawanalytics.app/api/causas/test` → 200 en ~0.25s (público) / ~2ms (localhost:8083 desde el hub).
+- Ruido normal en logs: WARNs `jwt expired` (tokens vencidos de clientes, cada ~30 min), 404 de scanners (`/server.key`, `/.env`, etc.), warnings de Mongoose por schema paths reservados al arrancar.
+- Días sin push a main = 0 arranques del proceso; días con pushes = 1 arranque por deploy.
 
 ## 8. Patrones de incidente
 <!-- Síntoma → diagnóstico -->
 <!-- APPEND HERE -->
 
-_(Vacío — se llenará con incidentes reales.)_
+### Restarts altos en el hub + crash-loop `MODULE_NOT_FOUND` durante deploys
+<!-- detectado: 2026-07-28 | dominio: infra/deploy -->
+**Síntoma**: `pm2 jlist` muestra restarts acumulados altos (291 al 2026-07-28) en el hub; el error log llena de `Error: Cannot find module './route'` / `MODULE_NOT_FOUND` con requireStack dentro de `node_modules/express`. En el caso del 2026-07-28 hubo ~30 min sin servir (19:15→19:49 UTC) tras un deploy, con el CI reportando success igual (su health check solo greppea `pjn/api.*online` en `pm2 status`, que puede dar online entre intentos de crash).
+**Causa**: `ecosystem.config.js` tiene `watch: ["src"]` y el CI hace `git reset --hard` (toca src → watch restartea YA) seguido de `npm ci --production` (borra/reconstruye node_modules). El proceso re-arranca con express a medio instalar → crash-loop hasta que `npm ci` termina y el `pm2 reload` final lo levanta limpio. Los restarts acumulados correlacionan 1:1 con días de deploy (0 arranques en días sin push; 4-9 en días con pushes múltiples). `unstable_restarts` queda en 0 porque se resetea en cada reload.
+**Patrón de detección**: `grep -c MODULE_NOT_FOUND /root/.pm2/logs/pjn-api-error-5.log` > 0; cruzar `grep "Server listening"` del out log con `gh run list --workflow=deploy.yml`.
+**Acción**: en operación normal NO es crash del servicio — verificar que el último arranque coincida con un run de CI y que después haya tráfico normal. **RESUELTO 2026-07-28 en DOS pasos** (el primero solo no alcanzó):
+1. `27f8e11` — `watch: false` en `ecosystem.config.js`. Necesario pero insuficiente: el crash-loop persistió porque `npm ci` in-place borra `node_modules` con la app viva, y cualquier require lazy bajo tráfico (`kareem` de mongoose, p.ej.) crashea el proceso → PM2 lo relanza contra un árbol a medio instalar.
+2. `1bc465d` — `npm ci` en `.deps-staging/` + swap atómico de `node_modules` con `mv`, tanto en `.github/workflows/deploy.yml` como en `scripts/deploy-worker01.sh`.
+
+Verificado post-fix: deploy = exactamente +1 restart, 0 `MODULE_NOT_FOUND` nuevos. Baseline hub: restarts=325 (2026-07-28 21:31 UTC). Si el patrón reaparece → chequear que watch siga OFF y que el workflow siga usando el staging dir.
+
+### sshd del hub colgado (sin banner) con HTTP sirviendo normal
+<!-- detectado: 2026-07-28 | dominio: infra -->
+**Síntoma**: SSH al hub falla con "Connection timed out during banner exchange" (TCP conecta, sshd no responde) desde CUALQUIER origen, pero la API pública sigue 200 y el puerto 443 abierto. Duró ~30 min y se recuperó solo (saturación transitoria de sshd, probablemente MaxStartups por scanners — los logs muestran scanning constante).
+**Patrón de detección**: desde worker_01: `timeout 5 bash -c 'exec 3<>/dev/tcp/15.229.93.121/22; head -c 60 <&3'` → vacío = sshd colgado global; con banner = problema local/ban de IP.
+**Acción**: NO reiniciar nada — si HTTP sirve, el box está sano y solo está afectada la administración. Usar worker_01 (Tailscale) como punto de observación alternativo (`curl https://api.lawanalytics.app/...` desde ahí) y reintentar SSH cada 1 min hasta que vuelva.
 
 ## 9. Cosas que NO hacer
 
