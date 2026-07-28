@@ -565,7 +565,13 @@ exports.getDatasetConfig = async (req, res) => {
 exports.updateDatasetConfig = async (req, res) => {
 	try {
 		const $set = {};
+		const $unset = {};
 		for (const k of DATASET_CFG_EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
+		// fueros null o [] = "todos" (el worker usa el default dinámico).
+		if (req.body.fueros === null || (Array.isArray(req.body.fueros) && req.body.fueros.length === 0)) {
+			delete $set.fueros;
+			$unset.fueros = "";
+		}
 		// Reset de cursor por fuero (para re-escanear un fuero agotado):
 		// body.resetCursor = 'CIV' | ['CIV','CSS'] | '*'
 		if (req.body.resetCursor) {
@@ -573,11 +579,16 @@ exports.updateDatasetConfig = async (req, res) => {
 			if (fueros) for (const f of fueros) $set[`cursor.${f}`] = null;
 			else $set.cursor = {};
 		}
-		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
+		if (!Object.keys($set).length && !Object.keys($unset).length) {
+			return res.status(400).json({ success: false, message: "Nada para actualizar" });
+		}
 
-		await mongoose.connection.db.collection("plazos-dataset-config").updateOne({ _id: "global" }, { $set }, { upsert: true });
+		const update = {};
+		if (Object.keys($set).length) update.$set = $set;
+		if (Object.keys($unset).length) update.$unset = $unset;
+		await mongoose.connection.db.collection("plazos-dataset-config").updateOne({ _id: "global" }, update, { upsert: true });
 		const doc = await mongoose.connection.db.collection("plazos-dataset-config").findOne({ _id: "global" });
-		logger.info(`[plazos] dataset-config por user ${req.userId}: ${Object.keys($set).join(",")}`);
+		logger.info(`[plazos] dataset-config por user ${req.userId}: ${[...Object.keys($set), ...Object.keys($unset)].join(",")}`);
 		return res.json({ success: true, data: doc });
 	} catch (error) {
 		return fail(res, "updateDatasetConfig", error);
