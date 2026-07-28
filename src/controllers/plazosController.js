@@ -323,7 +323,40 @@ exports.createFeriados = async (req, res) => {
 
 // ── Dataset de plazos expresos (minería de reglas empíricas) ─────────────────
 
+// Umbral heurístico de "plazo sospechoso" (los plazos procesales típicos son
+// 3/5/6/10/15; >= 60 días casi siempre es una mención de otra cosa).
+const PLAZO_SOSPECHOSO = 60;
+
+// Dominante por grupo (fuero, objeto, acto) entre los NO descartados.
+async function dominantesPorGrupo() {
+	const grupos = await PlazoDatasetEjemplo.aggregate([
+		{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" } } },
+		{
+			$group: {
+				_id: { fuero: "$fuero", objeto: "$objeto", acto: "$acto", plazoDias: "$plazoDias" },
+				n: { $sum: 1 },
+			},
+		},
+		{ $sort: { n: -1 } },
+		{
+			$group: {
+				_id: { fuero: "$_id.fuero", objeto: "$_id.objeto", acto: "$_id.acto" },
+				total: { $sum: "$n" },
+				dominante: { $first: "$_id.plazoDias" },
+				dominanteN: { $first: "$n" },
+			},
+		},
+	]);
+	const map = new Map();
+	for (const g of grupos) {
+		map.set(`${g._id.fuero}|${g._id.objeto || ""}|${g._id.acto}`, { dominante: g.dominante, total: g.total, dominanteN: g.dominanteN });
+	}
+	return map;
+}
+
 // GET /admin/plazos/dataset — ejemplos, paginado.
+// ?dispersos=true → solo los que se apartan del plazo dominante de su grupo
+// o tienen valor sospechoso (>= 60 días) — la cola de revisión humana.
 exports.listDataset = async (req, res) => {
 	try {
 		const { page, limit, skip } = parsePagination(req);
@@ -332,26 +365,79 @@ exports.listDataset = async (req, res) => {
 		if (req.query.acto) filter.acto = req.query.acto;
 		if (req.query.objeto) filter.objeto = new RegExp(String(req.query.objeto).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 		if (req.query.conPlazo !== undefined) filter.sinPlazo = req.query.conPlazo !== "true";
+		if (req.query.revision) filter["revision.estado"] = req.query.revision === "sin_revisar"
+			? { $in: ["sin_revisar", null] }
+			: req.query.revision;
 
-		const [data, total] = await Promise.all([
-			PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).skip(skip).limit(limit).lean(),
-			PlazoDatasetEjemplo.countDocuments(filter),
-		]);
+		const dispersos = req.query.dispersos === "true";
+		let data;
+		let total;
+
+		if (dispersos) {
+			// Cola de revisión: apartados del dominante de su grupo + sospechosos.
+			filter.sinPlazo = false;
+			filter.plazoDias = { $ne: null };
+			const dominantes = await dominantesPorGrupo();
+			const todos = await PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).limit(2000).lean();
+			const marcados = todos
+				.map((e) => {
+					const grupo = dominantes.get(`${e.fuero}|${e.objeto || ""}|${e.acto}`) || null;
+					const apartado = grupo && grupo.total >= 2 && e.plazoDias !== grupo.dominante;
+					const sospechoso = e.plazoDias >= PLAZO_SOSPECHOSO;
+					return apartado || sospechoso
+						? { ...e, _disperso: { apartado: !!apartado, sospechoso, dominanteGrupo: grupo ? grupo.dominante : null, nGrupo: grupo ? grupo.total : 0 } }
+						: null;
+				})
+				.filter(Boolean);
+			total = marcados.length;
+			data = marcados.slice(skip, skip + limit);
+		} else {
+			[data, total] = await Promise.all([
+				PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).skip(skip).limit(limit).lean(),
+				PlazoDatasetEjemplo.countDocuments(filter),
+			]);
+		}
 		return paginated(res, data, total, page, limit);
 	} catch (error) {
 		return fail(res, "listDataset", error);
 	}
 };
 
+// PATCH /admin/plazos/dataset/:id/revision — confirmar o descartar un ejemplo.
+// Los descartados se excluyen de stats y candidatos (depuración sin borrar).
+exports.revisarDatasetEjemplo = async (req, res) => {
+	try {
+		const { estado, notas } = req.body || {};
+		if (!["confirmado", "descartado", "sin_revisar"].includes(estado)) {
+			return res.status(400).json({ success: false, message: "estado debe ser confirmado | descartado | sin_revisar" });
+		}
+		const doc = await PlazoDatasetEjemplo.findByIdAndUpdate(
+			req.params.id,
+			{ $set: { "revision.estado": estado, "revision.notas": notas || "", "revision.revisadoAt": new Date() } },
+			{ new: true }
+		).lean();
+		if (!doc) return res.status(404).json({ success: false, message: "Ejemplo no encontrado" });
+		logger.info(`[plazos] dataset ${req.params.id} → ${estado} por user ${req.userId}`);
+		return res.json({ success: true, data: doc });
+	} catch (error) {
+		return fail(res, "revisarDatasetEjemplo", error);
+	}
+};
+
 // GET /admin/plazos/dataset/stats
 exports.statsDataset = async (req, res) => {
 	try {
-		const [total, conPlazo, porFuero, porActo] = await Promise.all([
-			PlazoDatasetEjemplo.countDocuments({}),
-			PlazoDatasetEjemplo.countDocuments({ sinPlazo: false }),
-			PlazoDatasetEjemplo.aggregate([{ $group: { _id: "$fuero", n: { $sum: 1 }, conPlazo: { $sum: { $cond: ["$sinPlazo", 0, 1] } } } }]),
+		const noDescartado = { "revision.estado": { $ne: "descartado" } };
+		const [total, conPlazo, descartados, porFuero, porActo] = await Promise.all([
+			PlazoDatasetEjemplo.countDocuments(noDescartado),
+			PlazoDatasetEjemplo.countDocuments({ sinPlazo: false, ...noDescartado }),
+			PlazoDatasetEjemplo.countDocuments({ "revision.estado": "descartado" }),
 			PlazoDatasetEjemplo.aggregate([
-				{ $match: { sinPlazo: false } },
+				{ $match: noDescartado },
+				{ $group: { _id: "$fuero", n: { $sum: 1 }, conPlazo: { $sum: { $cond: ["$sinPlazo", 0, 1] } } } },
+			]),
+			PlazoDatasetEjemplo.aggregate([
+				{ $match: { sinPlazo: false, ...noDescartado } },
 				{ $group: { _id: "$acto", n: { $sum: 1 } } },
 				{ $sort: { n: -1 } },
 			]),
@@ -362,6 +448,7 @@ exports.statsDataset = async (req, res) => {
 				total,
 				conPlazo,
 				sinPlazo: total - conPlazo,
+				descartados,
 				porFuero: porFuero.map((f) => ({ fuero: f._id, total: f.n, conPlazo: f.conPlazo })),
 				porActo: porActo.map((a) => ({ acto: a._id, n: a.n })),
 			},
@@ -381,7 +468,7 @@ exports.candidatosDataset = async (req, res) => {
 		const minShare = Math.min(Math.max(parseFloat(req.query.minShare) || 0.8, 0.5), 1);
 
 		const grupos = await PlazoDatasetEjemplo.aggregate([
-			{ $match: { sinPlazo: false, plazoDias: { $ne: null } } },
+			{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" } } },
 			{
 				$group: {
 					_id: { fuero: "$fuero", objeto: "$objeto", acto: "$acto", plazoDias: "$plazoDias", tipoPlazo: "$tipoPlazo" },

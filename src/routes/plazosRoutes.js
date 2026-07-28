@@ -29,6 +29,7 @@ router.patch("/normativa/:id", verifyToken, verifyAdmin, ctrl.updateNormativa);
 router.get("/dataset", verifyToken, verifyAdmin, ctrl.listDataset);
 router.get("/dataset/stats", verifyToken, verifyAdmin, ctrl.statsDataset);
 router.get("/dataset/candidatos", verifyToken, verifyAdmin, ctrl.candidatosDataset);
+router.patch("/dataset/:id/revision", verifyToken, verifyAdmin, ctrl.revisarDatasetEjemplo);
 
 // Feriados (calendario de días inhábiles)
 router.get("/feriados", verifyToken, verifyAdmin, ctrl.listFeriados);
