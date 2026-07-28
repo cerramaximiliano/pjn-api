@@ -149,4 +149,11 @@ router.use('/admin/trayectorias', trayectoriasRoutes);
 const etapaStatsRoutes = require('./etapaStatsRoutes');
 router.use('/admin/etapa-stats', etapaStatsRoutes);
 
+// Subsistema de plazos procesales: notificaciones/cédulas con vencimiento
+// computado, reglas de normativa subsidiaria y calendario de feriados.
+// ⚠️ Datos reales solo en la instancia LOCAL (colecciones en Mongo de
+// worker_01) — la admin UI consume vía workersAxios.
+const plazosRoutes = require('./plazosRoutes');
+router.use('/admin/plazos', plazosRoutes);
+
 module.exports = router;
