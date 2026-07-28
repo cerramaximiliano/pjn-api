@@ -7,7 +7,6 @@
  * un cambio de cronPattern se re-agenda en caliente (sin restart PM2).
  * Solo tiene datos reales en la instancia LOCAL de pjn-api (worker_01).
  */
-const cronValidate = require("node-cron").validate;
 const pjn = require("pjn-models");
 const { logger } = require("../config/pino");
 
@@ -36,8 +35,14 @@ exports.updateSettings = async (req, res) => {
 		const $set = {};
 		for (const k of EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
 		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
-		if ($set.cronPattern !== undefined && !cronValidate($set.cronPattern)) {
-			return res.status(400).json({ success: false, message: `cronPattern inválido: ${$set.cronPattern}` });
+		// Validación liviana (5-6 tokens cron). La validación estricta la hace
+		// el worker con cron.validate antes de re-agendar — un patrón inválido
+		// no rompe nada: el worker mantiene el cron anterior.
+		if ($set.cronPattern !== undefined) {
+			const tokens = String($set.cronPattern).trim().split(/\s+/);
+			if (tokens.length < 5 || tokens.length > 6 || !tokens.every((t) => /^[\d*,\-/A-Za-z?#]+$/.test(t))) {
+				return res.status(400).json({ success: false, message: `cronPattern inválido: ${$set.cronPattern}` });
+			}
 		}
 
 		const doc = await ConfiguracionPlazosWorker.findByIdAndUpdate("global", { $set }, {
