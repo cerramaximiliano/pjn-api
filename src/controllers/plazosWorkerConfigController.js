@@ -27,7 +27,10 @@ exports.getFull = async (req, res) => {
 	}
 };
 
-const EDITABLE = ["enabled", "cronPattern", "lockTimeoutMinutes", "maxRetries", "downloadTimeoutMs", "scanCharsPerPageThreshold"];
+const EDITABLE = [
+	"enabled", "cronPattern", "lockTimeoutMinutes", "maxRetries", "downloadTimeoutMs",
+	"scanCharsPerPageThreshold", "mirrorToAtlas", "batchPorCiclo", "delayEntreDocsMs",
+];
 
 // PATCH /plazos-worker-config/settings
 exports.updateSettings = async (req, res) => {
