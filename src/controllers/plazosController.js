@@ -615,6 +615,86 @@ exports.updateDatasetConfig = async (req, res) => {
 	}
 };
 
+// ── Monitoreo consolidado del subsistema ─────────────────────────────────────
+
+// GET /admin/plazos/monitor — salud de todos los workers del subsistema de
+// plazos + colas + throughput, en una sola llamada (vista admin Monitoreo).
+exports.monitor = async (req, res) => {
+	try {
+		const db = mongoose.connection.db;
+		const now = Date.now();
+		const hoy = new Date(new Date().toISOString().slice(0, 10));
+		const alive = (t, umbralMin) => !!t && now - new Date(t).getTime() < umbralMin * 60 * 1000;
+
+		const [wCfg, dsCfg, foCfg, cola, detectadasHoy, computadasHoy, revisionManual, updaters, dispersosAprox] = await Promise.all([
+			db.collection("plazos-worker-config").findOne({ _id: "global" }),
+			db.collection("plazos-dataset-config").findOne({ _id: "global" }),
+			db.collection("plazos-folders-config").findOne({ _id: "global" }),
+			PlazoNotificacion.aggregate([{ $group: { _id: "$processingStatus", n: { $sum: 1 } } }]),
+			PlazoNotificacion.countDocuments({ detectedAt: { $gte: hoy } }),
+			PlazoNotificacion.countDocuments({ processingStatus: "computed", processedAt: { $gte: hoy } }),
+			PlazoNotificacion.countDocuments({ processingStatus: "revision_manual" }),
+			db.collection("configuracion-update-movimientos").find({}).project({ fuero: 1, enabled: 1, updateProgress: 1 }).toArray(),
+			PlazoDatasetEjemplo.countDocuments({ "revision.estado": { $in: [null, "sin_revisar"] }, sinPlazo: false, plazoDias: { $gte: 60 } }),
+		]);
+
+		const workers = {
+			plazosWorker: {
+				enabled: wCfg?.enabled !== false,
+				alive: alive(wCfg?.heartbeat?.lastCycleAt, 5),
+				lastCycleAt: wCfg?.heartbeat?.lastCycleAt || null,
+				lastResult: wCfg?.heartbeat?.lastResult || null,
+				stats: wCfg?.stats || null,
+			},
+			datasetWorker: {
+				enabled: dsCfg?.enabled !== false,
+				// barre fueros vacíos sin tocar heartbeat — umbral generoso
+				alive: alive(dsCfg?.heartbeat?.lastCycleAt, 60),
+				lastCycleAt: dsCfg?.heartbeat?.lastCycleAt || null,
+				lastFuero: dsCfg?.heartbeat?.lastFuero || null,
+				hoy: dsCfg?.daily || null,
+				dailyLimit: dsCfg?.dailyLimit || null,
+				stats: dsCfg?.stats || null,
+				fuerosAgotados: Object.entries(dsCfg?.cursor || {}).filter(([, v]) => v === "DONE").map(([f]) => f),
+			},
+			foldersWorker: {
+				enabled: foCfg?.enabled !== false,
+				alive: alive(foCfg?.heartbeat?.lastCycleAt, 15),
+				lastCycleAt: foCfg?.heartbeat?.lastCycleAt || null,
+				lastRun: foCfg?.heartbeat?.lastRun || null,
+				source: foCfg?.source || "atlas",
+				dryRun: !!foCfg?.dryRun,
+				userFilter: foCfg?.userFilter || null,
+				stats: foCfg?.stats || null,
+			},
+		};
+
+		const alertas = [];
+		if (!workers.plazosWorker.alive && workers.plazosWorker.enabled) alertas.push("plazos-worker sin heartbeat (>5 min)");
+		if (!workers.datasetWorker.alive && workers.datasetWorker.enabled) alertas.push("plazos-dataset-worker sin heartbeat (>60 min)");
+		if (!workers.foldersWorker.alive && workers.foldersWorker.enabled) alertas.push("plazos-folders-worker sin heartbeat (>15 min)");
+		const colaMap = Object.fromEntries(cola.map((s) => [s._id, s.n]));
+		if ((colaMap.pending || 0) > 500) alertas.push(`cola pending alta: ${colaMap.pending}`);
+		if ((colaMap.failed || 0) > 20) alertas.push(`fallidas acumuladas: ${colaMap.failed}`);
+
+		return res.json({
+			success: true,
+			data: {
+				workers,
+				cola: colaMap,
+				hoy: { detectadas: detectadasHoy, computadas: computadasHoy },
+				revisionManual,
+				dispersosSinRevisar: dispersosAprox,
+				updaters: updaters.map((u) => ({ fuero: u.fuero, enabled: u.enabled, processedToday: u.updateProgress?.processedToday ?? null })),
+				alertas,
+				generatedAt: new Date(),
+			},
+		});
+	} catch (error) {
+		return fail(res, "monitor", error);
+	}
+};
+
 // PATCH /admin/plazos/feriados/:id — editar (verificar/deshabilitar/notas).
 exports.updateFeriado = async (req, res) => {
 	try {

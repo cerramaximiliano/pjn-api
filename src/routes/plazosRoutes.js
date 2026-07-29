@@ -20,6 +20,9 @@ router.post("/notificaciones/:id/reprocess", verifyToken, verifyAdmin, ctrl.repr
 // Vencimientos próximos (vista operativa)
 router.get("/vencimientos", verifyToken, verifyAdmin, ctrl.listVencimientos);
 
+// Monitoreo consolidado del subsistema (workers + colas + alertas)
+router.get("/monitor", verifyToken, verifyAdmin, ctrl.monitor);
+
 // Normativa (reglas de plazo subsidiario — curación del admin)
 router.get("/normativa", verifyToken, verifyAdmin, ctrl.listNormativa);
 router.post("/normativa", verifyToken, verifyAdmin, ctrl.createNormativa);
