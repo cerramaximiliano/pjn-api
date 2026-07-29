@@ -330,7 +330,9 @@ const PLAZO_SOSPECHOSO = 60;
 // Dominante por grupo (fuero, objeto, acto) entre los NO descartados.
 async function dominantesPorGrupo() {
 	const grupos = await PlazoDatasetEjemplo.aggregate([
-		{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" } } },
+		// Solo plazos procesales: los de pago/cumplimiento son vencimientos
+		// reales pero no definen reglas de contestación/apelación/traslado.
+		{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" }, naturaleza: { $nin: ["pago", "cumplimiento"] } } },
 		{
 			$group: {
 				_id: { fuero: "$fuero", objeto: "$objeto", acto: "$acto", plazoDias: "$plazoDias" },
@@ -365,6 +367,7 @@ exports.listDataset = async (req, res) => {
 		if (req.query.acto) filter.acto = req.query.acto;
 		if (req.query.objeto) filter.objeto = new RegExp(String(req.query.objeto).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 		if (req.query.conPlazo !== undefined) filter.sinPlazo = req.query.conPlazo !== "true";
+		if (req.query.naturaleza) filter.naturaleza = req.query.naturaleza;
 		if (req.query.revision) filter["revision.estado"] = req.query.revision === "sin_revisar"
 			? { $in: ["sin_revisar", null] }
 			: req.query.revision;
@@ -403,21 +406,38 @@ exports.listDataset = async (req, res) => {
 	}
 };
 
-// PATCH /admin/plazos/dataset/:id/revision — confirmar o descartar un ejemplo.
-// Los descartados se excluyen de stats y candidatos (depuración sin borrar).
+// PATCH /admin/plazos/dataset/:id/revision — confirmar/descartar y CORREGIR
+// labels (acto/naturaleza). Una corrección humana marca revision.corregido
+// = etiqueta ORO (nunca la pisa una re-cosecha) — la materia prima real
+// para entrenar el clasificador de acto.
 exports.revisarDatasetEjemplo = async (req, res) => {
 	try {
-		const { estado, notas } = req.body || {};
+		const { estado, notas, acto, naturaleza } = req.body || {};
 		if (!["confirmado", "descartado", "sin_revisar"].includes(estado)) {
 			return res.status(400).json({ success: false, message: "estado debe ser confirmado | descartado | sin_revisar" });
 		}
-		const doc = await PlazoDatasetEjemplo.findByIdAndUpdate(
-			req.params.id,
-			{ $set: { "revision.estado": estado, "revision.notas": notas || "", "revision.revisadoAt": new Date() } },
-			{ new: true }
-		).lean();
+		if (naturaleza !== undefined && naturaleza !== null && !["procesal", "pago", "cumplimiento", "otro"].includes(naturaleza)) {
+			return res.status(400).json({ success: false, message: "naturaleza inválida" });
+		}
+		if (acto !== undefined && acto !== null && !/^[a-z0-9_]{2,60}$/.test(acto)) {
+			return res.status(400).json({ success: false, message: "acto debe ser slug snake_case" });
+		}
+
+		const $set = { "revision.estado": estado, "revision.notas": notas || "", "revision.revisadoAt": new Date() };
+		let corregido = false;
+		if (acto !== undefined && acto !== null) {
+			$set.acto = acto;
+			corregido = true;
+		}
+		if (naturaleza !== undefined && naturaleza !== null) {
+			$set.naturaleza = naturaleza;
+			corregido = true;
+		}
+		if (corregido) $set["revision.corregido"] = true;
+
+		const doc = await PlazoDatasetEjemplo.findByIdAndUpdate(req.params.id, { $set }, { new: true }).lean();
 		if (!doc) return res.status(404).json({ success: false, message: "Ejemplo no encontrado" });
-		logger.info(`[plazos] dataset ${req.params.id} → ${estado} por user ${req.userId}`);
+		logger.info(`[plazos] dataset ${req.params.id} → ${estado}${corregido ? " (labels corregidos)" : ""} por user ${req.userId}`);
 		return res.json({ success: true, data: doc });
 	} catch (error) {
 		return fail(res, "revisarDatasetEjemplo", error);
@@ -468,7 +488,7 @@ exports.candidatosDataset = async (req, res) => {
 		const minShare = Math.min(Math.max(parseFloat(req.query.minShare) || 0.8, 0.5), 1);
 
 		const grupos = await PlazoDatasetEjemplo.aggregate([
-			{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" } } },
+			{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" }, naturaleza: { $nin: ["pago", "cumplimiento"] } } },
 			{
 				$group: {
 					_id: { fuero: "$fuero", objeto: "$objeto", acto: "$acto", plazoDias: "$plazoDias", tipoPlazo: "$tipoPlazo" },
