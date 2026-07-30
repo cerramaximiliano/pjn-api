@@ -164,9 +164,38 @@ exports.getCausaParaAnotar = async (req, res) => {
             etiquetaDebil: debilesPorDia[dayKey(m.fecha)] || null,
         }));
 
-        // Cuerpos capturados (Atlas) segmentados.
+        // Cuerpos: primero el corpus local (pjn-movement-texts, construido por
+        // scripts/corpus de pjn-workers-scraping), después sentencias-capturadas.
         let cuerpos = [];
-        const db = await atlasDb().catch(() => null);
+        const textosLocales = await mongoose.connection.db.collection("pjn-movement-texts")
+            .find({ causaId: new mongoose.Types.ObjectId(id) })
+            .project({ texto: 1, sourceId: 1 })
+            .toArray()
+            .catch(() => []);
+        if (textosLocales.length) {
+            // Metadata (fecha/detalle/url) del hermano operativo para matchear con movimientos.
+            const hermanos = await mongoose.connection.db.collection("pjn-movements")
+                .find({ causaId: new mongoose.Types.ObjectId(id), textoStatus: { $in: ["extracted", "ocr_done"] } })
+                .project({ url: 1, fecha: 1, detalle: 1, sourceId: 1 })
+                .toArray()
+                .catch(() => []);
+            const metaPorSource = new Map(hermanos.map((h) => [h.sourceId, h]));
+            for (const t of textosLocales) {
+                const meta = metaPorSource.get(t.sourceId);
+                if (!meta) continue;
+                const texto = t.texto || "";
+                const seg = segmentar(texto.length > 20000 ? texto.slice(0, 2000) + texto.slice(-8000) : texto);
+                cuerpos.push({
+                    url: meta.url, dia: dayKey(meta.fecha), detalle: (meta.detalle || "").trim(),
+                    caracteres: texto.length,
+                    encabezado: seg.encabezado.slice(0, 400),
+                    dispositiva: seg.dispositiva.slice(0, 2500),
+                    tieneDispositiva: seg.tieneDispositiva,
+                    colaTexto: seg.tieneDispositiva ? null : texto.slice(-1800),
+                });
+            }
+        }
+        const db = cuerpos.length ? null : await atlasDb().catch(() => null);
         if (db) {
             const docs = await db.collection("sentencias-capturadas")
                 .find({ causaId: new mongoose.Types.ObjectId(id) })
@@ -315,6 +344,19 @@ exports.getCuerpoOnDemand = async (req, res) => {
         const mov = causa && causa.movimiento && causa.movimiento[parseInt(idx, 10)];
         if (!mov) return res.status(404).json({ success: false, message: "movimiento no encontrado" });
         if (!mov.url) return res.status(400).json({ success: false, message: "el movimiento no tiene documento asociado" });
+
+        // 0. Corpus local (pjn-movement-texts, vía el hermano operativo por url)
+        const hermano = await mongoose.connection.db.collection("pjn-movements")
+            .findOne({ causaId: new mongoose.Types.ObjectId(id), url: mov.url }, { projection: { _id: 1 } })
+            .catch(() => null);
+        if (hermano) {
+            const textoDoc = await mongoose.connection.db.collection("pjn-movement-texts")
+                .findOne({ _id: hermano._id }, { projection: { texto: 1 } })
+                .catch(() => null);
+            if (textoDoc && textoDoc.texto && textoDoc.texto.length > 100) {
+                return res.json({ success: true, cuerpo: armarRespuestaCuerpo(textoDoc.texto, "corpus") });
+            }
+        }
 
         // 1. Cache local
         const cacheado = await cacheCol().findOne({ url: mov.url });
