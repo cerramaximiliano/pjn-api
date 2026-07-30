@@ -145,6 +145,21 @@ const causasController = {
       // Agregar el array de movimientos con el nombre esperado por el frontend
       // El campo en la BD es "movimiento" pero el frontend espera "movimientos"
       if (causa.movimiento && Array.isArray(causa.movimiento)) {
+        // Espejo en el corpus documental (pjn-movements/pjn-movement-texts):
+        // indicadores PDF/TXT por movimiento para la UI admin. Best-effort.
+        try {
+          const espejoCorpus = new Map();
+          await Model.db.db.collection('pjn-movements')
+            .find({ causaId: causa._id, url: { $ne: null } })
+            .project({ url: 1, pdfStatus: 1, textoStatus: 1 })
+            .forEach((d) => espejoCorpus.set(d.url, { pdf: d.pdfStatus || null, texto: d.textoStatus || null }));
+          if (espejoCorpus.size) {
+            causa.movimiento = causa.movimiento.map((m) => ({
+              ...m,
+              corpus: (m.url && espejoCorpus.get(m.url)) || null,
+            }));
+          }
+        } catch (_e) { /* indicadores best-effort */ }
         causa.movimientos = causa.movimiento;
       }
 
@@ -816,7 +831,25 @@ const causasController = {
       // Aplicar paginación
       const totalMovimientos = movimientosOrdenados.length;
       const totalPages = Math.ceil(totalMovimientos / limit);
-      const movimientosPaginados = movimientosOrdenados.slice(skip, skip + limit);
+      const movimientosPaginadosRaw = movimientosOrdenados.slice(skip, skip + limit);
+
+      // Espejo en el corpus documental (pjn-movements: PDF en S3 + texto
+      // extraído en pjn-movement-texts) — indicadores para la UI admin.
+      const espejoCorpus = new Map();
+      try {
+        const urls = movimientosPaginadosRaw.map((m) => m.url).filter(Boolean);
+        if (urls.length) {
+          await Model.db.db.collection('pjn-movements')
+            .find({ causaId: causa._id, url: { $in: urls } })
+            .project({ url: 1, pdfStatus: 1, textoStatus: 1 })
+            .forEach((d) => espejoCorpus.set(d.url, { pdf: d.pdfStatus || null, texto: d.textoStatus || null }));
+        }
+      } catch (_e) { /* indicadores best-effort */ }
+      const movimientosPaginados = movimientosPaginadosRaw.map((m) => {
+        const obj = m.toObject ? m.toObject() : { ...m };
+        obj.corpus = (m.url && espejoCorpus.get(m.url)) || null;
+        return obj;
+      });
 
       res.json({
         success: true,

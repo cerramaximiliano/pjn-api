@@ -155,6 +155,15 @@ exports.getCausaParaAnotar = async (req, res) => {
         (ep.hitos || []).forEach((h) => { const k = h.fecha && dayKey(h.fecha); if (k) debilesPorDia[k] = "hito:" + h.tipo; });
         (ep.timeline || []).forEach((s) => { const k = s.desde && dayKey(s.desde); if (k) debilesPorDia[k] = s.etapa; });
 
+        // Espejo en el corpus: pjn-movements (PDF) + pjn-movement-texts (texto),
+        // por url. Sirve para los indicadores por movimiento en el editor.
+        const espejo = new Map();
+        await mongoose.connection.db.collection("pjn-movements")
+            .find({ causaId: new mongoose.Types.ObjectId(id), url: { $ne: null } })
+            .project({ url: 1, pdfStatus: 1, textoStatus: 1 })
+            .forEach((d) => espejo.set(d.url, { pdf: d.pdfStatus || null, texto: d.textoStatus || null }))
+            .catch(() => {});
+
         const movimientos = (causa.movimiento || []).map((m, idx) => ({
             idx,
             fecha: m.fecha, dia: dayKey(m.fecha),
@@ -162,6 +171,7 @@ exports.getCausaParaAnotar = async (req, res) => {
             detalle: (m.detalle || "").trim(),
             url: m.url || null,
             etiquetaDebil: debilesPorDia[dayKey(m.fecha)] || null,
+            corpus: (m.url && espejo.get(m.url)) || null,
         }));
 
         // Cuerpos: primero el corpus local (pjn-movement-texts, construido por
