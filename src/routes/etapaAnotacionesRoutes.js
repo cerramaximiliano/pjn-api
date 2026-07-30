@@ -8,6 +8,7 @@ const { verifyToken, verifyAdmin } = require("../middleware/auth");
 router.get("/", verifyToken, verifyAdmin, ctrl.getCola);
 router.get("/membership", verifyToken, verifyAdmin, ctrl.getMembership);
 router.get("/causa/:fuero/:id", verifyToken, verifyAdmin, ctrl.getCausaParaAnotar);
+router.get("/cuerpo/:fuero/:id/:idx", verifyToken, verifyAdmin, ctrl.getCuerpoOnDemand);
 router.post("/causa/:fuero/:id", verifyToken, verifyAdmin, ctrl.agregarACola);
 router.put("/causa/:fuero/:id", verifyToken, verifyAdmin, ctrl.guardarAnotaciones);
 router.delete("/causa/:fuero/:id", verifyToken, verifyAdmin, ctrl.quitarDeCola);

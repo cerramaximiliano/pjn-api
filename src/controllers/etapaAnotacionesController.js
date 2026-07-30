@@ -248,6 +248,7 @@ exports.guardarAnotaciones = async (req, res) => {
         const { id } = req.params;
         const { anotaciones, notasCausa, estado } = req.body || {};
         const set = { updatedAt: new Date(), actualizadoPor: (req.user && (req.user.email || req.user.id)) || "admin" };
+        if (req.body && req.body.limpiarTodo === true) set.anotaciones = {};
         if (typeof notasCausa === "string") set.notasCausa = notasCausa.slice(0, 5000);
         if (estado && ESTADOS.includes(estado)) set.estado = estado;
         if (anotaciones && typeof anotaciones === "object") {
@@ -279,6 +280,87 @@ exports.guardarAnotaciones = async (req, res) => {
     } catch (err) {
         logger.error(`etapa-anotaciones guardar: ${err.message}`);
         res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+// ── GET /api/admin/etapa-anotaciones/cuerpo/:fuero/:id/:idx ───────────────────
+// Cuerpo bajo demanda para un movimiento con URL del viewer (las URLs del PJN
+// no caducan). Orden: cache local → sentencias-capturadas (Atlas) → descarga
+// del PDF + pdf-parse. Cachea en `etapa-cuerpos-cache` (Mongo local).
+const axios = require("axios");
+const pdfParse = require("pdf-parse");
+
+function cacheCol() {
+    return mongoose.connection.db.collection("etapa-cuerpos-cache");
+}
+
+function armarRespuestaCuerpo(texto, fuente) {
+    const seg = segmentar(texto.length > 20000 ? texto.slice(0, 2000) + texto.slice(-8000) : texto);
+    return {
+        fuente,
+        caracteres: texto.length,
+        encabezado: seg.encabezado.slice(0, 400),
+        dispositiva: seg.dispositiva.slice(0, 2500),
+        tieneDispositiva: seg.tieneDispositiva,
+        colaTexto: seg.tieneDispositiva ? null : texto.slice(-1800),
+    };
+}
+
+exports.getCuerpoOnDemand = async (req, res) => {
+    try {
+        const { fuero, id, idx } = req.params;
+        const cfg = FUERO_MODEL[fuero];
+        if (!cfg) return res.status(400).json({ success: false, message: `fuero inválido: ${fuero}` });
+        const causa = await cfg.model().findById(id).select("movimiento").lean();
+        const mov = causa && causa.movimiento && causa.movimiento[parseInt(idx, 10)];
+        if (!mov) return res.status(404).json({ success: false, message: "movimiento no encontrado" });
+        if (!mov.url) return res.status(400).json({ success: false, message: "el movimiento no tiene documento asociado" });
+
+        // 1. Cache local
+        const cacheado = await cacheCol().findOne({ url: mov.url });
+        if (cacheado) {
+            return res.json({ success: true, cuerpo: armarRespuestaCuerpo(cacheado.texto, "cache") });
+        }
+
+        // 2. Ya capturado por el pipeline de sentencias (Atlas)
+        const db = await atlasDb().catch(() => null);
+        if (db) {
+            const doc = await db.collection("sentencias-capturadas").findOne(
+                { causaId: new mongoose.Types.ObjectId(id), url: mov.url },
+                { projection: { "processingResult.text": 1, "ocrResult.text": 1 } }
+            );
+            const texto = doc && (((doc.processingResult || {}).text) || ((doc.ocrResult || {}).text));
+            if (texto && texto.length > 200) {
+                await cacheCol().updateOne({ url: mov.url }, { $set: { url: mov.url, texto, fuente: "sentencias-capturadas", createdAt: new Date() } }, { upsert: true });
+                return res.json({ success: true, cuerpo: armarRespuestaCuerpo(texto, "sentencias-capturadas") });
+            }
+        }
+
+        // 3. Descarga directa del viewer + pdf-parse
+        const resp = await axios.get(mov.url, {
+            responseType: "arraybuffer",
+            timeout: 25000,
+            headers: {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
+                Accept: "application/pdf,*/*",
+            },
+            validateStatus: (s) => s >= 200 && s < 300,
+        });
+        const contentType = (resp.headers["content-type"] || "").toLowerCase();
+        const buffer = Buffer.from(resp.data);
+        if (!contentType.includes("pdf") || buffer.length < 500) {
+            return res.status(422).json({ success: false, message: "el viewer no devolvió un PDF válido" });
+        }
+        const parsed = await pdfParse(buffer);
+        const texto = (parsed.text || "").trim();
+        if (texto.length < 100) {
+            return res.status(422).json({ success: false, message: `documento escaneado o sin texto extraíble (${texto.length} caracteres — requiere OCR)`, escaneado: true });
+        }
+        await cacheCol().updateOne({ url: mov.url }, { $set: { url: mov.url, texto, fuente: "descarga", createdAt: new Date() } }, { upsert: true });
+        res.json({ success: true, cuerpo: armarRespuestaCuerpo(texto, "descarga") });
+    } catch (err) {
+        logger.error(`etapa-anotaciones cuerpo: ${err.message}`);
+        res.status(500).json({ success: false, message: `no se pudo obtener el documento: ${err.message}` });
     }
 };
 
