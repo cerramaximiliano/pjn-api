@@ -149,6 +149,12 @@ router.use('/admin/trayectorias', trayectoriasRoutes);
 const etapaStatsRoutes = require('./etapaStatsRoutes');
 router.use('/admin/etapa-stats', etapaStatsRoutes);
 
+// Etiquetado experto del dataset de etapas (vista admin /admin/causas/etiquetado
+// + botón en /admin/causas/verified). ⚠️ Cola y anotaciones viven en la Mongo
+// LOCAL de worker_01 (las lee el generador de dataset) — consumir vía workersAxios.
+const etapaAnotacionesRoutes = require('./etapaAnotacionesRoutes');
+router.use('/admin/etapa-anotaciones', etapaAnotacionesRoutes);
+
 // Subsistema de plazos procesales: notificaciones/cédulas con vencimiento
 // computado, reglas de normativa subsidiaria y calendario de feriados.
 // ⚠️ Datos reales solo en la instancia LOCAL (colecciones en Mongo de
