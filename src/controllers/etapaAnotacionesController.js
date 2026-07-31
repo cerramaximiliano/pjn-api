@@ -56,7 +56,7 @@ const DIMENSIONES = {
     ],
     estadoImpugnatorio: ["recurrible", "recurrida", "firme", "no_determinado"],
     actoProcesal: [
-        "corre_traslado", "intima", "fija_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
+        "corre_traslado", "da_vista", "intima", "fija_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
         "tiene_presente", "agrega_documentacion", "abre_a_prueba", "declara_causa_puro_derecho",
         "pasa_autos_sentencia", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "resuelve_recurso", "resuelve_fondo", "homologa_acuerdo",
