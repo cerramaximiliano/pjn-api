@@ -59,7 +59,7 @@ const DIMENSIONES = {
         "corre_traslado", "intima", "fija_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
         "tiene_presente", "agrega_documentacion", "abre_a_prueba", "declara_causa_puro_derecho",
         "pasa_autos_sentencia", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
-        "declara_caducidad", "concede_recurso", "deniega_recurso", "eleva_autos", "resuelve_fondo", "homologa_acuerdo",
+        "declara_caducidad", "concede_recurso", "deniega_recurso", "eleva_autos", "resuelve_recurso", "resuelve_fondo", "homologa_acuerdo",
         "registra_pago", "ordena_giro", "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
     ],
     resultado: [
