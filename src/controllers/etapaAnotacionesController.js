@@ -238,15 +238,9 @@ exports.getCausaParaAnotar = async (req, res) => {
             for (const t of textosLocales) {
                 const meta = metaPorSource.get(t.sourceId);
                 if (!meta) continue;
-                const texto = t.texto || "";
-                const seg = segmentar(texto.length > 20000 ? texto.slice(0, 2000) + texto.slice(-8000) : texto);
                 cuerpos.push({
                     url: meta.url, dia: dayKey(meta.fecha), detalle: (meta.detalle || "").trim(),
-                    caracteres: texto.length,
-                    encabezado: seg.encabezado.slice(0, 400),
-                    dispositiva: seg.dispositiva.slice(0, 2500),
-                    tieneDispositiva: seg.tieneDispositiva,
-                    colaTexto: seg.tieneDispositiva ? null : texto.slice(-1800),
+                    ...presentarCuerpo(t.texto || ""),
                 });
             }
         }
@@ -258,14 +252,9 @@ exports.getCausaParaAnotar = async (req, res) => {
                 .toArray();
             cuerpos = docs.map((d) => {
                 const texto = (d.processingResult && d.processingResult.text) || (d.ocrResult && d.ocrResult.text) || "";
-                const seg = segmentar(texto.length > 20000 ? texto.slice(0, 2000) + texto.slice(-8000) : texto);
                 return {
                     url: d.url, dia: dayKey(d.movimientoFecha), detalle: (d.movimientoDetalle || "").trim(),
-                    caracteres: texto.length,
-                    encabezado: seg.encabezado.slice(0, 400),
-                    dispositiva: seg.dispositiva.slice(0, 2500),
-                    tieneDispositiva: seg.tieneDispositiva,
-                    colaTexto: seg.tieneDispositiva ? null : texto.slice(-1800),
+                    ...presentarCuerpo(texto),
                 };
             });
         }
@@ -409,16 +398,39 @@ function cacheCol() {
     return mongoose.connection.db.collection("etapa-cuerpos-cache");
 }
 
+// Corta en un límite de palabra/línea (nunca a mitad de palabra).
+function cortarFin(s, max) {
+    if (!s || s.length <= max) return s || "";
+    const c = s.slice(0, max);
+    const i = Math.max(c.lastIndexOf("\n"), c.lastIndexOf(" "));
+    return (i > max * 0.6 ? c.slice(0, i) : c) + " […]";
+}
+// Al cortar por el inicio, arranca en la próxima línea completa.
+function cortarInicio(s) {
+    const nl = s.indexOf("\n");
+    return nl > 0 && nl < 150 ? "[…] " + s.slice(nl + 1) : s;
+}
+
+// Presentación del cuerpo para el editor. Documentos cortos (providencias):
+// el texto completo ES la parte operativa — sin segmentar ni solapar.
+const CUERPO_CORTO = 2600;
+function presentarCuerpo(texto) {
+    const t = (texto || "").trim();
+    if (t.length <= CUERPO_CORTO) {
+        return { caracteres: t.length, completo: t, encabezado: null, dispositiva: null, tieneDispositiva: false, colaTexto: null };
+    }
+    const seg = segmentar(t.length > 20000 ? t.slice(0, 2000) + t.slice(-8000) : t);
+    const encabezado = cortarFin(seg.encabezado, 400);
+    if (seg.tieneDispositiva) {
+        return { caracteres: t.length, completo: null, encabezado, dispositiva: cortarFin(seg.dispositiva, 2500), tieneDispositiva: true, colaTexto: null };
+    }
+    // Sin dispositiva detectada: la cola arranca DESPUÉS del encabezado (sin solaparse).
+    const inicioCola = Math.max(Math.min(400, t.length), t.length - 1800);
+    return { caracteres: t.length, completo: null, encabezado, dispositiva: null, tieneDispositiva: false, colaTexto: cortarInicio(t.slice(inicioCola)) };
+}
+
 function armarRespuestaCuerpo(texto, fuente) {
-    const seg = segmentar(texto.length > 20000 ? texto.slice(0, 2000) + texto.slice(-8000) : texto);
-    return {
-        fuente,
-        caracteres: texto.length,
-        encabezado: seg.encabezado.slice(0, 400),
-        dispositiva: seg.dispositiva.slice(0, 2500),
-        tieneDispositiva: seg.tieneDispositiva,
-        colaTexto: seg.tieneDispositiva ? null : texto.slice(-1800),
-    };
+    return { fuente, ...presentarCuerpo(texto) };
 }
 
 exports.getCuerpoOnDemand = async (req, res) => {
