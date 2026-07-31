@@ -70,6 +70,24 @@ const DIMENSIONES = {
         "actora", "demandada", "ambas_partes", "perito", "testigo", "tercero",
         "organismo_publico", "letrado", "sindico", "banco_o_registro", "oficial_de_justicia", "otro",
     ],
+    accionRequerida: [
+        "contestar_demanda", "contestar_traslado", "contestar_agravios", "expresar_agravios",
+        "acompanar_documental", "acompanar_bono", "acreditar_personeria", "constituir_domicilio",
+        "subsanar_defecto", "depositar_suma", "pagar_tasa", "presentar_liquidacion",
+        "impugnar_liquidacion", "impugnar_pericia", "producir_prueba", "presentar_informe",
+        "comparecer_audiencia", "diligenciar_cedula", "presentar_oficio", "integrar_copias",
+        "cumplir_intimacion", "otro",
+    ],
+    etiquetaFinal: [
+        "demanda", "traba_litis", "prueba", "puro_derecho", "alegatos", "autos_sentencia",
+        "sentencia_primera", "segunda_instancia", "sentencia_camara", "recurso_extraordinario",
+        "sentencia_firme", "fin_litigio", "ejecucion", "sentencia_remate", "archivo",
+        "apertura_sucesion", "edictos", "declaratoria", "inscripcion", "particion",
+        "apertura_concurso", "verificacion", "informe_general", "categorizacion", "acuerdo", "homologacion",
+        "hito:sentencia_interlocutoria", "hito:resolucion_incidente", "hito:audiencia",
+        "hito:homologacion_acuerdo", "hito:desercion", "hito:inhabilidad_instancia", "hito:archivo",
+        "ninguna",
+    ],
 };
 
 const DIMS_SIMPLES = ["tipoResolucion", "instancia", "materia", "contexto", "funcion", "modoTerminacion", "estadoImpugnatorio", "actoProcesal", "resultado"];
@@ -335,23 +353,31 @@ exports.guardarAnotaciones = async (req, res) => {
                         }))
                         .filter((d) => d.objetoDecidido || d.resultado);
                 }
-                // Bloque "acto completo" (opcional): destinatario/acción/plazo/apercibimiento
-                if (Array.isArray(a.destinatario)) {
-                    limpia.destinatario = a.destinatario.filter((x) => DIMENSIONES.destinatario.includes(x)).slice(0, 6);
+                // Cargas procesales (múltiples): [{destinatarios[], accion, plazo, apercibimiento}]
+                if (Array.isArray(a.cargas)) {
+                    limpia.cargas = a.cargas.slice(0, 8).map((c) => {
+                        const carga = {
+                            destinatarios: Array.isArray(c && c.destinatarios)
+                                ? c.destinatarios.filter((x) => DIMENSIONES.destinatario.includes(x)).slice(0, 6)
+                                : [],
+                            accion: c && DIMENSIONES.accionRequerida.includes(c.accion) ? c.accion : null,
+                            plazo: null,
+                            apercibimiento: String(c && c.apercibimiento || "").slice(0, 200),
+                        };
+                        if (c && c.plazo && typeof c.plazo === "object") {
+                            const cantidad = parseInt(c.plazo.cantidad, 10);
+                            carga.plazo = {
+                                cantidad: Number.isFinite(cantidad) ? cantidad : null,
+                                unidad: ["dias", "horas", "meses"].includes(c.plazo.unidad) ? c.plazo.unidad : "dias",
+                                tipo: ["procesales", "corridos"].includes(c.plazo.tipo) ? c.plazo.tipo : "procesales",
+                            };
+                        }
+                        return carga;
+                    }).filter((c) => c.destinatarios.length || c.accion || c.plazo || c.apercibimiento);
                 }
-                if (typeof a.accionRequerida === "string") limpia.accionRequerida = a.accionRequerida.slice(0, 120);
-                if (a.plazo === null) limpia.plazo = null;
-                else if (a.plazo && typeof a.plazo === "object") {
-                    const cantidad = parseInt(a.plazo.cantidad, 10);
-                    limpia.plazo = {
-                        cantidad: Number.isFinite(cantidad) ? cantidad : null,
-                        unidad: ["dias", "horas", "meses"].includes(a.plazo.unidad) ? a.plazo.unidad : "dias",
-                        tipo: ["procesales", "corridos"].includes(a.plazo.tipo) ? a.plazo.tipo : "procesales",
-                    };
-                }
-                if (typeof a.apercibimiento === "string") limpia.apercibimiento = a.apercibimiento.slice(0, 200);
                 if (typeof a.descartar === "boolean") limpia.descartar = a.descartar;
-                if (typeof a.etiqueta === "string") limpia.etiqueta = a.etiqueta.slice(0, 80);
+                if (a.etiqueta === null || a.etiqueta === "") limpia.etiqueta = null;
+                else if (typeof a.etiqueta === "string" && DIMENSIONES.etiquetaFinal.includes(a.etiqueta)) limpia.etiqueta = a.etiqueta;
                 if (a.replicaDe !== undefined) limpia.replicaDe = a.replicaDe === null ? null : parseInt(a.replicaDe, 10);
                 if (typeof a.notas === "string") limpia.notas = a.notas.slice(0, 2000);
                 set[`anotaciones.${idx}`] = limpia;
