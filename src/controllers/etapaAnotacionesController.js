@@ -58,7 +58,7 @@ const DIMENSIONES = {
     actoProcesal: [
         "corre_traslado", "intima", "fija_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
         "tiene_presente", "agrega_documentacion", "abre_a_prueba", "declara_causa_puro_derecho",
-        "pasa_autos_sentencia", "regula_honorarios", "aprueba_liquidacion", "declara_rebeldia",
+        "pasa_autos_sentencia", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "concede_recurso", "deniega_recurso", "resuelve_fondo", "homologa_acuerdo",
         "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
     ],
