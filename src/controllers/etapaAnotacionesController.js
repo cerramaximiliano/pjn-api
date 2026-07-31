@@ -38,14 +38,41 @@ const FUERO_MODEL = {
 
 const ESTADOS = ["pendiente", "en_progreso", "anotada", "verificada", "descartada"];
 
-// Valores permitidos de las dimensiones factorizadas (revisión experta 2026-07-30).
+// Taxonomía v2 de dimensiones factorizadas (revisión experta 2026-07-31):
+// tipo preciso, instancia por metadatos, objeto triseccionado en
+// materia × contexto × función, firmeza como estado independiente, modos de
+// terminación ampliados, acto procesal como dimensión accionable, y
+// decisiones[] multivaluadas. Ver memoria del proyecto.
 const DIMENSIONES = {
-    tipoResolucion: ["providencia", "interlocutoria", "definitiva", "no_resolucion"],
-    instancia: ["primera", "segunda", "csjn"],
-    objetoResolucion: ["fondo", "incidental", "honorarios", "ejecucion", "terminacion", "impulso"],
-    modoTerminacion: ["firmeza", "allanamiento", "desistimiento", "conciliacion", "caducidad", "otro"],
-    resultado: ["hace_lugar", "rechaza", "parcial", "confirma", "revoca", "desierto", "concede", "deniega", "homologa", "otro"],
+    tipoResolucion: ["providencia_simple", "sentencia_interlocutoria", "sentencia_definitiva", "otra_resolucion", "no_es_resolucion"],
+    instancia: ["primera_instancia", "segunda_instancia", "superior_tribunal_provincial", "csjn", "instancia_unica", "otro", "indeterminada"],
+    materia: ["fondo", "prueba", "competencia", "cautelar", "honorarios", "costas", "liquidacion", "ejecucion", "recurso", "nulidad", "otro"],
+    contexto: ["principal", "incidental", "ejecucion", "recursiva", "cautelar", "otro"],
+    funcion: ["impulso", "ordenacion", "decision", "terminacion", "suspension", "reanudacion", "otro"],
+    modoTerminacion: [
+        "sentencia_sobre_fondo", "allanamiento", "desistimiento_del_proceso", "desistimiento_del_derecho",
+        "transaccion", "conciliacion", "caducidad_de_instancia", "homologacion_de_acuerdo",
+        "sustraccion_de_materia", "declaracion_de_abstraccion", "archivo", "incompetencia_con_remision", "otro",
+    ],
+    estadoImpugnatorio: ["recurrible", "recurrida", "firme", "no_determinado"],
+    actoProcesal: [
+        "corre_traslado", "intima", "fija_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
+        "tiene_presente", "agrega_documentacion", "abre_a_prueba", "declara_causa_puro_derecho",
+        "pasa_autos_sentencia", "regula_honorarios", "aprueba_liquidacion", "declara_rebeldia",
+        "declara_caducidad", "concede_recurso", "deniega_recurso", "resuelve_fondo", "homologa_acuerdo",
+        "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
+    ],
+    resultado: [
+        "hace_lugar", "hace_lugar_parcialmente", "rechaza", "confirma", "revoca", "modifica",
+        "desierto", "concede", "deniega", "homologa", "no_aplica", "otro",
+    ],
+    destinatario: [
+        "actora", "demandada", "ambas_partes", "perito", "testigo", "tercero",
+        "organismo_publico", "letrado", "sindico", "banco_o_registro", "oficial_de_justicia", "otro",
+    ],
 };
+
+const DIMS_SIMPLES = ["tipoResolucion", "instancia", "materia", "contexto", "funcion", "modoTerminacion", "estadoImpugnatorio", "actoProcesal", "resultado"];
 
 function col() {
     return mongoose.connection.db.collection("etapa-anotaciones");
@@ -295,11 +322,34 @@ exports.guardarAnotaciones = async (req, res) => {
                 if (!/^\d+$/.test(idx)) continue;
                 if (a === null) { set[`__unset_${idx}`] = true; continue; }
                 const limpia = {};
-                for (const dim of ["tipoResolucion", "instancia", "objetoResolucion", "modoTerminacion", "resultado"]) {
+                for (const dim of DIMS_SIMPLES) {
                     if (a[dim] === null) limpia[dim] = null;
                     else if (a[dim] && DIMENSIONES[dim].includes(a[dim])) limpia[dim] = a[dim];
                 }
-                if (typeof a.esResolucion === "boolean") limpia.esResolucion = a.esResolucion;
+                // decisiones[]: disposiciones múltiples {objetoDecidido, resultado}
+                if (Array.isArray(a.decisiones)) {
+                    limpia.decisiones = a.decisiones.slice(0, 10)
+                        .map((d) => ({
+                            objetoDecidido: String(d && d.objetoDecidido || "").slice(0, 60),
+                            resultado: d && DIMENSIONES.resultado.includes(d.resultado) ? d.resultado : null,
+                        }))
+                        .filter((d) => d.objetoDecidido || d.resultado);
+                }
+                // Bloque "acto completo" (opcional): destinatario/acción/plazo/apercibimiento
+                if (Array.isArray(a.destinatario)) {
+                    limpia.destinatario = a.destinatario.filter((x) => DIMENSIONES.destinatario.includes(x)).slice(0, 6);
+                }
+                if (typeof a.accionRequerida === "string") limpia.accionRequerida = a.accionRequerida.slice(0, 120);
+                if (a.plazo === null) limpia.plazo = null;
+                else if (a.plazo && typeof a.plazo === "object") {
+                    const cantidad = parseInt(a.plazo.cantidad, 10);
+                    limpia.plazo = {
+                        cantidad: Number.isFinite(cantidad) ? cantidad : null,
+                        unidad: ["dias", "horas", "meses"].includes(a.plazo.unidad) ? a.plazo.unidad : "dias",
+                        tipo: ["procesales", "corridos"].includes(a.plazo.tipo) ? a.plazo.tipo : "procesales",
+                    };
+                }
+                if (typeof a.apercibimiento === "string") limpia.apercibimiento = a.apercibimiento.slice(0, 200);
                 if (typeof a.descartar === "boolean") limpia.descartar = a.descartar;
                 if (typeof a.etiqueta === "string") limpia.etiqueta = a.etiqueta.slice(0, 80);
                 if (a.replicaDe !== undefined) limpia.replicaDe = a.replicaDe === null ? null : parseInt(a.replicaDe, 10);
