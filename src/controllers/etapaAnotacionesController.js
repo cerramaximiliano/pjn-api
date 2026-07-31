@@ -333,6 +333,12 @@ exports.guardarAnotaciones = async (req, res) => {
                     if (a[dim] === null) limpia[dim] = null;
                     else if (a[dim] && DIMENSIONES[dim].includes(a[dim])) limpia[dim] = a[dim];
                 }
+                // Actos secundarios (opcional): otros actos del mismo documento
+                if (Array.isArray(a.actosSecundarios)) {
+                    limpia.actosSecundarios = a.actosSecundarios
+                        .filter((x) => DIMENSIONES.actoProcesal.includes(x))
+                        .slice(0, 8);
+                }
                 // decisiones[]: disposiciones múltiples {objetoDecidido, resultado}
                 if (Array.isArray(a.decisiones)) {
                     limpia.decisiones = a.decisiones.slice(0, 10)
