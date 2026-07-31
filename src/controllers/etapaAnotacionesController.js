@@ -423,6 +423,22 @@ function presentarCuerpo(texto) {
     const t = (texto || "").trim();
     const seg = t.length > 2600 ? segmentar(t.length > 20000 ? t.slice(0, 2000) + t.slice(-8000) : t) : { tieneDispositiva: false };
     if (seg.tieneDispositiva) {
+        // Documento en tamaño razonable: TODO el texto previo a la dispositiva
+        // (en actas de audiencia el "medio" son los términos del acuerdo — no
+        // se puede descartar) + la dispositiva resaltada.
+        if (t.length <= CUERPO_COMPLETO_MAX) {
+            const marca = seg.dispositiva.slice(0, 100);
+            const idx = marca ? t.lastIndexOf(marca) : -1;
+            if (idx > 0) {
+                return {
+                    caracteres: t.length, completo: null,
+                    encabezado: t.slice(0, idx).trim(),
+                    dispositiva: t.slice(idx).trim(),
+                    tieneDispositiva: true, colaTexto: null,
+                };
+            }
+        }
+        // Muy largo (o no se pudo ubicar el offset): resumen segmentado clásico.
         return {
             caracteres: t.length, completo: null,
             encabezado: cortarFin(seg.encabezado, 400),
