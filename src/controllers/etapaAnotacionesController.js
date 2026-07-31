@@ -416,7 +416,9 @@ function cortarInicio(s) {
 // dispositiva (lo demás es relato). Si NO hay dispositiva, el documento entero
 // es potencialmente operativo (providencias/intimaciones) → texto completo
 // hasta CUERPO_COMPLETO_MAX; más allá, encabezado + cola con hueco EXPLÍCITO.
-const CUERPO_COMPLETO_MAX = 12000;
+// Cubre los autos de prueba largos (art. 80 LO) que no tienen fórmula
+// dispositiva pero son operativos de punta a punta.
+const CUERPO_COMPLETO_MAX = 30000;
 function presentarCuerpo(texto) {
     const t = (texto || "").trim();
     const seg = t.length > 2600 ? segmentar(t.length > 20000 ? t.slice(0, 2000) + t.slice(-8000) : t) : { tieneDispositiva: false };
@@ -449,6 +451,21 @@ function armarRespuestaCuerpo(texto, fuente) {
 exports.getCuerpoOnDemand = async (req, res) => {
     try {
         const { fuero, id, idx } = req.params;
+        // ?completo=1 → texto íntegro sin segmentar (para el botón "Ver documento completo")
+        const modoCompleto = req.query.completo === "1";
+        const responder = (texto, fuente) => {
+            if (modoCompleto) {
+                return res.json({
+                    success: true,
+                    cuerpo: {
+                        fuente, caracteres: texto.length,
+                        completo: texto.slice(0, 150000),
+                        encabezado: null, dispositiva: null, tieneDispositiva: false, colaTexto: null,
+                    },
+                });
+            }
+            return res.json({ success: true, cuerpo: armarRespuestaCuerpo(texto, fuente) });
+        };
         const cfg = FUERO_MODEL[fuero];
         if (!cfg) return res.status(400).json({ success: false, message: `fuero inválido: ${fuero}` });
         const causa = await cfg.model().findById(id).select("movimiento").lean();
@@ -465,14 +482,14 @@ exports.getCuerpoOnDemand = async (req, res) => {
                 .findOne({ _id: hermano._id }, { projection: { texto: 1 } })
                 .catch(() => null);
             if (textoDoc && textoDoc.texto && textoDoc.texto.length > 100) {
-                return res.json({ success: true, cuerpo: armarRespuestaCuerpo(textoDoc.texto, "corpus") });
+                return responder(textoDoc.texto, "corpus");
             }
         }
 
         // 1. Cache local
         const cacheado = await cacheCol().findOne({ url: mov.url });
         if (cacheado) {
-            return res.json({ success: true, cuerpo: armarRespuestaCuerpo(cacheado.texto, "cache") });
+            return responder(cacheado.texto, "cache");
         }
 
         // 2. Ya capturado por el pipeline de sentencias (Atlas)
@@ -485,7 +502,7 @@ exports.getCuerpoOnDemand = async (req, res) => {
             const texto = doc && (((doc.processingResult || {}).text) || ((doc.ocrResult || {}).text));
             if (texto && texto.length > 200) {
                 await cacheCol().updateOne({ url: mov.url }, { $set: { url: mov.url, texto, fuente: "sentencias-capturadas", createdAt: new Date() } }, { upsert: true });
-                return res.json({ success: true, cuerpo: armarRespuestaCuerpo(texto, "sentencias-capturadas") });
+                return responder(texto, "sentencias-capturadas");
             }
         }
 
@@ -510,7 +527,7 @@ exports.getCuerpoOnDemand = async (req, res) => {
             return res.status(422).json({ success: false, message: `documento escaneado o sin texto extraíble (${texto.length} caracteres — requiere OCR)`, escaneado: true });
         }
         await cacheCol().updateOne({ url: mov.url }, { $set: { url: mov.url, texto, fuente: "descarga", createdAt: new Date() } }, { upsert: true });
-        res.json({ success: true, cuerpo: armarRespuestaCuerpo(texto, "descarga") });
+        return responder(texto, "descarga");
     } catch (err) {
         logger.error(`etapa-anotaciones cuerpo: ${err.message}`);
         res.status(500).json({ success: false, message: `no se pudo obtener el documento: ${err.message}` });
