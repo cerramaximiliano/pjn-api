@@ -411,22 +411,35 @@ function cortarInicio(s) {
     return nl > 0 && nl < 150 ? "[…] " + s.slice(nl + 1) : s;
 }
 
-// Presentación del cuerpo para el editor. Documentos cortos (providencias):
-// el texto completo ES la parte operativa — sin segmentar ni solapar.
-const CUERPO_CORTO = 2600;
+// Presentación del cuerpo para el editor.
+// Regla: NUNCA mostrar con huecos. Si hay dispositiva detectada → encabezado +
+// dispositiva (lo demás es relato). Si NO hay dispositiva, el documento entero
+// es potencialmente operativo (providencias/intimaciones) → texto completo
+// hasta CUERPO_COMPLETO_MAX; más allá, encabezado + cola con hueco EXPLÍCITO.
+const CUERPO_COMPLETO_MAX = 12000;
 function presentarCuerpo(texto) {
     const t = (texto || "").trim();
-    if (t.length <= CUERPO_CORTO) {
+    const seg = t.length > 2600 ? segmentar(t.length > 20000 ? t.slice(0, 2000) + t.slice(-8000) : t) : { tieneDispositiva: false };
+    if (seg.tieneDispositiva) {
+        return {
+            caracteres: t.length, completo: null,
+            encabezado: cortarFin(seg.encabezado, 400),
+            dispositiva: cortarFin(seg.dispositiva, 2500),
+            tieneDispositiva: true, colaTexto: null,
+        };
+    }
+    if (t.length <= CUERPO_COMPLETO_MAX) {
         return { caracteres: t.length, completo: t, encabezado: null, dispositiva: null, tieneDispositiva: false, colaTexto: null };
     }
-    const seg = segmentar(t.length > 20000 ? t.slice(0, 2000) + t.slice(-8000) : t);
-    const encabezado = cortarFin(seg.encabezado, 400);
-    if (seg.tieneDispositiva) {
-        return { caracteres: t.length, completo: null, encabezado, dispositiva: cortarFin(seg.dispositiva, 2500), tieneDispositiva: true, colaTexto: null };
-    }
-    // Sin dispositiva detectada: la cola arranca DESPUÉS del encabezado (sin solaparse).
-    const inicioCola = Math.max(Math.min(400, t.length), t.length - 1800);
-    return { caracteres: t.length, completo: null, encabezado, dispositiva: null, tieneDispositiva: false, colaTexto: cortarInicio(t.slice(inicioCola)) };
+    // Muy largo y sin dispositiva (raro): cabeza + cola con el hueco declarado.
+    const encabezado = cortarFin(t.slice(0, 2000), 2000);
+    const cola = cortarInicio(t.slice(-6000));
+    const omitidos = t.length - 2000 - 6000;
+    return {
+        caracteres: t.length, completo: null, encabezado,
+        dispositiva: null, tieneDispositiva: false,
+        colaTexto: `[… se omiten ~${omitidos.toLocaleString("es-AR")} caracteres del medio del documento …]\n\n${cola}`,
+    };
 }
 
 function armarRespuestaCuerpo(texto, fuente) {
