@@ -60,7 +60,7 @@ const DIMENSIONES = {
         "tiene_presente", "agrega_documentacion", "abre_a_prueba", "declara_causa_puro_derecho",
         "pasa_autos_sentencia", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "concede_recurso", "deniega_recurso", "resuelve_fondo", "homologa_acuerdo",
-        "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
+        "registra_pago", "ordena_giro", "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
     ],
     resultado: [
         "hace_lugar", "hace_lugar_parcialmente", "rechaza", "confirma", "revoca", "modifica",
@@ -76,7 +76,7 @@ const DIMENSIONES = {
         "subsanar_defecto", "depositar_suma", "pagar_tasa", "presentar_liquidacion",
         "impugnar_liquidacion", "impugnar_pericia", "ofrecer_prueba", "producir_prueba",
         "reconocer_desconocer_documental", "presentar_informe",
-        "aceptar_cargo", "comparecer_audiencia", "diligenciar_cedula", "presentar_oficio", "integrar_copias",
+        "aceptar_cargo", "denunciar_datos_bancarios", "prestar_caucion", "comparecer_audiencia", "diligenciar_cedula", "presentar_oficio", "integrar_copias",
         "cumplir_intimacion", "otro",
     ],
     etiquetaFinal: [
