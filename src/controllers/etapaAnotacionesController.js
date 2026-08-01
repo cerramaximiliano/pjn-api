@@ -65,7 +65,7 @@ const DIMENSIONES = {
     ],
     resultado: [
         "hace_lugar", "hace_lugar_parcialmente", "rechaza", "confirma", "revoca", "modifica",
-        "desierto", "concede", "deniega", "homologa", "no_aplica", "otro",
+        "desierto", "concede", "deniega", "homologa", "declara", "no_aplica", "otro",
     ],
     destinatario: [
         "actora", "demandada", "ambas_partes", "perito", "testigo", "tercero",
