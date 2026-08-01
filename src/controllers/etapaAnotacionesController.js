@@ -122,7 +122,7 @@ const ACTO_TIPICO = {
     declara_caducidad: { tipoResolucion: "sentencia_interlocutoria", funcion: "terminacion", modoTerminacion: "caducidad_de_instancia" },
     declara_incompetencia: { tipoResolucion: "sentencia_interlocutoria", materia: "competencia", funcion: "terminacion", resultado: "declara" },
     resuelve_excepcion: { tipoResolucion: "sentencia_interlocutoria", contexto: "incidental", funcion: "decision" },
-    concede_recurso: { tipoResolucion: "providencia_simple", materia: "recurso", funcion: "impulso", resultado: "concede" },
+    concede_recurso: { tipoResolucion: "providencia_simple", materia: "recurso", funcion: "decision", resultado: "concede" },
     deniega_recurso: { materia: "recurso", funcion: "decision", resultado: "deniega" },
     eleva_autos: { tipoResolucion: "providencia_simple", materia: "recurso", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
     recibe_autos_devueltos: { tipoResolucion: "providencia_simple", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
