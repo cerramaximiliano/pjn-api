@@ -94,6 +94,61 @@ const DIMENSIONES = {
 
 const DIMS_SIMPLES = ["tipoResolucion", "instancia", "materia", "contexto", "funcion", "modoTerminacion", "estadoImpugnatorio", "actoProcesal", "resultado"];
 
+// Combinación típica por acto — ESPEJO de ACTO_AUTOFILL del frontend
+// (law-analytics-admin src/pages/admin/causas/etiquetadoTaxonomia.ts).
+// Mantener en sincronía. Se usa para computar las divergencias (valor elegido
+// ≠ típico del acto) que el listado muestra como advertencia ⚠ por causa.
+// No son errores: la típica es la frecuente, no la única válida.
+const ACTO_TIPICO = {
+    corre_traslado: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
+    da_vista: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
+    intima: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+    fija_audiencia: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+    ordena_notificacion: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+    ordena_oficio: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+    ordena_cedula: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+    tiene_presente: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
+    agrega_documentacion: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
+    abre_a_prueba: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "ordenacion", resultado: "no_aplica" },
+    medida_mejor_proveer: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "ordenacion", resultado: "no_aplica" },
+    declara_causa_puro_derecho: { tipoResolucion: "sentencia_interlocutoria", materia: "prueba", funcion: "decision" },
+    pone_autos_para_alegar: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+    pasa_autos_sentencia: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
+    pasa_autos_a_resolver: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
+    regula_honorarios: { materia: "honorarios", funcion: "decision" },
+    aprueba_liquidacion: { materia: "liquidacion", contexto: "ejecucion", funcion: "decision", resultado: "hace_lugar" },
+    designa_perito: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "ordenacion", resultado: "no_aplica" },
+    declara_rebeldia: { tipoResolucion: "sentencia_interlocutoria", funcion: "decision" },
+    declara_caducidad: { tipoResolucion: "sentencia_interlocutoria", funcion: "terminacion", modoTerminacion: "caducidad_de_instancia" },
+    declara_incompetencia: { tipoResolucion: "sentencia_interlocutoria", materia: "competencia", funcion: "terminacion", resultado: "declara" },
+    resuelve_excepcion: { tipoResolucion: "sentencia_interlocutoria", contexto: "incidental", funcion: "decision" },
+    concede_recurso: { tipoResolucion: "providencia_simple", materia: "recurso", funcion: "impulso", resultado: "concede" },
+    deniega_recurso: { materia: "recurso", funcion: "decision", resultado: "deniega" },
+    eleva_autos: { tipoResolucion: "providencia_simple", materia: "recurso", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
+    recibe_autos_devueltos: { tipoResolucion: "providencia_simple", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
+    resuelve_recurso: { tipoResolucion: "sentencia_interlocutoria", funcion: "decision" },
+    resuelve_fondo: { tipoResolucion: "sentencia_definitiva", materia: "fondo", funcion: "decision" },
+    homologa_acuerdo: { funcion: "terminacion", modoTerminacion: "homologacion_de_acuerdo", resultado: "homologa" },
+    registra_pago: { tipoResolucion: "providencia_simple", materia: "ejecucion", contexto: "ejecucion", funcion: "ordenacion", resultado: "no_aplica" },
+    ordena_giro: { tipoResolucion: "providencia_simple", materia: "ejecucion", contexto: "ejecucion", funcion: "ordenacion", resultado: "no_aplica" },
+    ordena_embargo: { tipoResolucion: "sentencia_interlocutoria", materia: "cautelar", funcion: "decision", resultado: "hace_lugar" },
+    levanta_embargo: { tipoResolucion: "sentencia_interlocutoria", materia: "cautelar", funcion: "decision" },
+    suspende_proceso: { funcion: "suspension" },
+    reanuda_proceso: { funcion: "reanudacion" },
+    archiva: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+};
+
+function divergenciasDeAnotacion(a) {
+    if (!a || !a.actoProcesal || a.actoProcesal === "ninguno" || a.descartar) return [];
+    const base = ACTO_TIPICO[a.actoProcesal] || {};
+    const out = [];
+    for (const [dim, sugerido] of Object.entries(base)) {
+        const elegido = a[dim];
+        if (elegido && sugerido && elegido !== sugerido) out.push({ dim, elegido, sugerido, acto: a.actoProcesal });
+    }
+    return out;
+}
+
 function col() {
     return mongoose.connection.db.collection("etapa-anotaciones");
 }
@@ -150,6 +205,27 @@ exports.getCola = async (req, res) => {
         ]).toArray();
         const nPorId = Object.fromEntries(conteos.map((c) => [c._id.toString(), c.n]));
         items.forEach((i) => { i.movimientosAnotados = nPorId[i._id.toString()] || 0; });
+
+        // Divergencias vs. combinación típica del acto (⚠ en el listado):
+        // solo para los items de la página, leyendo sus anotaciones aparte.
+        const docsAnots = await col().find({ _id: { $in: ids } }).project({ anotaciones: 1 }).toArray();
+        const divPorId = {};
+        for (const d of docsAnots) {
+            let n = 0;
+            const detalle = [];
+            for (const [idx, a] of Object.entries(d.anotaciones || {})) {
+                for (const dv of divergenciasDeAnotacion(a)) {
+                    n++;
+                    if (detalle.length < 12) detalle.push({ idx: Number(idx), ...dv });
+                }
+            }
+            divPorId[d._id.toString()] = { n, detalle };
+        }
+        items.forEach((i) => {
+            const d = divPorId[i._id.toString()];
+            i.divergencias = d ? d.n : 0;
+            i.divergenciasDetalle = d ? d.detalle : [];
+        });
 
         res.json({
             success: true, items, total, page, limit,
