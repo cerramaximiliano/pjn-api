@@ -662,3 +662,110 @@ exports.quitarDeCola = async (req, res) => {
         res.status(500).json({ success: false, message: err.message });
     }
 };
+
+// ── GET /api/admin/etapa-anotaciones/cobertura ────────────────────────────────
+// Tablero de cobertura de clases del gold set + selección activa de causas.
+// 1) Distribución de valores anotados por dimensión (incluye ceros: las clases
+//    de DIMENSIONES que aún no tienen ningún ejemplo son el dato clave).
+// 2) Sugerencia de próximas causas: entre las pendientes/en_progreso de la
+//    cola, puntúa por señales de título (regex) de clases subrepresentadas —
+//    cada señal pesa 1/(1+ejemplos_actuales) — para que cada hora de anotación
+//    sume las clases que faltan.
+
+// Señales de título → contador de cobertura asociado (dimension + valores).
+const SENALES_COBERTURA = [
+    { clave: "audiencia", re: /AUDIENCIA/i, dim: "actoProcesal", valores: ["fija_audiencia"] },
+    { clave: "homologacion", re: /HOMOLOG/i, dim: "actoProcesal", valores: ["homologa_acuerdo"] },
+    { clave: "conciliacion", re: /CONCILIA|SECLO|ACUERDO/i, dim: "modoTerminacion", valores: ["conciliacion", "transaccion", "homologacion_de_acuerdo"] },
+    { clave: "caducidad", re: /CADUCIDAD/i, dim: "actoProcesal", valores: ["declara_caducidad"] },
+    { clave: "rebeldia", re: /REBELD/i, dim: "actoProcesal", valores: ["declara_rebeldia"] },
+    { clave: "desistimiento", re: /DESIST/i, dim: "modoTerminacion", valores: ["desistimiento_del_proceso", "desistimiento_del_derecho"] },
+    { clave: "allanamiento", re: /ALLANA/i, dim: "modoTerminacion", valores: ["allanamiento"] },
+    { clave: "nulidad", re: /NULIDAD/i, dim: "materia", valores: ["nulidad"] },
+    { clave: "cautelar_embargo", re: /EMBARGO|CAUTELAR/i, dim: "actoProcesal", valores: ["ordena_embargo", "levanta_embargo"] },
+    { clave: "queja_rex", re: /QUEJA|EXTRAORDINARIO/i, dim: "materia", valores: ["recurso"] },
+    { clave: "puro_derecho", re: /PURO DERECHO/i, dim: "actoProcesal", valores: ["declara_causa_puro_derecho"] },
+    { clave: "alegatos", re: /ALEGAT/i, dim: "actoProcesal", valores: ["pone_autos_para_alegar"] },
+    { clave: "suspension", re: /SUSPEND/i, dim: "actoProcesal", valores: ["suspende_proceso", "reanuda_proceso"] },
+    { clave: "regulacion_honorarios", re: /REGULACION|HONORARIOS/i, dim: "actoProcesal", valores: ["regula_honorarios"] },
+];
+
+exports.getCobertura = async (req, res) => {
+    try {
+        // 1) Distribución de lo anotado (causas no descartadas, movs no descartados)
+        const docs = await col().find(
+            { estado: { $in: ["en_progreso", "anotada", "verificada"] } },
+            { projection: { anotaciones: 1, estado: 1 } },
+        ).toArray();
+        const DIMS_TABLERO = ["actoProcesal", "tipoResolucion", "funcion", "resultado", "modoTerminacion", "materia", "contexto", "instancia"];
+        const conteos = Object.fromEntries(DIMS_TABLERO.map((d) => [d, {}]));
+        const objetosDecididos = {};
+        const acciones = {};
+        let movsAnotados = 0;
+        for (const doc of docs) {
+            for (const a of Object.values(doc.anotaciones || {})) {
+                if (!a || a.descartar) continue;
+                movsAnotados++;
+                for (const d of DIMS_TABLERO) {
+                    if (a[d]) conteos[d][a[d]] = (conteos[d][a[d]] || 0) + 1;
+                }
+                for (const dec of a.decisiones || []) {
+                    if (dec.objetoDecidido) objetosDecididos[dec.objetoDecidido] = (objetosDecididos[dec.objetoDecidido] || 0) + 1;
+                }
+                for (const c of a.cargas || []) {
+                    if (c.accion) acciones[c.accion] = (acciones[c.accion] || 0) + 1;
+                }
+            }
+        }
+        // Distribución con ceros explícitos, ordenada desc.
+        const distribucion = {};
+        for (const d of DIMS_TABLERO) {
+            distribucion[d] = DIMENSIONES[d]
+                .map((v) => ({ valor: v, n: conteos[d][v] || 0 }))
+                .sort((x, y) => y.n - x.n);
+        }
+
+        // 2) Selección activa: puntuar causas pendientes por señales deficitarias
+        const pendientes = await col().find(
+            { estado: { $in: ["pendiente", "en_progreso"] } },
+            { projection: { fuero: 1, causaId: 1, number: 1, year: 1, caratula: 1, estado: 1 } },
+        ).limit(400).toArray();
+        const pesoSenal = {};
+        for (const s of SENALES_COBERTURA) {
+            const n = s.valores.reduce((acc, v) => acc + (conteos[s.dim][v] || 0), 0);
+            pesoSenal[s.clave] = 1 / (1 + n);
+        }
+        const sugeridas = [];
+        for (const p of pendientes) {
+            const cfg = FUERO_MODEL[p.fuero];
+            if (!cfg) continue;
+            const causa = await cfg.model().findById(p.causaId).select("movimiento.tipo movimiento.detalle").lean();
+            if (!causa || !Array.isArray(causa.movimiento)) continue;
+            const titulos = causa.movimiento.map((m) => `${m.tipo || ""} ${m.detalle || ""}`);
+            const senales = [];
+            let score = 0;
+            for (const s of SENALES_COBERTURA) {
+                const hits = titulos.filter((t) => s.re.test(t)).length;
+                if (hits > 0) {
+                    senales.push({ clave: s.clave, hits });
+                    score += pesoSenal[s.clave] * Math.min(hits, 3);
+                }
+            }
+            if (score > 0) sugeridas.push({ ...p, score: Math.round(score * 1000) / 1000, senales });
+        }
+        sugeridas.sort((a, b) => b.score - a.score);
+
+        res.json({
+            success: true,
+            causas: { total: docs.length, movimientosAnotados: movsAnotados },
+            distribucion,
+            objetosDecididos: Object.entries(objetosDecididos).map(([valor, n]) => ({ valor, n })).sort((a, b) => b.n - a.n),
+            acciones: Object.entries(acciones).map(([valor, n]) => ({ valor, n })).sort((a, b) => b.n - a.n),
+            pesoSenal,
+            sugeridas: sugeridas.slice(0, 15),
+        });
+    } catch (err) {
+        logger.error(`etapa-anotaciones cobertura: ${err.message}`);
+        res.status(500).json({ success: false, message: err.message });
+    }
+};

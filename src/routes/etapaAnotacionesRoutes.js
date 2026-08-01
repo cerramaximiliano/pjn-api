@@ -7,6 +7,7 @@ const { verifyToken, verifyAdmin } = require("../middleware/auth");
 // /admin/causas/etiquetado + botón en /admin/causas/verified). Solo admin.
 router.get("/", verifyToken, verifyAdmin, ctrl.getCola);
 router.get("/membership", verifyToken, verifyAdmin, ctrl.getMembership);
+router.get("/cobertura", verifyToken, verifyAdmin, ctrl.getCobertura);
 router.get("/causa/:fuero/:id", verifyToken, verifyAdmin, ctrl.getCausaParaAnotar);
 router.get("/cuerpo/:fuero/:id/:idx", verifyToken, verifyAdmin, ctrl.getCuerpoOnDemand);
 router.post("/causa/:fuero/:id", verifyToken, verifyAdmin, ctrl.agregarACola);
