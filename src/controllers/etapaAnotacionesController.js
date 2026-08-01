@@ -56,6 +56,7 @@ const DIMENSIONES = {
     ],
     estadoImpugnatorio: ["recurrible", "recurrida", "firme", "no_determinado"],
     actoProcesal: [
+        "ninguno", // el documento no es una resolución (tipo = no_es_resolucion, resto no aplica)
         "corre_traslado", "da_vista", "intima", "fija_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
         "tiene_presente", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho",
         "pone_autos_para_alegar", "pasa_autos_sentencia", "pasa_autos_a_resolver", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
