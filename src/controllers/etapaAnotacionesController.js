@@ -397,7 +397,7 @@ exports.agregarACola = async (req, res) => {
 exports.guardarAnotaciones = async (req, res) => {
     try {
         const { id } = req.params;
-        const { anotaciones, notasCausa, estado } = req.body || {};
+        const { anotaciones, notasCausa, estado, baseUpdatedAt } = req.body || {};
         const set = { updatedAt: new Date(), actualizadoPor: (req.user && (req.user.email || req.user.id)) || "admin" };
         if (req.body && req.body.limpiarTodo === true) set.anotaciones = {};
         if (typeof notasCausa === "string") set.notasCausa = notasCausa.slice(0, 5000);
@@ -462,9 +462,28 @@ exports.guardarAnotaciones = async (req, res) => {
         }
         const update = { $set: set };
         if (Object.keys(unset).length) update.$unset = unset;
-        const r = await col().updateOne({ causaId: new mongoose.Types.ObjectId(id) }, update);
-        if (!r.matchedCount) return res.status(404).json({ success: false, message: "la causa no está en la cola — agregala primero" });
-        res.json({ success: true });
+        // Concurrencia optimista: si el cliente manda baseUpdatedAt (el updatedAt
+        // que vio al cargar / en su último guardado), el update solo matchea si
+        // nadie guardó en el medio. Si no matchea y el doc existe → 409 para que
+        // la otra sesión no pise cambios ajenos.
+        const filtro = { causaId: new mongoose.Types.ObjectId(id) };
+        const base = baseUpdatedAt ? new Date(baseUpdatedAt) : null;
+        if (base && !isNaN(base.getTime())) filtro.$or = [{ updatedAt: base }, { updatedAt: { $exists: false } }];
+        const r = await col().updateOne(filtro, update);
+        if (!r.matchedCount) {
+            const existe = await col().findOne(
+                { causaId: new mongoose.Types.ObjectId(id) },
+                { projection: { updatedAt: 1, actualizadoPor: 1 } },
+            );
+            if (!existe) return res.status(404).json({ success: false, message: "la causa no está en la cola — agregala primero" });
+            return res.status(409).json({
+                success: false,
+                conflict: true,
+                updatedAt: existe.updatedAt,
+                message: "la causa fue modificada por otra sesión desde que la cargaste — recargá antes de guardar",
+            });
+        }
+        res.json({ success: true, updatedAt: set.updatedAt });
     } catch (err) {
         logger.error(`etapa-anotaciones guardar: ${err.message}`);
         res.status(500).json({ success: false, message: err.message });
