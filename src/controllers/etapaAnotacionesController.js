@@ -189,9 +189,13 @@ exports.getCola = async (req, res) => {
         if (estado && ESTADOS.includes(estado)) filter.estado = estado;
         if (fuero) filter.fuero = fuero;
         if (motivo) filter.motivo = motivo;
+        // ?sugeridas=1: solo causas del ranking de cobertura, mejores primero
+        const soloSugeridas = req.query.sugeridas === "1";
+        if (soloSugeridas) filter["sugerida.rank"] = { $exists: true };
+        const orden = soloSugeridas ? { "sugerida.rank": 1 } : { prioridad: 1, createdAt: 1 };
 
         const [items, total, porEstado] = await Promise.all([
-            col().find(filter).sort({ prioridad: 1, createdAt: 1 })
+            col().find(filter).sort(orden)
                 .skip(page * limit).limit(limit)
                 .project({ anotaciones: 0 }).toArray(),
             col().countDocuments(filter),
@@ -754,6 +758,20 @@ exports.getCobertura = async (req, res) => {
             if (score > 0) sugeridas.push({ ...p, score: Math.round(score * 1000) / 1000, senales });
         }
         sugeridas.sort((a, b) => b.score - a.score);
+
+        // Persistir el ranking en la cola para que el listado muestre ⭐ y
+        // permita filtrar por sugeridas con paginación del servidor. Se
+        // recalcula (y se limpia lo anterior) en cada apertura del tablero.
+        await col().updateMany({ sugerida: { $exists: true } }, { $unset: { sugerida: "" } });
+        const top = sugeridas.slice(0, 50);
+        if (top.length) {
+            await col().bulkWrite(top.map((s, i) => ({
+                updateOne: {
+                    filter: { _id: s._id },
+                    update: { $set: { sugerida: { rank: i + 1, score: s.score, senales: s.senales, calculadoAt: new Date() } } },
+                },
+            })));
+        }
 
         res.json({
             success: true,
