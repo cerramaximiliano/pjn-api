@@ -57,7 +57,7 @@ const DIMENSIONES = {
     estadoImpugnatorio: ["recurrible", "recurrida", "firme", "no_determinado"],
     actoProcesal: [
         "ninguno", // el documento no es una resolución (tipo = no_es_resolucion, resto no aplica)
-        "corre_traslado", "da_vista", "intima", "fija_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
+        "corre_traslado", "da_vista", "intima", "fija_audiencia", "celebra_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
         "tiene_presente", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho",
         "pone_autos_para_alegar", "pasa_autos_sentencia", "pasa_autos_a_resolver", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "declara_incompetencia", "resuelve_excepcion", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "resuelve_recurso", "resuelve_fondo", "homologa_acuerdo",
@@ -104,6 +104,7 @@ const ACTO_TIPICO = {
     da_vista: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
     intima: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
     fija_audiencia: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
+    celebra_audiencia: { tipoResolucion: "otra_resolucion", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_notificacion: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_oficio: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_cedula: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
@@ -678,7 +679,7 @@ exports.quitarDeCola = async (req, res) => {
 
 // Señales de título → contador de cobertura asociado (dimension + valores).
 const SENALES_COBERTURA = [
-    { clave: "audiencia", re: /AUDIENCIA/i, dim: "actoProcesal", valores: ["fija_audiencia"] },
+    { clave: "audiencia", re: /AUDIENCIA/i, dim: "actoProcesal", valores: ["fija_audiencia", "celebra_audiencia"] },
     { clave: "homologacion", re: /HOMOLOG/i, dim: "actoProcesal", valores: ["homologa_acuerdo"] },
     { clave: "conciliacion", re: /CONCILIA|SECLO|ACUERDO/i, dim: "modoTerminacion", valores: ["conciliacion", "transaccion", "homologacion_de_acuerdo"] },
     { clave: "caducidad", re: /CADUCIDAD/i, dim: "actoProcesal", valores: ["declara_caducidad"] },
