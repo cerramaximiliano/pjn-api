@@ -44,7 +44,7 @@ const ESTADOS = ["pendiente", "en_progreso", "anotada", "verificada", "descartad
 // terminación ampliados, acto procesal como dimensión accionable, y
 // decisiones[] multivaluadas. Ver memoria del proyecto.
 const DIMENSIONES = {
-    tipoResolucion: ["providencia_simple", "sentencia_interlocutoria", "sentencia_definitiva", "otra_resolucion", "no_es_resolucion"],
+    tipoResolucion: ["providencia_simple", "sentencia_interlocutoria", "sentencia_definitiva", "sentencia_homologatoria", "otra_resolucion", "no_es_resolucion"],
     instancia: ["primera_instancia", "segunda_instancia", "superior_tribunal_provincial", "csjn", "instancia_unica", "otro", "indeterminada"],
     materia: ["fondo", "prueba", "competencia", "cautelar", "conciliacion", "honorarios", "costas", "liquidacion", "ejecucion", "recurso", "nulidad", "tramite", "otro"],
     contexto: ["principal", "incidental", "ejecucion", "recursiva", "cautelar", "otro"],
@@ -129,7 +129,7 @@ const ACTO_TIPICO = {
     recibe_autos_devueltos: { tipoResolucion: "providencia_simple", materia: "tramite", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
     resuelve_recurso: { tipoResolucion: "sentencia_interlocutoria", funcion: "decision" },
     resuelve_fondo: { tipoResolucion: "sentencia_definitiva", materia: "fondo", funcion: "decision" },
-    homologa_acuerdo: { funcion: "terminacion", modoTerminacion: "homologacion_de_acuerdo", resultado: "homologa" },
+    homologa_acuerdo: { tipoResolucion: "sentencia_homologatoria", funcion: "terminacion", modoTerminacion: "homologacion_de_acuerdo", resultado: "homologa" },
     registra_pago: { tipoResolucion: "providencia_simple", materia: "ejecucion", contexto: "ejecucion", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_giro: { tipoResolucion: "providencia_simple", materia: "ejecucion", contexto: "ejecucion", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_embargo: { tipoResolucion: "sentencia_interlocutoria", materia: "cautelar", funcion: "decision", resultado: "hace_lugar" },
