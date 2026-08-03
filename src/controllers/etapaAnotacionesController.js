@@ -77,7 +77,7 @@ const DIMENSIONES = {
         "subsanar_defecto", "depositar_suma", "pagar_tasa", "presentar_liquidacion",
         "impugnar_liquidacion", "impugnar_pericia", "ofrecer_prueba", "producir_prueba",
         "reconocer_desconocer_documental", "presentar_informe",
-        "aceptar_cargo", "denunciar_datos_bancarios", "prestar_caucion", "comparecer_audiencia", "diligenciar_cedula", "presentar_oficio", "integrar_copias",
+        "aceptar_cargo", "denunciar_datos_bancarios", "denunciar_datos_testigos", "prestar_caucion", "comparecer_audiencia", "diligenciar_cedula", "presentar_oficio", "integrar_copias",
         "cumplir_intimacion", "impulsar_proceso", "otro",
     ],
     etiquetaFinal: [
