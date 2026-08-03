@@ -139,11 +139,21 @@ const ACTO_TIPICO = {
     archiva: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "ordenacion", resultado: "no_aplica" },
 };
 
+// Dimensiones libres por acto (espejo del frontend): receptivos → materia
+// sigue al objeto recibido; por-devueltos → contexto según la dispositiva.
+const DIMS_LIBRES_POR_ACTO = {
+    tiene_presente: ["materia"],
+    agrega_documentacion: ["materia"],
+    recibe_autos_devueltos: ["materia", "contexto"],
+};
+
 function divergenciasDeAnotacion(a) {
     if (!a || !a.actoProcesal || a.actoProcesal === "ninguno" || a.descartar) return [];
     const base = ACTO_TIPICO[a.actoProcesal] || {};
+    const libres = DIMS_LIBRES_POR_ACTO[a.actoProcesal] || [];
     const out = [];
     for (const [dim, sugerido] of Object.entries(base)) {
+        if (libres.includes(dim)) continue;
         const elegido = a[dim];
         if (elegido && sugerido && elegido !== sugerido) out.push({ dim, elegido, sugerido, acto: a.actoProcesal });
     }
