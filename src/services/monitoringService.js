@@ -93,12 +93,32 @@ async function collectMongo(conn, label) {
   try {
     const db = conn.db;
     const stats = await db.stats();
-    const cols = await db.listCollections().toArray();
+    const cols = await db.listCollections({ type: 'collection' }, { nameOnly: true }).toArray();
     const perCol = [];
     for (const c of cols) {
       try {
-        const cs = await db.command({ collStats: c.name });
-        perCol.push({ name: c.name, count: cs.count || 0, sizeBytes: cs.size || 0, storageBytes: cs.storageSize || 0, indexBytes: cs.totalIndexSize || 0 });
+        // $collStats + $project en vez de db.command({collStats}): la proyección
+        // corre server-side, así solo viajan estos 4 números por colección. La
+        // respuesta cruda de collStats trae el bloque wiredTiger completo
+        // (~20-45 KB/colección), que multiplicado por todas las colecciones del
+        // cluster y una corrida cada 10 min era el mayor egress de worker_01.
+        const rows = await db.collection(c.name).aggregate([
+          { $collStats: { storageStats: {} } },
+          { $project: {
+              count: '$storageStats.count',
+              size: '$storageStats.size',
+              storageSize: '$storageStats.storageSize',
+              totalIndexSize: '$storageStats.totalIndexSize',
+          } },
+        ]).toArray();
+        // En replica set viene 1 fila; en sharded, una por shard — se suman.
+        const cs = rows.reduce((acc, r) => ({
+          count: acc.count + (r.count || 0),
+          size: acc.size + (r.size || 0),
+          storageSize: acc.storageSize + (r.storageSize || 0),
+          totalIndexSize: acc.totalIndexSize + (r.totalIndexSize || 0),
+        }), { count: 0, size: 0, storageSize: 0, totalIndexSize: 0 });
+        perCol.push({ name: c.name, count: cs.count, sizeBytes: cs.size, storageBytes: cs.storageSize, indexBytes: cs.totalIndexSize });
       } catch { /* skip view/inaccesible */ }
     }
     perCol.sort((a, b) => b.storageBytes - a.storageBytes);
