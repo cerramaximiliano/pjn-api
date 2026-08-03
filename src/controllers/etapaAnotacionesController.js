@@ -46,13 +46,13 @@ const ESTADOS = ["pendiente", "en_progreso", "anotada", "verificada", "descartad
 const DIMENSIONES = {
     tipoResolucion: ["providencia_simple", "sentencia_interlocutoria", "sentencia_definitiva", "sentencia_homologatoria", "otra_resolucion", "no_es_resolucion"],
     instancia: ["primera_instancia", "segunda_instancia", "superior_tribunal_provincial", "csjn", "instancia_unica", "otro", "indeterminada"],
-    materia: ["fondo", "prueba", "competencia", "cautelar", "conciliacion", "honorarios", "costas", "liquidacion", "ejecucion", "recurso", "nulidad", "tramite", "otro"],
+    materia: ["fondo", "prueba", "competencia", "cautelar", "conciliacion", "honorarios", "costas", "liquidacion", "ejecucion", "recurso", "nulidad", "recusacion", "tramite", "otro"],
     contexto: ["principal", "incidental", "ejecucion", "recursiva", "cautelar", "otro"],
     funcion: ["impulso", "ordenacion", "decision", "terminacion", "suspension", "reanudacion", "otro"],
     modoTerminacion: [
         "sentencia_sobre_fondo", "allanamiento", "desistimiento_del_proceso", "desistimiento_del_derecho",
         "transaccion", "conciliacion", "caducidad_de_instancia", "homologacion_de_acuerdo",
-        "sustraccion_de_materia", "declaracion_de_abstraccion", "archivo", "incompetencia_con_remision", "inhabilidad_de_instancia", "otro",
+        "sustraccion_de_materia", "declaracion_de_abstraccion", "archivo", "incompetencia_con_remision", "incompetencia_sin_remision", "inhabilidad_de_instancia", "otro",
     ],
     estadoImpugnatorio: ["recurrible", "recurrida", "firme", "no_determinado"],
     actoProcesal: [
