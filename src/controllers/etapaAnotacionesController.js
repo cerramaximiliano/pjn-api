@@ -65,7 +65,7 @@ const DIMENSIONES = {
     ],
     resultado: [
         "hace_lugar", "hace_lugar_parcialmente", "rechaza", "confirma", "revoca", "modifica",
-        "desierto", "concede", "deniega", "homologa", "declara", "no_aplica", "otro",
+        "desierto", "concede", "deniega", "homologa", "declara", "impone", "regula", "no_aplica", "otro",
     ],
     destinatario: [
         "actora", "demandada", "ambas_partes", "perito", "testigo", "tercero",
@@ -438,6 +438,7 @@ exports.guardarAnotaciones = async (req, res) => {
                         .map((d) => ({
                             objetoDecidido: String(d && d.objetoDecidido || "").slice(0, 60),
                             resultado: d && DIMENSIONES.resultado.includes(d.resultado) ? d.resultado : null,
+                            detalle: String(d && d.detalle || "").slice(0, 120),
                         }))
                         .filter((d) => d.objetoDecidido || d.resultado);
                 }
