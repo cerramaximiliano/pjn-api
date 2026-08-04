@@ -127,7 +127,7 @@ const ACTO_TIPICO = {
     deniega_recurso: { materia: "recurso", funcion: "decision", resultado: "deniega" },
     eleva_autos: { tipoResolucion: "providencia_simple", materia: "recurso", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
     recibe_autos_devueltos: { tipoResolucion: "providencia_simple", materia: "tramite", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
-    recibe_autos_alzada: { tipoResolucion: "providencia_simple", materia: "tramite", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
+    recibe_autos_alzada: { tipoResolucion: "providencia_simple", materia: "recurso", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
     resuelve_recurso: { tipoResolucion: "sentencia_interlocutoria", funcion: "decision" },
     resuelve_fondo: { tipoResolucion: "sentencia_definitiva", materia: "fondo", funcion: "terminacion", modoTerminacion: "sentencia_sobre_fondo" },
     homologa_acuerdo: { tipoResolucion: "sentencia_homologatoria", funcion: "terminacion", modoTerminacion: "homologacion_de_acuerdo", resultado: "homologa" },
