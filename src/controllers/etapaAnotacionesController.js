@@ -149,6 +149,7 @@ const DIMS_LIBRES_POR_ACTO = {
     tiene_presente: ["materia"],
     agrega_documentacion: ["materia"],
     recibe_autos_devueltos: ["materia", "contexto"],
+    medida_mejor_proveer: ["materia"],
 };
 
 function divergenciasDeAnotacion(a) {
