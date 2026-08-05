@@ -58,7 +58,7 @@ const DIMENSIONES = {
     actoProcesal: [
         "ninguno", // el documento no es una resolución (tipo = no_es_resolucion, resto no aplica)
         "corre_traslado", "da_vista", "intima", "fija_audiencia", "celebra_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
-        "tiene_presente", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho", "declara_desistida_prueba", "efectiviza_apercibimiento",
+        "tiene_presente", "tiene_por_presentado", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho", "declara_desistida_prueba", "efectiviza_apercibimiento",
         "pone_autos_para_alegar", "pasa_autos_sentencia", "pasa_autos_a_resolver", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "declara_incompetencia", "resuelve_excepcion", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "recibe_autos_alzada", "resuelve_recurso", "resuelve_fondo", "homologa_acuerdo",
         "registra_pago", "ordena_giro", "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
@@ -109,6 +109,7 @@ const ACTO_TIPICO = {
     ordena_oficio: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_cedula: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "ordenacion", resultado: "no_aplica" },
     tiene_presente: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "impulso", resultado: "no_aplica" },
+    tiene_por_presentado: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "impulso", resultado: "no_aplica" },
     agrega_documentacion: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "impulso", resultado: "no_aplica" },
     abre_a_prueba: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "ordenacion", resultado: "no_aplica" },
     medida_mejor_proveer: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "ordenacion", resultado: "no_aplica" },
