@@ -60,7 +60,7 @@ const DIMENSIONES = {
         "corre_traslado", "da_vista", "intima", "fija_audiencia", "celebra_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
         "tiene_presente", "tiene_por_presentado", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho", "declara_desistida_prueba", "efectiviza_apercibimiento",
         "pone_autos_para_alegar", "pasa_autos_sentencia", "pasa_autos_a_resolver", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
-        "declara_caducidad", "declara_incompetencia", "resuelve_excepcion", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "recibe_autos_alzada", "resuelve_recurso", "resuelve_fondo", "homologa_acuerdo",
+        "declara_caducidad", "declara_incompetencia", "resuelve_excepcion", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "recibe_autos_alzada", "resuelve_recurso", "aclara_rectifica", "resuelve_fondo", "homologa_acuerdo",
         "registra_pago", "ordena_giro", "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
     ],
     resultado: [
@@ -132,6 +132,7 @@ const ACTO_TIPICO = {
     recibe_autos_devueltos: { tipoResolucion: "providencia_simple", materia: "tramite", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
     recibe_autos_alzada: { tipoResolucion: "providencia_simple", materia: "recurso", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
     resuelve_recurso: { tipoResolucion: "sentencia_interlocutoria", funcion: "decision" },
+    aclara_rectifica: { tipoResolucion: "providencia_simple", funcion: "decision", resultado: "declara" },
     resuelve_fondo: { tipoResolucion: "sentencia_definitiva", materia: "fondo", funcion: "terminacion", modoTerminacion: "sentencia_sobre_fondo" },
     homologa_acuerdo: { tipoResolucion: "sentencia_homologatoria", funcion: "terminacion", modoTerminacion: "homologacion_de_acuerdo", resultado: "homologa" },
     registra_pago: { tipoResolucion: "providencia_simple", materia: "ejecucion", contexto: "ejecucion", funcion: "ordenacion", resultado: "no_aplica" },
@@ -150,6 +151,7 @@ const DIMS_LIBRES_POR_ACTO = {
     agrega_documentacion: ["materia"],
     recibe_autos_devueltos: ["materia", "contexto"],
     medida_mejor_proveer: ["materia"],
+    aclara_rectifica: ["materia"],
 };
 
 function divergenciasDeAnotacion(a) {
