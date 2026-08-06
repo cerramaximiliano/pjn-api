@@ -18,6 +18,7 @@
  *   node scripts/generate-saij-summaries.js --limit 20 --dry-run  # solo lista candidatas
  *   node scripts/generate-saij-summaries.js --fuero CNT --limit 10
  *   node scripts/generate-saij-summaries.js --since 2026-01-01 --limit 500
+ *   node scripts/generate-saij-summaries.js --limit 10000 --concurrency 5  # batch masivo
  */
 'use strict';
 
@@ -39,6 +40,7 @@ const LIMIT = parseInt(argValue('limit') || '10', 10);
 const DRY_RUN = args.includes('--dry-run');
 const FUERO = argValue('fuero');
 const SINCE = argValue('since') ? new Date(argValue('since')) : null;
+const CONCURRENCY = Math.min(Math.max(parseInt(argValue('concurrency') || '1', 10), 1), 10);
 
 // Mismo prompt default que sentenciasCaptuadasController (fallback si no hay
 // override en configuracion-sentencias-collector).
@@ -93,33 +95,37 @@ async function main() {
   const pendientes = await col.countDocuments(match);
   console.log(`Candidatas sin resumen: ${pendientes} | procesando hasta ${LIMIT}${DRY_RUN ? ' (DRY RUN)' : ''}`);
 
+  // Solo metadata liviana acá — los textos (pdfText/text pueden pesar cientos
+  // de KB c/u) se buscan doc por doc en processDoc para no reventar memoria/red.
   const docs = await col.find(match, {
-    projection: {
-      caratula: 1, fuero: 1, sentenciaTipo: 1, movimientoFecha: 1,
-      'processingResult.pdfText': 1, 'processingResult.text': 1,
-    },
+    projection: { caratula: 1, fuero: 1, sentenciaTipo: 1, movimientoFecha: 1 },
   }).sort({ movimientoFecha: -1, _id: -1 }).limit(LIMIT).toArray();
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  let ok = 0, skipped = 0, failed = 0;
+  let ok = 0, skipped = 0, failed = 0, processed = 0;
 
-  for (const doc of docs) {
+  async function processDoc(doc) {
     const label = `${doc._id} [${doc.fuero}] ${String(doc.caratula || '').slice(0, 60)}`;
 
+    const conTexto = await col.findOne(
+      { _id: doc._id },
+      { projection: { 'processingResult.pdfText': 1, 'processingResult.text': 1 } }
+    );
+
     // Texto del fallo: SOLO pdfText o el tramo previo al primer sumario SAIJ.
-    let texto = doc.processingResult?.pdfText || '';
-    if (!texto && doc.processingResult?.text) {
-      texto = doc.processingResult.text.split(SUMARIO_SEPARATOR)[0] || '';
+    let texto = conTexto?.processingResult?.pdfText || '';
+    if (!texto && conTexto?.processingResult?.text) {
+      texto = conTexto.processingResult.text.split(SUMARIO_SEPARATOR)[0] || '';
     }
     if (texto.length < MIN_TEXT_CHARS) {
       console.log(`  SKIP (texto de fallo insuficiente: ${texto.length} chars) ${label}`);
       skipped++;
-      continue;
+      return;
     }
 
     if (DRY_RUN) {
       console.log(`  DRY ${label} (${texto.length} chars)`);
-      continue;
+      return;
     }
 
     const truncated = texto.slice(0, MAX_TEXT_CHARS);
@@ -156,6 +162,18 @@ async function main() {
       console.error(`  FAIL ${label}: ${err.message}`);
     }
   }
+
+  // Pool simple de CONCURRENCY workers sobre la lista de docs.
+  let cursor = 0;
+  async function worker() {
+    while (cursor < docs.length) {
+      const doc = docs[cursor++];
+      await processDoc(doc);
+      processed++;
+      if (processed % 100 === 0) console.log(`--- progreso: ${processed}/${docs.length} (ok=${ok} skip=${skipped} fail=${failed}) ---`);
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
   console.log(`\nResultado: ${ok} generados, ${skipped} skipped, ${failed} fallidos. Restan ~${pendientes - ok - skipped} sin resumen.`);
   await mongoose.disconnect();
