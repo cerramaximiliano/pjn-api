@@ -64,6 +64,8 @@ const schema = new Schema(
 		ocrResult: {
 			processedAt: { type: Date },
 			text: { type: String },
+			// Texto comprimido (gzip) — ver pjn-workers-scraping/src/models.
+			textGz: { type: Buffer },
 			charCount: { type: Number },
 			pageCount: { type: Number },
 			method: { type: String },

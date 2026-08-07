@@ -26,6 +26,7 @@ const mongoose = require("mongoose");
 const pjn = require("pjn-models");
 const { logger } = require("../config/pino");
 const { segmentar } = require("../utils/segmentarResolucion");
+const { getSubdocText } = require("../utils/sentencia-text");
 
 const FUERO_MODEL = {
     CIV: { model: () => pjn.CausasCivil, causaType: "CausasCivil" },
@@ -352,10 +353,10 @@ exports.getCausaParaAnotar = async (req, res) => {
         if (db) {
             const docs = await db.collection("sentencias-capturadas")
                 .find({ causaId: new mongoose.Types.ObjectId(id) })
-                .project({ url: 1, movimientoFecha: 1, movimientoDetalle: 1, "processingResult.text": 1, "ocrResult.text": 1 })
+                .project({ url: 1, movimientoFecha: 1, movimientoDetalle: 1, "processingResult.text": 1, "processingResult.textGz": 1, "ocrResult.text": 1, "ocrResult.textGz": 1 })
                 .toArray();
             cuerpos = docs.map((d) => {
-                const texto = (d.processingResult && d.processingResult.text) || (d.ocrResult && d.ocrResult.text) || "";
+                const texto = getSubdocText(d.processingResult) || getSubdocText(d.ocrResult) || "";
                 return {
                     url: d.url, dia: dayKey(d.movimientoFecha), detalle: (d.movimientoDetalle || "").trim(),
                     ...presentarCuerpo(texto),
@@ -643,9 +644,9 @@ exports.getCuerpoOnDemand = async (req, res) => {
         if (db) {
             const doc = await db.collection("sentencias-capturadas").findOne(
                 { causaId: new mongoose.Types.ObjectId(id), url: mov.url },
-                { projection: { "processingResult.text": 1, "ocrResult.text": 1 } }
+                { projection: { "processingResult.text": 1, "processingResult.textGz": 1, "ocrResult.text": 1, "ocrResult.textGz": 1 } }
             );
-            const texto = doc && (((doc.processingResult || {}).text) || ((doc.ocrResult || {}).text));
+            const texto = doc && (getSubdocText(doc.processingResult) || getSubdocText(doc.ocrResult));
             if (texto && texto.length > 200) {
                 await cacheCol().updateOne({ url: mov.url }, { $set: { url: mov.url, texto, fuente: "sentencias-capturadas", createdAt: new Date() } }, { upsert: true });
                 return responder(texto, "sentencias-capturadas");

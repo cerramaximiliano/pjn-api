@@ -1,4 +1,5 @@
 const SentenciaCapturada = require('../models/SentenciaCapturada');
+const { getSubdocText } = require('../utils/sentencia-text');
 const ConfiguracionSentenciasCollector = require('../models/ConfiguracionSentenciasCollector');
 const { logger } = require('../config/pino');
 const OpenAI = require('openai').default;
@@ -222,7 +223,7 @@ const sentenciasCapturadasController = {
 					.sort({ [sortField]: sortDir })
 					.skip(skip)
 					.limit(parseInt(limit))
-					.select('-processingResult.text -processingLock -__v')
+					.select('-processingResult.text -processingResult.textGz -ocrResult.text -ocrResult.textGz -processingLock -__v')
 					.lean(),
 				SentenciaCapturada.countDocuments(filter),
 			]);
@@ -377,10 +378,11 @@ const sentenciasCapturadasController = {
 
 			if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
 
-			// Obtener el texto del documento
-			const text = (doc.ocrStatus === 'completed' && doc.ocrResult?.text)
-				? doc.ocrResult.text
-				: doc.processingResult?.text;
+			// Obtener el texto del documento (soporta text plano o textGz comprimido)
+			const ocrText = getSubdocText(doc.ocrResult);
+			const text = (doc.ocrStatus === 'completed' && ocrText)
+				? ocrText
+				: getSubdocText(doc.processingResult);
 
 			if (!text || text.trim().length < 100) {
 				return res.status(422).json({ success: false, message: 'El documento no tiene texto extraído disponible para resumir' });
