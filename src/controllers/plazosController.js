@@ -17,6 +17,7 @@
 const mongoose = require("mongoose");
 const pjn = require("pjn-models");
 const { logger } = require("../config/pino");
+const { gunzipText } = require("../utils/sentencia-text");
 
 const { PlazoNotificacion, PlazoNormativa, FeriadoJudicial, PlazoDatasetEjemplo } = pjn;
 
@@ -67,7 +68,7 @@ exports.listNotificaciones = async (req, res) => {
 
 		const [data, total] = await Promise.all([
 			PlazoNotificacion.find(filter)
-				.select({ "extraccion.textExcerpt": 0, "extraccion.menciones": 0 }) // pesados — solo en detail
+				.select({ "extraccion.textExcerpt": 0, "extraccion.textExcerptGz": 0, "extraccion.menciones": 0 }) // pesados — solo en detail
 				.sort({ detectedAt: -1 })
 				.skip(skip)
 				.limit(limit)
@@ -142,6 +143,12 @@ exports.getNotificacion = async (req, res) => {
 		}
 		const doc = await PlazoNotificacion.findById(req.params.id).lean();
 		if (!doc) return res.status(404).json({ success: false, message: "No encontrada" });
+		// El espejo de Atlas guarda el excerpt comprimido — descomprimir para la
+		// UI, que sigue recibiendo extraccion.textExcerpt plano como siempre.
+		if (doc.extraccion?.textExcerptGz != null && doc.extraccion.textExcerpt == null) {
+			doc.extraccion.textExcerpt = gunzipText(doc.extraccion.textExcerptGz);
+			delete doc.extraccion.textExcerptGz;
+		}
 		return res.json({ success: true, data: doc });
 	} catch (error) {
 		return fail(res, "getNotificacion", error);
