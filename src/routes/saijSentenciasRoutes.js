@@ -14,6 +14,7 @@ router.get('/:id',           verifyToken,             ctrl.getById);
 
 // Escritura — requiere admin
 router.patch('/:id',         verifyToken, verifyAdmin, ctrl.update);
+router.patch('/:id/social-post', verifyToken, verifyAdmin, ctrl.setSocialPost);
 router.delete('/:id',        verifyToken, verifyAdmin, ctrl.remove);
 
 module.exports = router;

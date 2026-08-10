@@ -36,6 +36,11 @@ const saijSentenciasController = {
                 expedienteSource,
                 embeddingStatus,
                 hasSentenciaCapturada,
+                userNotified,
+                userCampaignExcluded,
+                userCampaignId,
+                hasSocialPost,
+                hasAiSummary,
                 q,
             } = req.query;
 
@@ -56,6 +61,16 @@ const saijSentenciasController = {
             if (hasExpediente === 'true')  filter['expediente.numero'] = { $exists: true };
             if (hasExpediente === 'false') filter['expediente.numero'] = { $exists: false };
             if (expedienteSource)  filter['expediente.source'] = expedienteSource;
+
+            // Campañas de novedades a usuarios. Los flags son sparse: los docs
+            // viejos no tienen el campo, así que 'false' se resuelve con $ne.
+            if (userNotified === 'true')  filter.userNotified = true;
+            if (userNotified === 'false') filter.userNotified = { $ne: true };
+            if (userCampaignExcluded === 'true')  filter.userCampaignExcluded = true;
+            if (userCampaignExcluded === 'false') filter.userCampaignExcluded = { $ne: true };
+            if (userCampaignId) filter.userCampaignId = userCampaignId;
+            if (hasSocialPost === 'true')  filter['socialPost.generado'] = true;
+            if (hasSocialPost === 'false') filter['socialPost.generado'] = { $ne: true };
 
             if (yearFrom || yearTo || monthFrom || monthTo) {
                 filter.fecha = {};
@@ -88,6 +103,18 @@ const saijSentenciasController = {
             if (hasSentenciaCapturada === 'false') {
                 postLookupMatch['sentenciaCapturada'] = null;
             }
+            // Resumen IA: vive en la SentenciaCapturada, así que es post-lookup.
+            // Es además el requisito de la vista pública de jurisprudencia.
+            if (hasAiSummary === 'true') {
+                postLookupMatch['sentenciaCapturada.aiSummary.content'] = { $exists: true, $nin: [null, ''] };
+            }
+            if (hasAiSummary === 'false') {
+                postLookupMatch['$or'] = [
+                    { 'sentenciaCapturada': null },
+                    { 'sentenciaCapturada.aiSummary.content': { $in: [null, ''] } },
+                    { 'sentenciaCapturada.aiSummary.content': { $exists: false } },
+                ];
+            }
             const hasPostMatch = Object.keys(postLookupMatch).length > 0;
 
             const lookupStage = { $lookup: {
@@ -102,6 +129,14 @@ const saijSentenciasController = {
                         processedAt: 1, category: 1,
                         'source.origin': 1, 'source.saijDocId': 1,
                         causaId: 1, fuero: 1, number: 1, year: 1,
+                        // Estado de publicación en la vista pública: el resumen
+                        // IA y el kill-switch editorial. Se proyecta la longitud
+                        // del resumen en vez del texto para no inflar la respuesta.
+                        publicationStatus: 1,
+                        'aiSummary.status': 1,
+                        'aiSummary.generatedAt': 1,
+                        'aiSummary.skipReason': 1,
+                        aiSummaryChars: { $strLenCP: { $ifNull: ['$aiSummary.content', ''] } },
                     },
                 }],
             }};
@@ -181,6 +216,8 @@ const saijSentenciasController = {
                 withCausaRef, withExpediente, withExpedientePdf,
                 total,
                 scTotal, scByProcessing, scByEmbedding,
+                userNotifiedCount, userExcludedCount, socialPostCount,
+                scWithAiSummary, scPublicationSkipped,
             ] = await Promise.all([
                 SaijSentencia.aggregate([
                     { $group: { _id: '$saijType', count: { $sum: 1 } } },
@@ -219,6 +256,12 @@ const saijSentenciasController = {
                     { $group: { _id: '$embeddingStatus', count: { $sum: 1 } } },
                     { $sort: { count: -1 } },
                 ]).toArray(),
+                // Campañas a usuarios y difusión social (solo aplican a fallos)
+                SaijSentencia.countDocuments({ userNotified: true }),
+                SaijSentencia.countDocuments({ userCampaignExcluded: true }),
+                SaijSentencia.countDocuments({ 'socialPost.generado': true }),
+                scCollection.countDocuments({ 'source.origin': 'saij', 'aiSummary.content': { $exists: true, $nin: [null, ''] } }),
+                scCollection.countDocuments({ 'source.origin': 'saij', publicationStatus: 'skipped' }),
             ]);
 
             res.json({
@@ -232,6 +275,14 @@ const saijSentenciasController = {
                         total: scTotal,
                         byProcessingStatus: scByProcessing,
                         byEmbeddingStatus: scByEmbedding,
+                        withAiSummary: scWithAiSummary,
+                        publicationSkipped: scPublicationSkipped,
+                    },
+                    // Difusión: campañas de novedades a usuarios + redes sociales
+                    difusion: {
+                        userNotified: userNotifiedCount,
+                        userCampaignExcluded: userExcludedCount,
+                        socialPost: socialPostCount,
                     },
                 },
             });
@@ -347,6 +398,51 @@ const saijSentenciasController = {
             res.json({ success: true, data: doc });
         } catch (error) {
             logger.error(`[saij] Error update: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    /**
+     * PATCH /api/saij/sentencias/:id/social-post
+     * Marca (o desmarca) que se generó una pieza para redes por este fallo.
+     * Body: { generado: bool, postId?: string, estado?: string }
+     *
+     * `postId` es opcional: permite marcar a mano sin tener el post creado
+     * todavía. Cuando se pasa, apunta a socialposts de la-marketing-service.
+     */
+    async setSocialPost(req, res) {
+        try {
+            if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+                return res.status(400).json({ success: false, message: 'ID inválido' });
+            }
+
+            const { generado, postId, estado } = req.body;
+            if (typeof generado !== 'boolean') {
+                return res.status(400).json({ success: false, message: 'Campo `generado` (boolean) requerido' });
+            }
+
+            const update = generado
+                ? {
+                    $set: {
+                        'socialPost.generado': true,
+                        'socialPost.postId': postId || '',
+                        'socialPost.estado': estado || '',
+                        'socialPost.markedAt': new Date(),
+                        'socialPost.markedBy': req.userId || 'admin',
+                    },
+                }
+                : { $set: { 'socialPost.generado': false, 'socialPost.markedAt': new Date(), 'socialPost.markedBy': req.userId || 'admin' } };
+
+            const doc = await SaijSentencia.findByIdAndUpdate(req.params.id, update, { new: true })
+                .select('titulo socialPost')
+                .lean();
+
+            if (!doc) return res.status(404).json({ success: false, message: 'No encontrado' });
+
+            logger.info(`[saij] socialPost.generado=${generado} en ${req.params.id} por ${req.userId}`);
+            res.json({ success: true, data: doc });
+        } catch (error) {
+            logger.error(`[saij] Error setSocialPost: ${error.message}`);
             res.status(500).json({ success: false, message: error.message });
         }
     },

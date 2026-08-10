@@ -67,6 +67,30 @@ const SaijSentenciaSchema = new mongoose.Schema(
         },
         errorMessage:     { type: String, trim: true },
         retryCount:       { type: Number, default: 0 },
+
+        // ── Notificaciones (las escribe saij-workers) ──────────────────────
+        // Digest operativo al admin.
+        adminNotified:    { type: Boolean, default: false },
+        adminNotifiedAt:  { type: Date },
+        // Campaña de novedades a usuarios (la-marketing-service).
+        userNotified:     { type: Boolean, default: false },
+        userNotifiedAt:   { type: Date },
+        userCampaignId:   { type: String, trim: true },
+        // Fallo que no puede entrar a una campaña (sin página pública, sin
+        // resumen posible, o sacado de la vista con publicationStatus skipped).
+        userCampaignExcluded:   { type: Boolean, default: false },
+        userCampaignExcludedAt: { type: Date },
+
+        // ── Difusión en redes sociales ─────────────────────────────────────
+        // `postId` apunta a socialposts (la-marketing-service) cuando existe;
+        // puede quedar vacío si se marca a mano desde el admin.
+        socialPost: {
+            generado: { type: Boolean, default: false },
+            postId:   { type: String, trim: true },
+            estado:   { type: String, trim: true },
+            markedAt: { type: Date },
+            markedBy: { type: String, trim: true },
+        },
     },
     {
         timestamps: true,
