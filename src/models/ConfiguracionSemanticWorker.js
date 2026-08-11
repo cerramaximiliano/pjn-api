@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { lazyModel } = require('../config/sentenciasConnection');
 
 const schema = new mongoose.Schema(
 	{
@@ -42,4 +43,6 @@ const schema = new mongoose.Schema(
 	}
 );
 
-module.exports = mongoose.model('ConfiguracionSemanticWorker', schema);
+// Registrado sobre la conexión de sentencias (SENTENCIAS_MONGO_URI || URLDB):
+// la colección migra junto con el resto del subsistema de sentencias al rs0.
+module.exports = lazyModel('ConfiguracionSemanticWorker', schema);

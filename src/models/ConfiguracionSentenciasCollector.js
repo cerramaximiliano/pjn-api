@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { lazyModel } = require('../config/sentenciasConnection');
 
 const fueroConfigSchema = new mongoose.Schema(
 	{
@@ -56,4 +57,6 @@ const schema = new mongoose.Schema(
 	}
 );
 
-module.exports = mongoose.model('ConfiguracionSentenciasCollector', schema);
+// Registrado sobre la conexión de sentencias (SENTENCIAS_MONGO_URI || URLDB):
+// la colección migra junto con el resto del subsistema de sentencias al rs0.
+module.exports = lazyModel('ConfiguracionSentenciasCollector', schema);

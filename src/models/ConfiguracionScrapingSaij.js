@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { lazyModel } = require('../config/sentenciasConnection');
 
 const MonthHistorySchema = new mongoose.Schema({
     year:              { type: Number },
@@ -90,4 +91,6 @@ const ConfiguracionScrapingSaijSchema = new mongoose.Schema(
     }
 );
 
-module.exports = mongoose.model('ConfiguracionScrapingSaij', ConfiguracionScrapingSaijSchema);
+// Registrado sobre la conexión de sentencias (SENTENCIAS_MONGO_URI || URLDB):
+// la colección migra junto con el resto del subsistema de sentencias al rs0.
+module.exports = lazyModel('ConfiguracionScrapingSaij', ConfiguracionScrapingSaijSchema);
