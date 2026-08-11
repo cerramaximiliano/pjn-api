@@ -11,13 +11,9 @@ El servicio `causasService.js` proporciona funcionalidades para gestionar operac
 | Método | Descripción | Ruta API |
 |--------|-------------|----------|
 | `updateCausasUpdateStatus` | Actualiza el estado de actualización para un usuario específico | `PATCH /causas-service/update-status` |
-| `updateCausasBasedOnSubscriptions` | Actualiza el estado de actualización considerando usuarios con suscripciones activas | `PATCH /causas-service/update-by-subscriptions` |
-| `initializeUserUpdatesEnabled` | Inicializa el array userUpdatesEnabled para todas las causas | `POST /causas-service/initialize-updates` |
 | `associateFolderToCausa` | Asocia un folder a un documento de causa | `POST /causas-service/associate-folder` |
 | `dissociateFolderFromCausa` | Desasocia un folder de un documento de causa | `DELETE /causas-service/dissociate-folder` |
-| `findCausaByFolderId` | Busca una causa que contenga un folder específico | `GET /causas-service/find-by-folder/:causaType/:folderId` |
 | `getCausaTypeByPjnCode` | Determina qué tipo de causa corresponde según el código PJN | `GET /causas-service/causa-type-by-code/:pjnCode` |
-| `migrateArrayFields` | Migra documentos para asegurar que folderIds y userCausaIds sean arrays | `POST /causas-service/migrate-array-fields/:causaType` |
 
 ## Tipos de Causa
 
@@ -59,4 +55,3 @@ GET /api-docs
 
 ## Migración de Datos
 
-Para facilitar la migración de datos existentes, se proporcionan herramientas como `initializeUserUpdatesEnabled` y `migrateArrayFields` que permiten actualizar la estructura de documentos cuando se agregan nuevos campos o se cambia el formato de los datos.
