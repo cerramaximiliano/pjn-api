@@ -44,7 +44,9 @@ exports.getStats = async (req, res) => {
 		for (const fuero of ALL_FUEROS) {
 			const Model = FUERO_MODELS[fuero];
 			const [total, eligibles, processing, cooldown] = await Promise.all([
-				Model.countDocuments({}),
+				// estimatedDocumentCount lee metadata: countDocuments({}) hacía COLLSCAN
+				// de la colección entera (~87s en causas-civil con cache frío)
+				Model.estimatedDocumentCount(),
 				Model.countDocuments(BASE_QUERY),
 				Model.countDocuments({ ...BASE_QUERY, ...lockActive }),
 				Model.countDocuments({ ...BASE_QUERY, ...cooldownActive }),
