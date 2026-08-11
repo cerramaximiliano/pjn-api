@@ -18,11 +18,13 @@
  *     notasCausa, creadoPor, actualizadoPor, createdAt, updatedAt }
  *
  * Cuerpos: la instancia local de pjn-api corre contra la Mongo local
- * (NODE_ENV=local) pero los documentos extraídos viven en Atlas
- * (`sentencias-capturadas`) — se abre una conexión secundaria lazy con
- * process.env.URLDB. Si no está disponible, el editor funciona sin cuerpos.
+ * (NODE_ENV=local) pero los documentos extraídos (`sentencias-capturadas`)
+ * viven en la DB de sentencias (SENTENCIAS_MONGO_URI || URLDB) — se usa la
+ * conexión compartida de src/config/sentenciasConnection. Si no está
+ * disponible, el editor funciona sin cuerpos.
  */
 const mongoose = require("mongoose");
+const { getSentenciasDb } = require("../config/sentenciasConnection");
 const pjn = require("pjn-models");
 const { logger } = require("../config/pino");
 const { segmentar } = require("../utils/segmentarResolucion");
@@ -176,24 +178,17 @@ function col() {
     return mongoose.connection.db.collection("etapa-anotaciones");
 }
 
-// ── Conexión secundaria a Atlas para cuerpos (lazy) ────────────────────────────
-let atlasConn = null;
-async function atlasDb() {
-    const uri = process.env.URLDB;
-    if (!uri || !/mongodb\+srv|mongodb.net/.test(uri)) {
-        // La instancia hub ya corre contra Atlas: reusar la conexión principal.
-        if (mongoose.connection.host && /mongodb.net/.test(mongoose.connection.host)) return mongoose.connection.db;
+// ── Conexión a la Mongo de sentencias para cuerpos (helper compartido, lazy) ──
+// Usa la conexión única de sentencias (SENTENCIAS_MONGO_URI || URLDB), que
+// reutiliza la default cuando la URI coincide. Devuelve null si no está
+// disponible: el editor funciona sin cuerpos.
+async function sentenciasDb() {
+    try {
+        return await getSentenciasDb();
+    } catch (e) {
+        logger.warn(`etapa-anotaciones: sin conexión a sentencias para cuerpos: ${e.message}`);
         return null;
     }
-    if (mongoose.connection.client.s.url === uri) return mongoose.connection.db;
-    if (!atlasConn) {
-        atlasConn = mongoose.createConnection(uri, { serverSelectionTimeoutMS: 8000 });
-        await atlasConn.asPromise().catch((e) => {
-            logger.warn(`etapa-anotaciones: sin conexión Atlas para cuerpos: ${e.message}`);
-            atlasConn = null;
-        });
-    }
-    return atlasConn ? atlasConn.db : null;
 }
 
 function dayKey(f) {
@@ -349,7 +344,7 @@ exports.getCausaParaAnotar = async (req, res) => {
                 });
             }
         }
-        const db = cuerpos.length ? null : await atlasDb().catch(() => null);
+        const db = cuerpos.length ? null : await sentenciasDb().catch(() => null);
         if (db) {
             const docs = await db.collection("sentencias-capturadas")
                 .find({ causaId: new mongoose.Types.ObjectId(id) })
@@ -640,7 +635,7 @@ exports.getCuerpoOnDemand = async (req, res) => {
         }
 
         // 2. Ya capturado por el pipeline de sentencias (Atlas)
-        const db = await atlasDb().catch(() => null);
+        const db = await sentenciasDb().catch(() => null);
         if (db) {
             const doc = await db.collection("sentencias-capturadas").findOne(
                 { causaId: new mongoose.Types.ObjectId(id), url: mov.url },

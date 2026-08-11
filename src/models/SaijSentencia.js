@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { lazyModel } = require('../config/sentenciasConnection');
 
 const SaijSentenciaSchema = new mongoose.Schema(
     {
@@ -111,4 +112,8 @@ SaijSentenciaSchema.index({ 'causaRefs.causaId': 1 }, { sparse: true });
 SaijSentenciaSchema.index({ 'causaRefs.source': 1 }, { sparse: true });
 SaijSentenciaSchema.index({ titulo: 'text', texto: 'text', sobre: 'text' });
 
-module.exports = mongoose.model('SaijSentencia', SaijSentenciaSchema);
+// Registrado sobre la MISMA conexión de sentencias que SentenciaCapturada:
+// saijSentenciasController hace $lookup contra `sentencias-capturadas` y accede
+// raw vía `SaijSentencia.db.collection('sentencias-capturadas')` — ambas
+// colecciones DEBEN vivir en la misma conexión/DB.
+module.exports = lazyModel('SaijSentencia', SaijSentenciaSchema);

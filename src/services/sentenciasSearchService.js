@@ -6,38 +6,14 @@ const { getHydeEmbedding } = require('./hydeCache');
 const { queryQdrant } = require('./qdrantSentencias');
 const { planQuery } = require('./queryPlanner');
 const { normalizeTerms } = require('./citations');
-const mongoose = require('mongoose');
-
-// ── Conexión Mongo dedicada al corpus de sentencias (Atlas) ───────────────────
+// ── Conexión Mongo del corpus de sentencias ───────────────────────────────────
 // El corpus (colección `sentencias-capturadas` + la config del semantic worker)
-// vive en Atlas (URLDB), NO en la Mongo local del scraper. En worker_01 pjn-api
-// corre con NODE_ENV=local, por lo que la conexión mongoose por DEFECTO apunta a
-// URLDB_LOCAL, que solo tiene un puñado de sentencias de trabajo y NO las que
-// referencian los embeddings de Qdrant. Sin esta conexión dedicada, el enrichment
-// no encuentra los documentos y la búsqueda devuelve 0 resultados.
-// Usa SENTENCIAS_MONGO_URI si está seteada; por defecto URLDB (Atlas).
-// Se cachea la PROMESA (no la conexión) para que llamadas concurrentes —p. ej.
-// varios enrichGroup en Promise.all— compartan una sola conexión y no abran una
-// por cada una (race en el primer request).
-let _sentenciasConnPromise = null;
-function getSentenciasDb() {
-	if (_sentenciasConnPromise) {
-		return _sentenciasConnPromise.then((conn) => {
-			if (conn.readyState === 1) return conn.db;
-			_sentenciasConnPromise = null; // conexión caída → reconectar
-			return getSentenciasDb();
-		});
-	}
-	const uri = process.env.SENTENCIAS_MONGO_URI || process.env.URLDB;
-	if (!uri) return Promise.reject(new Error('SENTENCIAS_MONGO_URI/URLDB (Atlas) no configurada para la búsqueda de sentencias'));
-	_sentenciasConnPromise = mongoose.createConnection(uri, { serverSelectionTimeoutMS: 20000 }).asPromise()
-		.then((conn) => {
-			logger.info('[SentenciasSearch] conexión Atlas dedicada para enrichment inicializada');
-			return conn;
-		})
-		.catch((err) => { _sentenciasConnPromise = null; throw err; });
-	return _sentenciasConnPromise.then((conn) => conn.db);
-}
+// vive en la DB gobernada por SENTENCIAS_MONGO_URI || URLDB, NO en la Mongo
+// local del scraper (en worker_01 pjn-api corre con NODE_ENV=local y la
+// conexión default apunta a URLDB_LOCAL, que no tiene el corpus). Se usa el
+// helper compartido, que además reutiliza la conexión default cuando la URI
+// coincide (hub) en vez de abrir un pool duplicado como hacía este servicio.
+const { getSentenciasDb } = require('../config/sentenciasConnection');
 
 // Cutover Pinecone → Qdrant (gated por VECTOR_BACKEND=qdrant).
 // La colección Qdrant 'sentencias' es text-embedding-3-large @ 3072 (igual que pjn-sentencias-v1).

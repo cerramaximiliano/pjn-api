@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const { lazyModel } = require('../config/sentenciasConnection');
 
 const schema = new Schema(
 	{
@@ -151,4 +152,8 @@ schema.index({ 'source.saijDocId': 1 }, { sparse: true });
 schema.index({ embeddingStatus: 1, updatedAt: -1 });
 schema.index({ processingStatus: 1, embeddingStatus: 1 });
 
-module.exports = mongoose.model('SentenciaCapturada', schema);
+// Registrado sobre la conexión de sentencias (SENTENCIAS_MONGO_URI || URLDB),
+// NO sobre la default: en worker_01 (NODE_ENV=local) la default es la Mongo
+// local, que no tiene el corpus real. Binding lazy porque a module-load todavía
+// no corrió dotenv.config(). Misma conexión que SaijSentencia ($lookup entre ambas).
+module.exports = lazyModel('SentenciaCapturada', schema);
