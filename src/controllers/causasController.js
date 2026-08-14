@@ -315,6 +315,17 @@ const causasController = {
         });
       }
 
+      // El año debe ser un año calendario real: ni futuro ni anterior a 1900
+      // (defensa contra parsers upstream que expanden mal años de 2 dígitos).
+      const yearNum = parseInt(year, 10);
+      const maxYear = new Date().getFullYear() + 1;
+      if (isNaN(yearNum) || yearNum < 1900 || yearNum > maxYear) {
+        return res.status(400).json({
+          success: false,
+          message: `Año inválido: ${year} (rango permitido 1900-${maxYear})`
+        });
+      }
+
       // Usar la función getModel existente
       let Model;
       try {
