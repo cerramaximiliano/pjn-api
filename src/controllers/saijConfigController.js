@@ -288,10 +288,52 @@ const saijConfigController = {
      */
     async updateNotification(req, res) {
         try {
-            const allowed = ['startupEmail', 'errorEmail', 'dailyReport', 'recipientEmail'];
+            const allowed = ['startupEmail', 'errorEmail', 'dailyReport', 'newDocumentsEmail', 'recipientEmail'];
             const updates = {};
             for (const key of allowed) {
                 if (req.body[key] !== undefined) updates[`notification.${key}`] = req.body[key];
+            }
+
+            // Campañas de novedades a usuarios. Se validan rangos acá: son
+            // parámetros que gobiernan envíos reales a cientos de personas y
+            // un valor absurdo desde la UI (0 fallos, hora 47) rompería el
+            // worker en silencio o mandaría correos vacíos.
+            const uc = req.body.userCampaign;
+            if (uc && typeof uc === 'object') {
+                const num = (v, min, max) => {
+                    const n = parseInt(v, 10);
+                    return Number.isFinite(n) && n >= min && n <= max ? n : null;
+                };
+                const validadores = {
+                    enabled:              (v) => (typeof v === 'boolean' ? v : null),
+                    weekdaysOnly:         (v) => (typeof v === 'boolean' ? v : null),
+                    siteUrl:              (v) => (typeof v === 'string' && /^https?:\/\//.test(v) ? v.trim() : null),
+                    segmentId:            (v) => (typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v) ? v : null),
+                    templateId:           (v) => (typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v) ? v : null),
+                    campaignHour:         (v) => num(v, 0, 23),
+                    reportHour:           (v) => num(v, 0, 23),
+                    maxFallosPorCampania: (v) => num(v, 1, 50),
+                    maxPublishAgeDays:    (v) => num(v, 1, 3650),
+                    maxDocAgeDays:        (v) => num(v, 1, 3650),
+                    maxWaitHours:         (v) => num(v, 1, 720),
+                    windowHours:          (v) => num(v, 1, 720),
+                    reportLookbackHours:  (v) => num(v, 1, 720),
+                    throttleRate:         (v) => num(v, 1, 5000),
+                    dailyLimit:           (v) => num(v, 0, 100000),
+                };
+                const invalidos = [];
+                for (const [campo, validar] of Object.entries(validadores)) {
+                    if (uc[campo] === undefined) continue;
+                    const valor = validar(uc[campo]);
+                    if (valor === null) invalidos.push(campo);
+                    else updates[`notification.userCampaign.${campo}`] = valor;
+                }
+                if (invalidos.length > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Valores inválidos: ${invalidos.join(', ')}`,
+                    });
+                }
             }
 
             if (Object.keys(updates).length === 0) {
