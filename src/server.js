@@ -60,11 +60,18 @@ async function initializeServer() {
 
     });
 
-    const URLDB = process.env.NODE_ENV === 'local'
-      ? process.env.URLDB_LOCAL
-      : process.env.URLDB;
+    // MONGO_TARGET=rs0 lo usa la instancia "cache" del hub (pjn/cache-api), que
+    // sirve el caché de causas leyendo del secundario del replica set. La URI
+    // sale del secreto de AWS como el resto: así la credencial no vive en el
+    // dump de PM2 y una rotación se propaga sola al reiniciar.
+    const URLDB = process.env.MONGO_TARGET === 'rs0'
+      ? process.env.SENTENCIAS_MONGO_URI
+      : process.env.NODE_ENV === 'local'
+        ? process.env.URLDB_LOCAL
+        : process.env.URLDB;
+    if (!URLDB) throw new Error(`No hay URI de Mongo para MONGO_TARGET=${process.env.MONGO_TARGET} / NODE_ENV=${process.env.NODE_ENV}`);
     await mongoose.connect(URLDB);
-    logger.info(`Conexión a MongoDB establecida en ambiente ${process.env.NODE_ENV}`);
+    logger.info(`Conexión a MongoDB establecida en ambiente ${process.env.NODE_ENV}${process.env.MONGO_TARGET ? ` (target ${process.env.MONGO_TARGET})` : ''}`);
 
     // Inicializar caché HyDE (Redis, lazy-connect, solo si HYDE_ENABLED=true)
     const { initHydeCache } = require('./services/hydeCache');
