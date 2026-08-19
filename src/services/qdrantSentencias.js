@@ -21,7 +21,9 @@ function qdrantConfig() {
     apiKey: process.env.QDRANT_API_KEY || '',
     collection: process.env.QDRANT_SENTENCIAS_COLLECTION || 'sentencias',
     oversampling: parseFloat(process.env.QDRANT_SENTENCIAS_OVERSAMPLING || '2.0'),
-    hnswEf: parseInt(process.env.QDRANT_SENTENCIAS_HNSW_EF || '256', 10),
+    // 128 medido el 18/08/2026: recall top-10 idéntico a ef=512 en consultas reales,
+    // 15× más rápido (ADR-12 en la-infra-docs). No subir sin re-medir.
+    hnswEf: parseInt(process.env.QDRANT_SENTENCIAS_HNSW_EF || '128', 10),
   };
 }
 
