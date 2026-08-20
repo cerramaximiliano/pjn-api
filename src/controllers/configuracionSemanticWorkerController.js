@@ -14,6 +14,7 @@ const ALLOWED_FIELDS = [
 	'cronPattern',
 	'searchQueryPlanner',
 	'searchLexicalLayer',
+	'searchCorpus',
 ];
 
 const configuracionSemanticWorkerController = {

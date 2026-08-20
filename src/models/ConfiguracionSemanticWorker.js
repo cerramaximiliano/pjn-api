@@ -29,6 +29,19 @@ const schema = new mongoose.Schema(
 		searchLexicalLayer: {
 			enabled: { type: Boolean, default: false },
 		},
+		// Corpus habilitado para la búsqueda semántica, POR CONSUMIDOR:
+		//   'saij' = solo el corpus curado público (~10k fallos SAIJ con resumen,
+		//            mismo universo que /jurisprudencia pública)
+		//   'all'  = todo el corpus embebido (~320k, incluye sentencias PJN
+		//            capturadas de causas de usuarios)
+		// Lo lee pjn-rag-api en caliente (cache 30s) y lo ENFUERZA server-side:
+		// el cliente puede acotar más, nunca ampliar. 'app' gobierna la vista
+		// in-app de law-analytics-front; 'mcp' el tool search_sentencias de
+		// la-mcp-server (Claude.ai / IA externas).
+		searchCorpus: {
+			app: { type: String, enum: ['saij', 'all'], default: 'saij' },
+			mcp: { type: String, enum: ['saij', 'all'], default: 'saij' },
+		},
 		currentState: {
 			isRunning:       { type: Boolean, default: false },
 			workerId:        { type: String },
