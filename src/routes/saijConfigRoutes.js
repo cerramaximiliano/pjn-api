@@ -9,6 +9,8 @@ const { verifyToken, verifyAdmin } = require('../middleware/auth');
 router.use(verifyToken, verifyAdmin);
 
 router.get('/',                           ctrl.list);
+// Antes de '/:workerId' — si no, 'progress' se toma como un workerId.
+router.get('/progress',                   ctrl.progress);
 router.get('/:workerId',                  ctrl.getOne);
 router.get('/:workerId/history',          ctrl.getHistory);
 router.get('/:workerId/stats',            ctrl.getStats);

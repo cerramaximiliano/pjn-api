@@ -33,6 +33,14 @@ const ConfiguracionScrapingSaijSchema = new mongoose.Schema(
             pageTimeout:            { type: Number, default: 60000 },
             maxRetries:             { type: Number, default: 3 },
             downloadPdf:            { type: Boolean, default: false },
+            // Canal que barre este worker. CSJN = Jurisdicción/Federal filtrado
+            // por Tribunal/CORTE SUPREMA DE JUSTICIA DE LA NACION.
+            jurisdiccion:           { type: String, enum: ['NACIONAL', 'PROVINCIAL', 'CSJN'], default: 'NACIONAL' },
+            // backfill = barrido histórico por cursor mensual.
+            // incremental = solo novedades, ordenadas por fecha-umod.
+            mode:                   { type: String, enum: ['backfill', 'incremental'], default: 'backfill' },
+            sortOrder:              { type: String, enum: ['ASC', 'DESC'], default: 'DESC' },
+            fechaUmodWatermark:     { type: String, default: '' },
         },
 
         // Switches del pipeline downstream del worker SAIJ (link → marcar
@@ -81,6 +89,12 @@ const ConfiguracionScrapingSaijSchema = new mongoose.Schema(
             lastSuccessAt:     { type: Date },
             lastErrorAt:       { type: Date },
             lastErrorMessage:  { type: String },
+            // Rate limiting de SAIJ: responde 403 seco, sin 429 ni headers de
+            // cuota. El límite es por IP y compartido por todos los workers,
+            // pero cada proceso solo ve sus propios rechazos: hay que sumarlos.
+            saijRechazos6h:        { type: Number, default: 0 },
+            saijRechazosUltimaHora:{ type: Number, default: 0 },
+            saijUltimoRechazoAt:   { type: Date },
         },
 
         lastUpdate: { type: Date },

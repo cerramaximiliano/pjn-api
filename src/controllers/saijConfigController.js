@@ -1,9 +1,103 @@
 'use strict';
 
 const ConfiguracionScrapingSaij = require('../models/ConfiguracionScrapingSaij');
+const SaijSentencia = require('../models/SaijSentencia');
 const { logger } = require('../config/pino');
 
 const saijConfigController = {
+
+    /**
+     * GET /api/saij/config/progress
+     * Avance de cada worker: cuánto lleva scrapeado y en qué año va.
+     *
+     * Las cantidades salen de contar la colección, no de stats.totalSuccess:
+     * ese contador es acumulado de intentos y se desfasa con los reinicios,
+     * los duplicados salteados y los backfills que rebobinan el cursor.
+     */
+    async progress(req, res) {
+        try {
+            const configs = await ConfiguracionScrapingSaij.find().lean();
+
+            const [porWorker, porJurisdiccion] = await Promise.all([
+                SaijSentencia.aggregate([
+                    { $group: { _id: '$workerId', docs: { $sum: 1 }, ultimo: { $max: '$createdAt' } } },
+                ]),
+                SaijSentencia.aggregate([
+                    { $group: { _id: '$scrapeJurisdiccion', docs: { $sum: 1 } } },
+                ]),
+            ]);
+
+            const docsPorWorker = Object.fromEntries(porWorker.map((x) => [x._id, x]));
+            const docsPorJurisdiccion = Object.fromEntries(porJurisdiccion.map((x) => [x._id || 'NACIONAL', x.docs]));
+
+            const ahora = new Date();
+            const añoActual = ahora.getFullYear();
+            const mesActual = ahora.getMonth() + 1;
+
+            const workers = configs.map((c) => {
+                const s = c.scraping || {};
+                const incremental = s.mode === 'incremental';
+                const desde = s.yearFrom || s.currentYear || añoActual;
+                const cursorMeses = ((s.currentYear || desde) - desde) * 12 + ((s.currentMonth || 1) - 1);
+                const totalMeses = Math.max(1, (añoActual - desde) * 12 + (mesActual - 1));
+
+                // En incremental el backfill ya terminó: el avance es 100% por
+                // definición, no una fracción del calendario.
+                const avance = incremental ? 100 : Math.min(100, Math.round((cursorMeses / totalMeses) * 100));
+
+                const propio = docsPorWorker[c.worker_id] || {};
+                return {
+                    workerId: c.worker_id,
+                    enabled: !!c.enabled,
+                    paused: !!c.pause?.isPaused,
+                    jurisdiccion: s.jurisdiccion || 'NACIONAL',
+                    mode: s.mode || 'backfill',
+                    cursor: {
+                        year: s.currentYear ?? null,
+                        month: s.currentMonth ?? null,
+                        offset: s.currentOffset ?? 0,
+                        yearFrom: desde,
+                        yearTarget: añoActual,
+                    },
+                    avance,
+                    docs: propio.docs || 0,
+                    ultimoDocAt: propio.ultimo || null,
+                    watermark: s.fechaUmodWatermark || null,
+                    rateLimit: s.rateLimit ?? null,
+                    cronPattern: s.cronPattern || null,
+                    lastRunAt: c.stats?.lastRunAt || null,
+                    rechazos: {
+                        ultimaHora: c.stats?.saijRechazosUltimaHora || 0,
+                        seisHoras: c.stats?.saijRechazos6h || 0,
+                        ultimoAt: c.stats?.saijUltimoRechazoAt || null,
+                    },
+                };
+            });
+
+            // El ritmo agregado importa porque el rate limit de SAIJ es por IP y
+            // el limitador de los workers es una instancia por proceso: ninguno
+            // ve por su cuenta el tráfico que SAIJ realmente mide.
+            const rateAgregado = workers
+                .filter((w) => w.enabled && !w.paused)
+                .reduce((acc, w) => acc + (w.rateLimit || 0), 0);
+
+            res.json({
+                success: true,
+                data: {
+                    workers,
+                    totales: {
+                        porJurisdiccion: docsPorJurisdiccion,
+                        docs: Object.values(docsPorJurisdiccion).reduce((a, b) => a + b, 0),
+                        rateAgregado,
+                        rechazosUltimaHora: workers.reduce((a, w) => a + w.rechazos.ultimaHora, 0),
+                    },
+                },
+            });
+        } catch (error) {
+            logger.error(`[saij] Error progress: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
 
     /**
      * GET /api/saij/config
