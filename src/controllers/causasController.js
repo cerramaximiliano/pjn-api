@@ -595,8 +595,13 @@ const causasController = {
       const maxDocsToFetch = skip + limit;
 
       // Consultar documentos con ordenamiento de MongoDB y límite razonable
+      // Sin el array `movimiento`: la tabla solo muestra `movimientosCount` y el
+      // detalle se pide aparte. Con page*limit docs por fuero y causas de cientos
+      // de movimientos, traerlo eran MBs por página que viajaban y se descartaban
+      // (y el sort en memoria copiaba cada doc entero con el spread de abajo).
       const resultadosPorFuero = await Promise.all(
         fuerosAConsultar.map(f => FUERO_MODELS[f].find(searchFilters)
+          .select('-movimiento')
           .sort(sortOptions)
           .limit(maxDocsToFetch)
           .lean())
@@ -753,6 +758,7 @@ const causasController = {
       const maxDocsToFetch = skip + limit;
       const results = await Promise.all(
         fuerosAConsultar.map(f => FUERO_MODELS[f].find(searchFilters)
+          .select('-movimiento') // la tabla solo usa movimientosCount (ver getAllVerifiedCausas)
           .sort(sortOptions)
           .limit(maxDocsToFetch)
           .lean())
