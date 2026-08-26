@@ -185,6 +185,16 @@ const scrapingManagerController = {
         worker.healthCheck = { ...worker.healthCheck, ...updates.healthCheck };
       }
 
+      // Procesamiento por instancia (lote/pausa) y umbral entre corridas — data-driven
+      // para update-sync (el worker y el manager los leen de acá).
+      if (updates.processing) {
+        worker.processing = { ...(worker.processing || {}), ...updates.processing };
+      }
+      if (updates.minHoursBetweenUpdates !== undefined) {
+        const v = Number(updates.minHoursBetweenUpdates);
+        if (Number.isFinite(v) && v > 0) worker.minHoursBetweenUpdates = v;
+      }
+
       const saved = await writeConfig(config);
 
       logger.info(`Scraping manager worker '${workerName}' actualizado por usuario ${req.userId}`);
