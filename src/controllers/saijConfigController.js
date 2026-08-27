@@ -349,6 +349,8 @@ const saijConfigController = {
             const allowed = [
                 'enabled', 'linkToCausa', 'markCausa', 'addMovimiento',
                 'downloadPdf', 'createSentenciaCapturada', 'createMissingCausas',
+                // Publicar fallos sin causa PJN vinculada (SC con causaId null).
+                'createScSinCausa',
             ];
             const updates = {};
             for (const key of allowed) {
@@ -414,6 +416,9 @@ const saijConfigController = {
                     reportLookbackHours:  (v) => num(v, 1, 720),
                     throttleRate:         (v) => num(v, 1, 5000),
                     dailyLimit:           (v) => num(v, 0, 100000),
+                    // Sección Corte Suprema del boletín. 0 la apaga.
+                    csjnMaxItems:         (v) => num(v, 0, 20),
+                    csjnMaxDocAgeDays:    (v) => num(v, 1, 3650),
                 };
                 const invalidos = [];
                 for (const [campo, validar] of Object.entries(validadores)) {
