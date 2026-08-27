@@ -419,6 +419,11 @@ const saijConfigController = {
                     // Sección Corte Suprema del boletín. 0 la apaga.
                     csjnMaxItems:         (v) => num(v, 0, 20),
                     csjnMaxDocAgeDays:    (v) => num(v, 1, 3650),
+                    // Criterio de selección: 'reciente' prioriza lo recién dado
+                    // de alta; 'antiguo' drena la cola en orden (FIFO).
+                    ordenSeleccion:       (v) => (['reciente', 'antiguo'].includes(v) ? v : null),
+                    csjnOrden:            (v) => (['reciente', 'antiguo'].includes(v) ? v : null),
+                    subject:              (v) => (typeof v === 'string' && v.trim().length >= 3 && v.length <= 120 ? v.trim() : null),
                 };
                 const invalidos = [];
                 for (const [campo, validar] of Object.entries(validadores)) {
