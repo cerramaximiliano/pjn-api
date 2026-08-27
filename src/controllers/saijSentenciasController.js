@@ -467,6 +467,85 @@ const saijSentenciasController = {
             res.status(500).json({ success: false, message: error.message });
         }
     },
+    /**
+     * PATCH /api/saij/sentencias/:id/causa
+     * Vincula (o desvincula) a mano un fallo con una causa PJN.
+     *
+     * El pipeline vincula solo cuando puede parsear el expediente del PDF, y
+     * hay fallos importantes cuyo expediente no matchea. Esto permite hacerlo
+     * a mano desde el admin: se busca la causa por fuero/numero/anio, se
+     * escribe causaRefs en el doc SAIJ y se actualiza su SentenciaCapturada
+     * para que quede colgada de esa causa.
+     *
+     * Body: { fuero, number, year }  ·  { desvincular: true } para soltarla.
+     */
+    async vincularCausa(req, res) {
+        try {
+            const doc = await SaijSentencia.findById(req.params.id);
+            if (!doc) return res.status(404).json({ success: false, message: 'Sentencia no encontrada' });
+
+            const SentenciaCapturada = mongoose.connection.collection('sentencias-capturadas');
+
+            if (req.body.desvincular) {
+                await SaijSentencia.updateOne({ _id: doc._id }, {
+                    $set: { causaRefs: [], pipelineUpdatedAt: new Date(), pipelineError: 'desvinculado a mano desde el admin' },
+                });
+                await SentenciaCapturada.updateMany({ 'source.saijDocId': doc._id }, { $set: { causaId: null } });
+                return res.json({ success: true, data: { desvinculada: true } });
+            }
+
+            const { fuero, number, year } = req.body;
+            const { getModel } = require('./causasController');
+            let Causa;
+            try {
+                Causa = getModel(String(fuero || '').toUpperCase());
+            } catch (e) {
+                return res.status(400).json({ success: false, message: e.message });
+            }
+
+            const causa = await Causa.findOne({ number: String(number), year: String(year) })
+                .select('_id caratula number year')
+                .lean();
+            if (!causa) {
+                return res.status(404).json({
+                    success: false,
+                    message: `No existe la causa ${fuero} ${number}/${year} en la base`,
+                });
+            }
+
+            const ref = {
+                causaId: causa._id,
+                caratula: causa.caratula,
+                fuero: String(fuero).toUpperCase(),
+                source: 'app',
+            };
+            await SaijSentencia.updateOne({ _id: doc._id }, {
+                $set: {
+                    causaRefs: [ref],
+                    fuero: ref.fuero,
+                    'expediente.numero': Number(number),
+                    'expediente.año': Number(year),
+                    'expediente.source': 'manual',
+                    'expediente.confidence': 'high',
+                    pipelineUpdatedAt: new Date(),
+                    pipelineError: null,
+                },
+            });
+
+            // La SC hereda la causa: es lo que la vuelve a colgar del expediente.
+            const r = await SentenciaCapturada.updateMany(
+                { 'source.saijDocId': doc._id },
+                { $set: { causaId: causa._id, fuero: ref.fuero, number: Number(number), year: Number(year), caratula: causa.caratula } }
+            );
+
+            logger.info(`[saij] Fallo ${doc._id} vinculado a mano con ${ref.fuero} ${number}/${year} (${causa._id}); ${r.modifiedCount} SC actualizada(s)`);
+            res.json({ success: true, data: { causa: ref, sentenciasCapturadas: r.modifiedCount } });
+        } catch (error) {
+            logger.error(`[saij] Error vinculando causa: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
 };
 
 module.exports = saijSentenciasController;

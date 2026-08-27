@@ -15,6 +15,8 @@ router.get('/:id',           verifyToken,             ctrl.getById);
 // Escritura — requiere admin
 router.patch('/:id',         verifyToken, verifyAdmin, ctrl.update);
 router.patch('/:id/social-post', verifyToken, verifyAdmin, ctrl.setSocialPost);
+// Vinculación manual con una causa PJN (o desvinculación con { desvincular:true }).
+router.patch('/:id/causa',   verifyToken, verifyAdmin, ctrl.vincularCausa);
 router.delete('/:id',        verifyToken, verifyAdmin, ctrl.remove);
 
 module.exports = router;

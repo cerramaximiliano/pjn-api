@@ -2422,4 +2422,7 @@ const causasController = {
 
 };
 
+// getModel se exporta aparte: el controlador de SAIJ lo usa para la
+// vinculación manual de causa y no tiene sentido duplicar el mapa de 28 fueros.
 module.exports = causasController;
+module.exports.getModel = getModel;
