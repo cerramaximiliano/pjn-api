@@ -471,6 +471,113 @@ const sentenciasCapturadasController = {
 			res.status(500).json({ success: false, message: 'Error al guardar resumen', error: error.message });
 		}
 	},
+    /**
+     * GET /api/sentencias-capturadas/flujo
+     *
+     * Radiografía del pipeline por etapas, con los documentos parados en cada
+     * una y el estado de los interruptores que los frenan.
+     *
+     * Existe porque los contadores sueltos no decían DÓNDE se atasca el
+     * material: se veía "0 embebidos" sin saber si era falta de texto, de
+     * resumen, o que alguien había apagado el worker desde esta misma
+     * pantalla. Cada etapa reporta su cola separando SAIJ de PJN, porque son
+     * dos flujos con ritmos y prioridades distintas.
+     */
+    async getFlujo(req, res) {
+        try {
+            const mongoose = require('mongoose');
+            const col = mongoose.connection.collection('sentencias-capturadas');
+
+            const porOrigen = async (filtro) => {
+                const [saij, pjn] = await Promise.all([
+                    col.countDocuments({ ...filtro, 'source.origin': 'saij' }),
+                    col.countDocuments({ ...filtro, 'source.origin': { $ne: 'saij' } }),
+                ]);
+                return { saij, pjn, total: saij + pjn };
+            };
+
+            const sinResumen = {
+                processingStatus: 'processed',
+                'aiSummary.content': { $exists: false },
+                'aiSummary.skipReason': { $exists: false },
+                publicationStatus: { $ne: 'skipped' },
+            };
+            const pendienteEmbedding = {
+                processingStatus: 'processed',
+                $or: [{ embeddingStatus: 'pending' }, { embeddingStatus: { $exists: false } }],
+            };
+
+            const [
+                capturadas, sinTexto, necesitaOcr, conTexto,
+                colaResumen, conResumen, colaEmbedding, embebidas,
+                erroresTexto, erroresEmbedding, publicadas, vetadas,
+            ] = await Promise.all([
+                porOrigen({}),
+                porOrigen({ processingStatus: { $in: ['pending', 'processing'] } }),
+                porOrigen({ processingStatus: 'extracted_needs_ocr' }),
+                porOrigen({ processingStatus: 'processed' }),
+                porOrigen(sinResumen),
+                porOrigen({ 'aiSummary.content': { $exists: true, $nin: [null, ''] } }),
+                porOrigen(pendienteEmbedding),
+                porOrigen({ embeddingStatus: 'completed' }),
+                porOrigen({ processingStatus: 'error' }),
+                porOrigen({ embeddingStatus: 'error' }),
+                porOrigen({ 'aiSummary.content': { $exists: true, $nin: [null, ''] }, publicationStatus: { $ne: 'skipped' } }),
+                porOrigen({ publicationStatus: 'skipped' }),
+            ]);
+
+            // Interruptores: lo que efectivamente frena cada etapa.
+            const cfg = await mongoose.connection.collection('pipeline-config').findOne({}) || {};
+            const sw = cfg.sentenciasWorker || {};
+            const flags = sw.workers || {};
+            const interruptores = {
+                // Maestro del worker de embeddings.
+                embeddingsHabilitado: sw.enabled !== false && flags['sentencias-embeddings']?.enabled !== false,
+                // Pausa selectiva: embebe SAIJ y deja el corpus PJN esperando.
+                soloSaij: sw.soloSaij === true,
+                ocrHabilitado: flags['ocr-worker']?.enabled !== false,
+                capturaHabilitada: flags['sentencias-worker']?.enabled !== false,
+                reintentosHabilitados: flags['sentencias-retry']?.enabled !== false,
+            };
+
+            const etapas = [
+                { id: 'captura',   label: 'Capturadas',    total: capturadas,   enCola: sinTexto,      errores: erroresTexto,
+                  pausada: !interruptores.capturaHabilitada, nota: 'Sentencias detectadas por los workers' },
+                { id: 'texto',     label: 'Con texto',     total: conTexto,     enCola: necesitaOcr,   errores: erroresTexto,
+                  pausada: !interruptores.ocrHabilitado, nota: 'Texto extraído del PDF; las escaneadas esperan OCR' },
+                { id: 'resumen',   label: 'Con resumen IA', total: conResumen,  enCola: colaResumen,   errores: { saij: 0, pjn: 0, total: 0 },
+                  pausada: false, nota: 'Requisito de la vista pública y del boletín' },
+                { id: 'embedding', label: 'Embebidas',     total: embebidas,    enCola: colaEmbedding, errores: erroresEmbedding,
+                  pausada: !interruptores.embeddingsHabilitado, pausadaParcial: interruptores.soloSaij,
+                  nota: 'Búsqueda semántica (RAG). Con "solo SAIJ" el corpus PJN queda esperando' },
+                { id: 'publicada', label: 'Publicadas',    total: publicadas,   enCola: { saij: 0, pjn: 0, total: 0 }, errores: vetadas,
+                  pausada: false, nota: 'Visibles en /jurisprudencia; los "errores" son bajas editoriales' },
+            ];
+
+            res.json({ success: true, data: { etapas, interruptores } });
+        } catch (error) {
+            logger.error(`[sentencias] Error en getFlujo: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    /**
+     * PATCH /api/sentencias-capturadas/flujo/solo-saij  { activo: boolean }
+     * Pausa (o reanuda) el re-indexado del corpus PJN sin frenar lo nuevo.
+     */
+    async setSoloSaij(req, res) {
+        try {
+            const mongoose = require('mongoose');
+            await mongoose.connection.collection('pipeline-config').updateOne(
+                {}, { $set: { 'sentenciasWorker.soloSaij': req.body.activo === true } }
+            );
+            res.json({ success: true, data: { soloSaij: req.body.activo === true } });
+        } catch (error) {
+            logger.error(`[sentencias] Error en setSoloSaij: ${error.message}`);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
 };
 
 module.exports = sentenciasCapturadasController;

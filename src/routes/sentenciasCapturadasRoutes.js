@@ -4,6 +4,9 @@ const ctrl = require('../controllers/sentenciasCaptuadasController');
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 
 router.get('/stats', verifyToken, ctrl.getStats);
+// Radiografía del pipeline por etapas + estado de los interruptores.
+router.get('/flujo', verifyToken, ctrl.getFlujo);
+router.patch('/flujo/solo-saij', verifyToken, verifyAdmin, ctrl.setSoloSaij);
 router.get('/publication-queue', verifyToken, verifyAdmin, ctrl.getPublicationQueue);
 router.get('/', verifyToken, ctrl.findAll);
 router.get('/:id', verifyToken, ctrl.findById);
