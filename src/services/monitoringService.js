@@ -23,8 +23,13 @@ const isLocalInstance   = () => (process.env.NODE_ENV === 'local');
 // dotenv.config() en server.js, por eso no se puede capturar en constantes a module-load).
 function qcfg() {
   return {
-    url:     process.env.QDRANT_URL || 'http://127.0.0.1:6333',
+    // Fallback al nodo qdrant-01, no a localhost: la instancia local de worker_01
+    // se da de baja tras la migración.
+    url:     process.env.QDRANT_URL || 'http://100.96.196.91:6333',
     key:     process.env.QDRANT_API_KEY || '',
+    // OJO: este path mide el disco de la instancia LOCAL. Tras dar de baja el
+    // Qdrant de worker_01 queda reportando un directorio residual: definir
+    // QDRANT_STORAGE_PATH en el box correcto o desactivar esa métrica.
     storage: process.env.QDRANT_STORAGE_PATH || '/home/worker_01/qdrant/storage',
   };
 }

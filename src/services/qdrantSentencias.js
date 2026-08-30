@@ -17,7 +17,9 @@
 // Qdrant equivocado (o Pinecone).
 function qdrantConfig() {
   return {
-    url: process.env.QDRANT_URL || 'http://127.0.0.1:6333',
+    // Fallback al nodo qdrant-01, no a localhost: la instancia local de worker_01
+    // se da de baja tras la migración (quedó congelada y sin lectores).
+    url: process.env.QDRANT_URL || 'http://100.96.196.91:6333',
     apiKey: process.env.QDRANT_API_KEY || '',
     collection: process.env.QDRANT_SENTENCIAS_COLLECTION || 'sentencias',
     oversampling: parseFloat(process.env.QDRANT_SENTENCIAS_OVERSAMPLING || '2.0'),
