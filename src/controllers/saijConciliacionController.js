@@ -2,6 +2,9 @@
 
 const mongoose = require('mongoose');
 const { logger } = require('../config/pino');
+// Todos los accesos crudos van por la conexión del corpus (rs0): pjn-api es
+// dual y en el hub la conexión default es Atlas, donde nada de esto existe.
+const { getSentenciasDb } = require('../config/sentenciasConnection');
 const SaijConciliacion = require('../models/saijConciliacion');
 const svc = require('../services/saijConciliacionService');
 
@@ -129,15 +132,16 @@ const saijConciliacionController = {
 			const item = await SaijConciliacion.findById(req.params.id).lean();
 			if (!item) return res.status(404).json({ success: false, message: 'Candidato no encontrado' });
 
-			const causa = await mongoose.connection.collection(item.causaCollection).findOne(
+			const db = await getSentenciasDb();
+			const causa = await db.collection(item.causaCollection).findOne(
 				{ _id: item.causaId },
 				{ projection: { number: 1, year: 1, caratula: 1, fuero: 1, juzgado: 1, secretaria: 1, objeto: 1, source: 1, verified: 1, isValid: 1, update: 1, movimientosCount: 1, saij: 1, movimiento: 1 } }
 			);
-			const fallo = await mongoose.connection.collection('saij-sentencias').findOne(
+			const fallo = await db.collection('saij-sentencias').findOne(
 				{ _id: item.saijDocId },
 				{ projection: { titulo: 1, actor: 1, demandado: 1, sobre: 1, fecha: 1, tribunal: 1, url: 1, pdfUrl: 1, expediente: 1, fuero: 1, causaRefs: 1, apareoMotivo: 1, pipelineStatus: 1 } }
 			);
-			const sentenciasCapturadas = await mongoose.connection.collection('sentencias-capturadas').find(
+			const sentenciasCapturadas = await db.collection('sentencias-capturadas').find(
 				{ 'source.saijDocId': item.saijDocId },
 				{ projection: { causaId: 1, caratula: 1, number: 1, year: 1, fuero: 1, embeddingStatus: 1, embeddingChunksCount: 1, url: 1 } }
 			).toArray();
@@ -172,7 +176,8 @@ const saijConciliacionController = {
 			const fueros = (req.body?.fueros?.length ? req.body.fueros : FUEROS_APAREABLES).map((f) => String(f).toUpperCase());
 			const soloSospechosos = req.body?.soloSospechosos !== false;
 			const escaneoId = `scan-${Date.now()}`;
-			const saijCol = mongoose.connection.collection('saij-sentencias');
+			const db = await getSentenciasDb();
+			const saijCol = db.collection('saij-sentencias');
 
 			let revisados = 0;
 			let registrados = 0;
@@ -180,7 +185,7 @@ const saijConciliacionController = {
 
 			for (const fuero of fueros) {
 				const nombreCol = svc.coleccionDe(fuero);
-				const cursor = mongoose.connection.collection(nombreCol).find(
+				const cursor = db.collection(nombreCol).find(
 					{ 'saij.isFromSaij': true },
 					{ projection: { number: 1, year: 1, fuero: 1, caratula: 1, source: 1, verified: 1, movimiento: 1, saij: 1 } }
 				);
@@ -301,7 +306,8 @@ const saijConciliacionController = {
 			}
 
 			const casos = await SaijConciliacion.find(filtro).sort({ jaccard: 1 }).limit(Number(limit));
-			const saijCol = mongoose.connection.collection('saij-sentencias');
+			const db = await getSentenciasDb();
+			const saijCol = db.collection('saij-sentencias');
 
 			let desvinculados = 0;
 			let reapareados = 0;
@@ -336,7 +342,7 @@ const saijConciliacionController = {
 							  parseInt(item.year, 10) === parseInt(exp.año, 10));
 
 						if (apuntaAOtra) {
-							const causaTarget = await mongoose.connection.collection(svc.coleccionDe(exp.fuero)).findOne(
+							const causaTarget = await db.collection(svc.coleccionDe(exp.fuero)).findOne(
 								{ number: String(exp.numero), year: String(exp.año), incidente: null },
 								{ projection: { caratula: 1 } }
 							);
@@ -513,7 +519,8 @@ const saijConciliacionController = {
 			if (!fuero || !number || !year) {
 				return res.status(400).json({ success: false, message: 'fuero, number y year son obligatorios' });
 			}
-			const causa = await mongoose.connection.collection(svc.coleccionDe(fuero)).findOne(
+			const db = await getSentenciasDb();
+			const causa = await db.collection(svc.coleccionDe(fuero)).findOne(
 				{ number: String(number), year: String(year), incidente: null },
 				{ projection: { number: 1, year: 1, caratula: 1, juzgado: 1, secretaria: 1, objeto: 1, source: 1, verified: 1, movimientosCount: 1 } }
 			);
@@ -523,7 +530,7 @@ const saijConciliacionController = {
 
 			let veredicto = null;
 			if (saijDocId) {
-				const fallo = await mongoose.connection.collection('saij-sentencias').findOne(
+				const fallo = await db.collection('saij-sentencias').findOne(
 					{ _id: new mongoose.Types.ObjectId(String(saijDocId)) },
 					{ projection: { titulo: 1, actor: 1, demandado: 1, sobre: 1, numeroFallo: 1 } }
 				);

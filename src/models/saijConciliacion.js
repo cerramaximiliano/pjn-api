@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const { lazyModel } = require('../config/sentenciasConnection');
 
 /**
  * SaijConciliacion
@@ -16,8 +17,11 @@ const Schema = mongoose.Schema;
  * (`POST /saij/conciliacion/escanear`) y lo resuelve una persona desde la vista
  * de conciliación del admin.
  *
- * Vive en la misma base que las causas (rs0 / URLDB_LOCAL), que es donde están
- * `saij-sentencias` y `sentencias-capturadas`.
+ * Vive en rs0/law_analytics, la misma base que las causas del caché,
+ * `saij-sentencias` y `sentencias-capturadas`. Se registra sobre la conexión
+ * del corpus (sentenciasConnection) y NO sobre la default: pjn-api es dual
+ * (hub → Atlas, worker_01 → local) y la conciliación debe operar sobre rs0
+ * desde cualquiera de las dos instancias — la UI admin habla con la del hub.
  */
 const schema = new Schema(
 	{
@@ -95,4 +99,4 @@ schema.index({ causaId: 1, saijDocId: 1 }, { unique: true });
 // Query principal de la vista: pendientes sospechosas, peores primero.
 schema.index({ estado: 1, sospechoso: 1, jaccard: 1 });
 
-module.exports = mongoose.model('SaijConciliacion', schema);
+module.exports = lazyModel('SaijConciliacion', schema);

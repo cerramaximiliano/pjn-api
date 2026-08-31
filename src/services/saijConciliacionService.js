@@ -38,7 +38,11 @@ const COLECCION_POR_FUERO = {
 const coleccionDe = (fuero) =>
 	COLECCION_POR_FUERO[String(fuero || '').toUpperCase()] || `causas_${String(fuero || '').toLowerCase()}`;
 
-const col = (nombre) => mongoose.connection.collection(nombre);
+// Colecciones SIEMPRE sobre la conexión del corpus (rs0), nunca la default:
+// en el hub la default es Atlas y una desvinculación ahí tocaría las copias
+// equivocadas de las causas.
+const { getSentenciasDb } = require('../config/sentenciasConnection');
+const col = async (nombre) => (await getSentenciasDb()).collection(nombre);
 
 /**
  * Texto comparable de un fallo SAIJ: el título, o actor/demandado/sobre.
@@ -118,10 +122,10 @@ function evaluarPar(causa, fallo, movimientosSaij = []) {
  * @param {boolean} [opts.reencolarEmbedding=true]
  */
 async function desvincular({ saijDocId, causaId, fuero, actor, motivo, reencolarEmbedding = true }) {
-	const saijCol = col('saij-sentencias');
-	const scCol = col('sentencias-capturadas');
-	const backupCol = col('saij-desvinculacion-backup');
-	const causasCol = col(coleccionDe(fuero));
+	const saijCol = await col('saij-sentencias');
+	const scCol = await col('sentencias-capturadas');
+	const backupCol = await col('saij-desvinculacion-backup');
+	const causasCol = await col(coleccionDe(fuero));
 
 	const saijOid = new mongoose.Types.ObjectId(String(saijDocId));
 	const causaOid = new mongoose.Types.ObjectId(String(causaId));
@@ -246,10 +250,10 @@ async function desvincular({ saijDocId, causaId, fuero, actor, motivo, reencolar
  * @param {boolean} [opts.forzar=false] - vincular aunque las carátulas no coincidan
  */
 async function vincular({ saijDocId, fuero, number, year, actor, forzar = false }) {
-	const saijCol = col('saij-sentencias');
-	const scCol = col('sentencias-capturadas');
+	const saijCol = await col('saij-sentencias');
+	const scCol = await col('sentencias-capturadas');
 	const fueroUp = String(fuero || '').toUpperCase();
-	const causasCol = col(coleccionDe(fueroUp));
+	const causasCol = await col(coleccionDe(fueroUp));
 
 	const saijOid = new mongoose.Types.ObjectId(String(saijDocId));
 	const fallo = await saijCol.findOne({ _id: saijOid });
