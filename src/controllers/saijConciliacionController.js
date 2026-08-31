@@ -251,6 +251,146 @@ const saijConciliacionController = {
 	},
 
 	/**
+	 * POST /saij/conciliacion/desvincular-lote
+	 *
+	 * Desvincula en masa los casos "claros" de la cola y reintenta el apareo
+	 * con los gates nuevos. Un caso es claro cuando la carátula falló con
+	 * nombres completos en ambos lados: sin la excusa de la anonimización ni
+	 * de la carátula placeholder, dos carátulas sin relación son un apareo
+	 * equivocado, no una duda.
+	 *
+	 * "Reintroducir al pipeline" acá es literal: tras desvincular se reintenta
+	 * el apareo contra la causa que declara el expediente ACTUAL del fallo
+	 * (que pudo haberse re-parseado bien después del apareo original), y solo
+	 * se re-vincula si el comparador da 'coincide'. El resto queda publicado
+	 * sin causa — mejor sin causa que con la causa equivocada.
+	 *
+	 * Body:
+	 *   dryRun      - true (default): solo cuenta y muestra una muestra
+	 *   jaccardMax  - opcional, achica el lote (ej. 0 = solo cero coincidencia)
+	 *   reintentarApareo - default true
+	 *   limit       - tope de casos por corrida (default 1000)
+	 *   notas       - se guarda en cada caso resuelto
+	 */
+	async desvincularLote(req, res) {
+		try {
+			const {
+				dryRun = true,
+				jaccardMax,
+				reintentarApareo = true,
+				limit = 1000,
+				notas = '',
+			} = req.body || {};
+			const actor = `${actorDe(req)} [lote]`;
+
+			const filtro = {
+				estado: 'pendiente',
+				sospechoso: true,
+				esShell: { $ne: true },
+				flags: { $all: ['CARATULA'], $nin: ['FALLO_ANONIMIZADO', 'CARATULA_PLACEHOLDER'] },
+				...(jaccardMax !== undefined ? { jaccard: { $lte: Number(jaccardMax) } } : {}),
+			};
+
+			if (dryRun) {
+				const [total, muestra] = await Promise.all([
+					SaijConciliacion.countDocuments(filtro),
+					SaijConciliacion.find(filtro).sort({ jaccard: 1 }).limit(8)
+						.select('fuero number year caratulaCausa caratulaFallo jaccard flags').lean(),
+				]);
+				return res.json({ success: true, data: { dryRun: true, total, muestra } });
+			}
+
+			const casos = await SaijConciliacion.find(filtro).sort({ jaccard: 1 }).limit(Number(limit));
+			const saijCol = mongoose.connection.collection('saij-sentencias');
+
+			let desvinculados = 0;
+			let reapareados = 0;
+			const errores = [];
+
+			for (const item of casos) {
+				try {
+					const resultado = await svc.desvincular({
+						saijDocId: item.saijDocId,
+						causaId: item.causaId,
+						fuero: item.fuero,
+						actor,
+						motivo: notas || 'lote: carátulas sin relación con nombres completos en ambos lados',
+						reencolarEmbedding: true,
+					});
+
+					let estadoFinal = 'desvinculado';
+					let resultadoFinal = resultado;
+
+					// Reintento con los gates nuevos, solo si el expediente actual
+					// del fallo apunta a OTRA causa que la recién desvinculada (si
+					// apunta a la misma, volvería a fallar por carátula).
+					if (reintentarApareo) {
+						const fallo = await saijCol.findOne(
+							{ _id: item.saijDocId },
+							{ projection: { titulo: 1, actor: 1, demandado: 1, sobre: 1, expediente: 1 } }
+						);
+						const exp = fallo?.expediente;
+						const apuntaAOtra = exp?.numero != null && exp?.año != null && exp?.fuero &&
+							!(String(exp.fuero).toUpperCase() === String(item.fuero).toUpperCase() &&
+							  parseInt(item.number, 10) === parseInt(exp.numero, 10) &&
+							  parseInt(item.year, 10) === parseInt(exp.año, 10));
+
+						if (apuntaAOtra) {
+							const causaTarget = await mongoose.connection.collection(svc.coleccionDe(exp.fuero)).findOne(
+								{ number: String(exp.numero), year: String(exp.año), incidente: null },
+								{ projection: { caratula: 1 } }
+							);
+							if (causaTarget) {
+								const ev = svc.evaluarPar(
+									{ caratula: causaTarget.caratula, fuero: exp.fuero, number: String(exp.numero), year: String(exp.año) },
+									fallo, []
+								);
+								if (ev.veredicto === 'coincide') {
+									const r = await svc.vincular({
+										saijDocId: item.saijDocId,
+										fuero: exp.fuero, number: exp.numero, year: exp.año,
+										actor,
+									});
+									estadoFinal = 'reapareado';
+									resultadoFinal = { ...resultado, causaNueva: r.causa.causaId };
+								}
+							}
+						}
+					}
+
+					item.estado = estadoFinal;
+					item.resueltoPor = actor;
+					item.resueltoAt = new Date();
+					item.notas = notas || 'lote automático de claros';
+					item.resultado = {
+						movimientoQuitado: resultadoFinal.movimientoQuitado,
+						sentenciasCapturadasTocadas: resultadoFinal.sentenciasCapturadasTocadas,
+						embeddingReencolado: resultadoFinal.embeddingReencolado,
+						...(resultadoFinal.causaNueva ? { causaNueva: resultadoFinal.causaNueva } : {}),
+						backupId: resultadoFinal.backupId,
+					};
+					await item.save();
+
+					if (estadoFinal === 'reapareado') reapareados++;
+					else desvinculados++;
+				} catch (err) {
+					errores.push({ id: String(item._id), expte: `${item.fuero} ${item.number}/${item.year}`, error: err.message });
+					logger.error(`[conciliacion] lote, caso ${item._id}: ${err.message}`);
+				}
+			}
+
+			logger.info(`[conciliacion] lote de ${actor}: ${desvinculados} desvinculados, ${reapareados} reapareados, ${errores.length} errores`);
+			res.json({
+				success: true,
+				data: { dryRun: false, procesados: casos.length, desvinculados, reapareados, errores: errores.slice(0, 20) },
+			});
+		} catch (error) {
+			logger.error(`[conciliacion] desvincularLote: ${error.message}`);
+			res.status(500).json({ success: false, message: error.message });
+		}
+	},
+
+	/**
 	 * POST /saij/conciliacion/:id/confirmar
 	 * El apareo estaba bien. No toca datos: sólo saca el caso de la cola para
 	 * que un re-escaneo no lo vuelva a proponer.

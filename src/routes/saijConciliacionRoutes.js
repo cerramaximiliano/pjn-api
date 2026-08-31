@@ -14,6 +14,7 @@ router.get('/:id',           verifyToken, ctrl.detalle);
 // Escritura — requiere admin. Todas dejan rastro en el updateHistory de la
 // causa con el email de quien las ejecutó.
 router.post('/escanear',            verifyToken, verifyAdmin, ctrl.escanear);
+router.post('/desvincular-lote',    verifyToken, verifyAdmin, ctrl.desvincularLote);
 router.post('/:id/confirmar',       verifyToken, verifyAdmin, ctrl.confirmar);
 router.post('/:id/desvincular',     verifyToken, verifyAdmin, ctrl.desvincular);
 router.post('/:id/reaparear',       verifyToken, verifyAdmin, ctrl.reaparear);
