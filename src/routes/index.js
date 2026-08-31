@@ -27,6 +27,7 @@ const configuracionSentenciasCollectorRoutes = require('./configuracionSentencia
 const configuracionSemanticWorkerRoutes = require('./configuracionSemanticWorkerRoutes');
 const saijSentenciasRoutes = require('./saijSentenciasRoutes');
 const saijConfigRoutes = require('./saijConfigRoutes');
+const saijConciliacionRoutes = require('./saijConciliacionRoutes');
 const cijurRoutes     = require('./cijurRoutes');
 const scrapingStatsRoutes = require('./scrapingStatsRoutes');
 const sentenciasSearchRoutes = require('./sentenciasSearchRoutes');
@@ -119,6 +120,8 @@ router.use('/configuracion-semantic-worker', configuracionSemanticWorkerRoutes);
 // SAIJ — sentencias y configuración de workers
 router.use('/saij/sentencias', saijSentenciasRoutes);
 router.use('/saij/config',     saijConfigRoutes);
+// Conciliación manual de apareos SAIJ ↔ causas PJN
+router.use('/saij/conciliacion', saijConciliacionRoutes);
 router.use('/cijur',           cijurRoutes);
 
 // Métricas globales de scraping (captchas y documentos por hora/día/mes)

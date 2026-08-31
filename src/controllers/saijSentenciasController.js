@@ -479,68 +479,60 @@ const saijSentenciasController = {
      *
      * Body: { fuero, number, year }  ·  { desvincular: true } para soltarla.
      */
+    /**
+     * PATCH /saij/sentencias/:id/causa
+     *
+     * Vinculación o desvinculación manual de un fallo con una causa PJN.
+     *
+     * Delega en `saijConciliacionService`, que trata el apareo como la relación
+     * de cuatro puntas que es (movimiento en la causa, saij.saijSentenciaIds,
+     * causaRefs del fallo y SentenciaCapturada). La versión anterior de este
+     * handler tocaba sólo dos: al desvincular dejaba el movimiento
+     * 'SENTENCIA SAIJ' adentro de la causa para siempre, y al re-vincular no lo
+     * movía a la causa nueva.
+     *
+     * Body:
+     *   { desvincular: true, notas? }              → desarma el apareo
+     *   { fuero, number, year, forzar?, notas? }   → arma (o mueve) el apareo
+     */
     async vincularCausa(req, res) {
         try {
-            const doc = await SaijSentencia.findById(req.params.id);
+            const doc = await SaijSentencia.findById(req.params.id).select('_id causaRefs').lean();
             if (!doc) return res.status(404).json({ success: false, message: 'Sentencia no encontrada' });
 
-            const SentenciaCapturada = mongoose.connection.collection('sentencias-capturadas');
+            const svc = require('../services/saijConciliacionService');
+            const u = req.user || {};
+            const actor = `${u.email || u.id || 'desconocido'} (admin)`;
 
             if (req.body.desvincular) {
-                await SaijSentencia.updateOne({ _id: doc._id }, {
-                    $set: { causaRefs: [], pipelineUpdatedAt: new Date(), pipelineError: 'desvinculado a mano desde el admin' },
-                });
-                await SentenciaCapturada.updateMany({ 'source.saijDocId': doc._id }, { $set: { causaId: null } });
-                return res.json({ success: true, data: { desvinculada: true } });
-            }
-
-            const { fuero, number, year } = req.body;
-            const { getModel } = require('./causasController');
-            let Causa;
-            try {
-                Causa = getModel(String(fuero || '').toUpperCase());
-            } catch (e) {
-                return res.status(400).json({ success: false, message: e.message });
-            }
-
-            const causa = await Causa.findOne({ number: String(number), year: String(year) })
-                .select('_id caratula number year')
-                .lean();
-            if (!causa) {
-                return res.status(404).json({
-                    success: false,
-                    message: `No existe la causa ${fuero} ${number}/${year} en la base`,
-                });
-            }
-
-            const ref = {
-                causaId: causa._id,
-                caratula: causa.caratula,
-                fuero: String(fuero).toUpperCase(),
-                source: 'app',
-            };
-            await SaijSentencia.updateOne({ _id: doc._id }, {
-                $set: {
-                    causaRefs: [ref],
+                const ref = (doc.causaRefs || [])[0];
+                if (!ref?.causaId) {
+                    return res.status(400).json({ success: false, message: 'La sentencia no está vinculada a ninguna causa' });
+                }
+                const resultado = await svc.desvincular({
+                    saijDocId: doc._id,
+                    causaId: ref.causaId,
                     fuero: ref.fuero,
-                    'expediente.numero': Number(number),
-                    'expediente.año': Number(year),
-                    'expediente.source': 'manual',
-                    'expediente.confidence': 'high',
-                    pipelineUpdatedAt: new Date(),
-                    pipelineError: null,
-                },
+                    actor,
+                    motivo: req.body.notas || 'desvinculado a mano desde el admin',
+                    reencolarEmbedding: req.body.reencolarEmbedding !== false,
+                });
+                return res.json({ success: true, data: { desvinculada: true, ...resultado } });
+            }
+
+            const { fuero, number, year, forzar } = req.body;
+            if (!fuero || !number || !year) {
+                return res.status(400).json({ success: false, message: 'fuero, number y year son obligatorios' });
+            }
+
+            const resultado = await svc.vincular({
+                saijDocId: doc._id, fuero, number, year, actor, forzar: !!forzar,
             });
-
-            // La SC hereda la causa: es lo que la vuelve a colgar del expediente.
-            const r = await SentenciaCapturada.updateMany(
-                { 'source.saijDocId': doc._id },
-                { $set: { causaId: causa._id, fuero: ref.fuero, number: Number(number), year: Number(year), caratula: causa.caratula } }
-            );
-
-            logger.info(`[saij] Fallo ${doc._id} vinculado a mano con ${ref.fuero} ${number}/${year} (${causa._id}); ${r.modifiedCount} SC actualizada(s)`);
-            res.json({ success: true, data: { causa: ref, sentenciasCapturadas: r.modifiedCount } });
+            res.json({ success: true, data: resultado });
         } catch (error) {
+            if (error.code === 'CARATULA_NO_COINCIDE') {
+                return res.status(409).json({ success: false, message: error.message, veredicto: error.veredicto });
+            }
             logger.error(`[saij] Error vinculando causa: ${error.message}`);
             res.status(500).json({ success: false, message: error.message });
         }
