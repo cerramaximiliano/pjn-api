@@ -105,7 +105,7 @@ exports.getList = async (req, res) => {
 		const [docs, total] = await Promise.all([
 			Model.find(query)
 				.select(
-					'number year fuero caratula objeto juzgado verified isValid update lastUpdate movimientosCount processingLock scrapingProgress folderIds userCausaIds userUpdatesEnabled source createdAt updatedAt',
+					'number year fuero caratula objeto juzgado verified isValid update lastUpdate movimientosCount processingLock scrapingProgress folderIds userCausaIds userUpdatesEnabled source saij createdAt updatedAt',
 				)
 				.sort({ lastUpdate: 1 })
 				.skip(skip)
@@ -146,6 +146,17 @@ exports.getList = async (req, res) => {
 				isInCooldown,
 				cooldownUntil: isInCooldown ? d.scrapingProgress.skipUntil : null,
 				source: d.source,
+				// Origen SAIJ: distingue quién creó/tocó el documento. createdViaSaij
+				// no es confiable en datos viejos (lo pisaba markCausaAsSaij), así
+				// que la UI infiere "creada por SAIJ" con source+verified.
+				saij: d.saij?.isFromSaij
+					? {
+							isFromSaij: true,
+							createdViaSaij: !!d.saij.createdViaSaij,
+							fallosVinculados: (d.saij.saijSentenciaIds || []).length,
+							linkedAt: d.saij.linkedAt || null,
+						}
+					: null,
 				createdAt: d.createdAt,
 				updatedAt: d.updatedAt,
 			};

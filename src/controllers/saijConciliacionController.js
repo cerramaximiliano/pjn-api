@@ -508,6 +508,95 @@ const saijConciliacionController = {
 	},
 
 	/**
+	 * GET /saij/conciliacion/causa/:fuero/:causaId
+	 *
+	 * Contexto SAIJ completo de UNA causa: sus fallos vinculados (con link a
+	 * SAIJ y expediente parseado) y las sentencias capturadas que cuelgan de
+	 * ella. Lo consume la vista "Causas en Update" para inspeccionar y
+	 * desvincular sin pasar por la cola de conciliación.
+	 */
+	async causaSaij(req, res) {
+		try {
+			const { fuero, causaId } = req.params;
+			const db = await getSentenciasDb();
+			const causaOid = new mongoose.Types.ObjectId(String(causaId));
+
+			const causa = await db.collection(svc.coleccionDe(fuero)).findOne(
+				{ _id: causaOid },
+				{ projection: { number: 1, year: 1, caratula: 1, fuero: 1, source: 1, verified: 1, isValid: 1, update: 1, movimientosCount: 1, saij: 1, movimiento: 1 } }
+			);
+			if (!causa) return res.status(404).json({ success: false, message: 'Causa no encontrada' });
+
+			const ids = (causa.saij?.saijSentenciaIds || []).map((x) => new mongoose.Types.ObjectId(String(x)));
+			const fallos = ids.length
+				? await db.collection('saij-sentencias').find(
+						{ _id: { $in: ids } },
+						{ projection: { titulo: 1, actor: 1, demandado: 1, sobre: 1, fecha: 1, tribunal: 1, url: 1, pdfUrl: 1, expediente: 1, apareoMotivo: 1, pipelineStatus: 1 } }
+					).toArray()
+				: [];
+			const sentenciasCapturadas = await db.collection('sentencias-capturadas').find(
+				{ causaId: causaOid },
+				{ projection: { caratula: 1, number: 1, year: 1, fuero: 1, url: 1, embeddingStatus: 1, embeddingChunksCount: 1, 'source.origin': 1, 'source.saijDocId': 1, movimientoTipo: 1, movimientoFecha: 1 } }
+			).toArray();
+
+			// Veredicto del comparador por fallo, para que la UI muestre si el
+			// apareo se sostiene o no antes de decidir.
+			const movsSaij = (causa.movimiento || []).filter((m) => m.tipo === svc.MOVIMIENTO_TIPO_SAIJ);
+			const fallosConVeredicto = fallos.map((f) => ({
+				...f,
+				veredicto: svc.evaluarPar(causa, f, movsSaij.filter((m) => m.url === f.url)),
+			}));
+
+			res.json({
+				success: true,
+				data: {
+					causa: { ...causa, movimiento: movsSaij },
+					fallos: fallosConVeredicto,
+					sentenciasCapturadas,
+				},
+			});
+		} catch (error) {
+			logger.error(`[conciliacion] causaSaij: ${error.message}`);
+			res.status(500).json({ success: false, message: error.message });
+		}
+	},
+
+	/**
+	 * POST /saij/conciliacion/desvincular-directo
+	 * Body: { saijDocId, causaId, fuero, notas? }
+	 *
+	 * Misma desvinculación completa que la cola, para causas que no tienen
+	 * candidato abierto (o lo tienen: si existe, se marca resuelto también).
+	 */
+	async desvincularDirecto(req, res) {
+		try {
+			const { saijDocId, causaId, fuero, notas } = req.body || {};
+			if (!saijDocId || !causaId || !fuero) {
+				return res.status(400).json({ success: false, message: 'saijDocId, causaId y fuero son obligatorios' });
+			}
+
+			const resultado = await svc.desvincular({
+				saijDocId, causaId, fuero,
+				actor: actorDe(req),
+				motivo: notas || 'desvinculado desde la vista Causas en Update',
+				reencolarEmbedding: true,
+			});
+
+			// Si el par estaba en la cola de conciliación, cerrarlo ahí también
+			// para que no quede como pendiente fantasma.
+			await SaijConciliacion.updateOne(
+				{ causaId: new mongoose.Types.ObjectId(String(causaId)), saijDocId: new mongoose.Types.ObjectId(String(saijDocId)), estado: 'pendiente' },
+				{ $set: { estado: 'desvinculado', resueltoPor: actorDe(req), resueltoAt: new Date(), notas: notas || 'desde Causas en Update', resultado } }
+			).catch(() => {});
+
+			res.json({ success: true, data: resultado });
+		} catch (error) {
+			logger.error(`[conciliacion] desvincularDirecto: ${error.message}`);
+			res.status(500).json({ success: false, message: error.message });
+		}
+	},
+
+	/**
 	 * GET /saij/conciliacion/buscar-causa?fuero=CIV&number=1807&year=2024
 	 * Para el re-apareo: resuelve el expediente y muestra la carátula candidata
 	 * con el veredicto del comparador, así la persona ve de antemano si el
