@@ -7,6 +7,7 @@ const ALLOWED_WORKER_FIELDS = [
 	'cronPattern',
 	'batchSize',
 	'lockTimeoutMinutes',
+	'updateThresholdHours',
 	'errorCooldown.enabled',
 	'errorCooldown.maxConsecutiveErrors',
 	'errorCooldown.cooldownHours',

@@ -13,6 +13,7 @@ const schema = new Schema(
 		enabled: { type: Boolean, default: false },
 		cronPattern: { type: String, default: '*/2 * * * *' },
 		batchSize: { type: Number, default: 1 },
+		updateThresholdHours: { type: Number, default: 24 },
 		lockTimeoutMinutes: { type: Number, default: 5 },
 		errorCooldown: {
 			enabled: { type: Boolean, default: true },
