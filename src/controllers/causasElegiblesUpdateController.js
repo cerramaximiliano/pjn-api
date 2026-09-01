@@ -229,3 +229,89 @@ exports.setUpdateFlag = async (req, res) => {
 		res.status(500).json({ success: false, message: error.message });
 	}
 };
+
+
+/**
+ * PATCH /api/causas-elegibles-update/:fuero/:id/marcar-reservada
+ * Body: { reason: string }
+ *
+ * Para cuando el portal público ya no muestra el expediente principal —
+ * responde "no disponible para su consulta" o lista únicamente incidentes.
+ * Aplica el combo completo de las dos convenciones del ecosistema:
+ *
+ *   - update: false        → el worker deja de intentarla (con entrada firmada
+ *                            si estaba encendida)
+ *   - isValid: false       → el caché deja de servir esta copia al hub: si un
+ *                            usuario la vincula, causaCacheService la ignora y
+ *                            el flujo crea un doc fresco que se verifica contra
+ *                            el estado ACTUAL del portal
+ *   - isPrivate: true      → el estado real (reservada, no inexistente);
+ *                            reversible si vuelve a ser pública
+ *   - privateDetectedAt    → cuándo se detectó
+ *   - updateHistory        → privacy_change con motivo y actor
+ */
+exports.marcarReservada = async (req, res) => {
+	try {
+		const { fuero, id } = req.params;
+		const { reason } = req.body || {};
+
+		if (!FUERO_MODELS[fuero]) {
+			return res.status(400).json({ success: false, message: `fuero inválido: ${fuero}` });
+		}
+		if (!reason || !String(reason).trim()) {
+			return res.status(400).json({ success: false, message: 'reason (texto) es obligatorio' });
+		}
+
+		const Model = FUERO_MODELS[fuero];
+		const doc = await Model.findById(id).select('update isValid isPrivate movimientosCount number year').lean();
+		if (!doc) return res.status(404).json({ success: false, message: 'Causa no encontrada' });
+
+		const u = req.user || {};
+		const actor = `${u.email || u.id || 'desconocido'} (admin)`;
+		const now = new Date();
+		const motivo = String(reason).trim();
+
+		const entries = [
+			{
+				timestamp: now,
+				source: 'admin_manual',
+				updateType: 'privacy_change',
+				success: true,
+				movimientosAdded: 0,
+				movimientosTotal: doc.movimientosCount || 0,
+				details: {
+					previousIsPrivate: doc.isPrivate ?? null,
+					newIsPrivate: true,
+					privacyChangeReason: motivo,
+					actor,
+					reason: motivo,
+					message: `Marcada reservada: isValid ${doc.isValid}→false, isPrivate →true, fuera del circuito de update`,
+				},
+			},
+		];
+		if (doc.update === true) {
+			entries.push(updateFlagAudit.buildUpdateFlagEntry({
+				previous: true,
+				next: false,
+				reason: `reservada: ${motivo}`,
+				actor,
+				source: 'admin_manual',
+				movimientosTotal: doc.movimientosCount || 0,
+			}));
+		}
+
+		await Model.updateOne(
+			{ _id: id },
+			{
+				$set: { update: false, isValid: false, isPrivate: true, privateDetectedAt: now },
+				$push: { updateHistory: { $each: entries } },
+			}
+		);
+		logger.info(`[elegibles-update] ${actor} marcó reservada ${fuero} ${doc.number}/${doc.year}: ${motivo}`);
+
+		res.json({ success: true, data: { update: false, isValid: false, isPrivate: true } });
+	} catch (error) {
+		logger.error(`Error en marcarReservada causas-elegibles-update: ${error.message}`);
+		res.status(500).json({ success: false, message: error.message });
+	}
+};

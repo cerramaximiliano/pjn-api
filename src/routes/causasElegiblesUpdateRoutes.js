@@ -11,5 +11,7 @@ router.get('/', verifyToken, ctrl.getList);
 
 // Encender/apagar el seguimiento de una causa, con motivo firmado en el historial
 router.patch('/:fuero/:id/update-flag', verifyToken, verifyAdmin, ctrl.setUpdateFlag);
+// Marcar reservada: update=false + isValid=false + isPrivate=true, firmado
+router.patch('/:fuero/:id/marcar-reservada', verifyToken, verifyAdmin, ctrl.marcarReservada);
 
 module.exports = router;
