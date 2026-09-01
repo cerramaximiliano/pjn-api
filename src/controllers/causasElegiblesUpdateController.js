@@ -12,7 +12,7 @@
  * que el worker tiene en su caché local.
  */
 
-const { CausasCivil, CausasComercial, CausasSegSoc, CausasTrabajo } = require('pjn-models');
+const { CausasCivil, CausasComercial, CausasSegSoc, CausasTrabajo, updateFlagAudit } = require('pjn-models');
 const { logger } = require('../config/pino');
 
 // Mapping fuero (UI) → modelo Mongoose. Keep in sync con update-movimientos-worker.js
@@ -175,5 +175,57 @@ exports.getList = async (req, res) => {
 	} catch (error) {
 		logger.error(`Error en getList causas-elegibles-update: ${error.message}`);
 		res.status(500).json({ success: false, message: 'Error al obtener listado', error: error.message });
+	}
+};
+
+
+/**
+ * PATCH /api/causas-elegibles-update/:fuero/:id/update-flag
+ * Body: { update: boolean, reason: string }
+ *
+ * Apaga (o enciende) el seguimiento de una causa desde la vista, dejando la
+ * transición firmada en updateHistory: quién, cuándo y por qué. Es el camino
+ * manual para retirar del circuito una causa que el worker no puede procesar
+ * (expediente reservado, solo incidentes, shell sin datos verificables).
+ *
+ * Nota de instancia: los modelos van sobre la conexión default — la UI llama
+ * vía cache-api (rs0), que es donde vive el caché del worker.
+ */
+exports.setUpdateFlag = async (req, res) => {
+	try {
+		const { fuero, id } = req.params;
+		const { update, reason } = req.body || {};
+
+		if (!FUERO_MODELS[fuero]) {
+			return res.status(400).json({ success: false, message: `fuero inválido: ${fuero}` });
+		}
+		if (typeof update !== 'boolean' || !reason || !String(reason).trim()) {
+			return res.status(400).json({ success: false, message: 'update (boolean) y reason (texto) son obligatorios' });
+		}
+
+		const Model = FUERO_MODELS[fuero];
+		const doc = await Model.findById(id).select('update movimientosCount number year').lean();
+		if (!doc) return res.status(404).json({ success: false, message: 'Causa no encontrada' });
+		if (doc.update === update) {
+			return res.json({ success: true, data: { unchanged: true, update } });
+		}
+
+		const u = req.user || {};
+		const entry = updateFlagAudit.buildUpdateFlagEntry({
+			previous: doc.update,
+			next: update,
+			reason: String(reason).trim(),
+			actor: `${u.email || u.id || 'desconocido'} (admin)`,
+			source: 'admin_manual',
+			movimientosTotal: doc.movimientosCount || 0,
+		});
+
+		await Model.updateOne({ _id: id }, { $set: { update }, $push: { updateHistory: entry } });
+		logger.info(`[elegibles-update] ${entry.details.actor} puso update=${update} en ${fuero} ${doc.number}/${doc.year}: ${reason}`);
+
+		res.json({ success: true, data: { update, entry } });
+	} catch (error) {
+		logger.error(`Error en setUpdateFlag causas-elegibles-update: ${error.message}`);
+		res.status(500).json({ success: false, message: error.message });
 	}
 };
