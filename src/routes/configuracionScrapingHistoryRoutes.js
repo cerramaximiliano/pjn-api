@@ -21,6 +21,11 @@ router.get('/check-overlapping', verifyToken, configuracionScrapingHistoryContro
 // Obtener análisis de cobertura por fuero y año
 router.get('/coverage/fuero/:fuero/year/:year', verifyToken, configuracionScrapingHistoryController.getCoverageByFueroAndYear);
 
+// Cobertura medida sobre las causas y no sobre el historial de rangos. Escanea
+// el índice {number, year, incidente, fuero} del fuero pedido, así que es más
+// cara que la anterior (~1-2 s por fuero/año) pero dice lo que realmente se barrió.
+router.get('/coverage-real/fuero/:fuero/year/:year', verifyToken, configuracionScrapingHistoryController.getRealCoverageByFueroAndYear);
+
 // Eliminar un registro del historial (solo admin)
 router.delete('/:id', verifyToken, verifyAdmin, configuracionScrapingHistoryController.deleteById);
 
