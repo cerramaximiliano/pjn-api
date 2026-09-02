@@ -15,6 +15,19 @@ const MODELO_POR_FUERO = {
   CNT: CausasTrabajo, CCF: CausasCCF, CAF: CausasCAF,
 };
 
+// Los 15 distritos de la justicia federal del interior más las casaciones se
+// resuelven por nombre: sus modelos existen en pjn-models pero traerlos todos
+// arriba engordaría el require sin necesidad, porque la matriz solo los toca
+// cuando hay configuraciones de scraping para ellos.
+function modeloDeFuero(fuero) {
+  if (MODELO_POR_FUERO[fuero]) return MODELO_POR_FUERO[fuero];
+  try {
+    return require('pjn-models')[`Causas${fuero}`] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // Tope duro de numeración por año. Ningún fuero se acerca —el máximo observado
 // es CIV con ~113.000— pero acota el escaneo y evita que un dato corrupto
 // dispare una consulta enorme.
@@ -628,6 +641,148 @@ const configuracionScrapingHistoryController = {
       });
     } catch (error) {
       logger.error(`Error calculando cobertura real: ${error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+        data: null
+      });
+    }
+  },
+
+  /**
+   * Matriz de cobertura de un fuero: todos sus años en una sola pasada.
+   *
+   * La vista anterior obligaba a elegir un fuero y pedía un año por request.
+   * Con 21 fueros en producción eso son 189 llamadas y ninguna foto del
+   * conjunto. Acá una única agregación por colección devuelve todos los años
+   * agrupados en bloques de 1.000, que es lo que hace falta para el panorama:
+   * cuánto se barrió, cuántos expedientes salieron y dónde está la frontera.
+   *
+   * El detalle fino de huecos sigue en /coverage-real, que se llama al abrir
+   * una celda. Acá interesa la foto, no el tramo exacto.
+   *
+   * Se apoya en el índice `cobertura_matriz` {source, year, number, isValid}:
+   * sin él el filtro por `source` fuerza un scan completo (107 s para los seis
+   * fueros grandes; con índice, ~12 s).
+   */
+  async getCoverageMatrix(req, res) {
+    try {
+      const { fuero } = req.params;
+      const { maxRange, desde, hasta } = req.query;
+
+      const Model = modeloDeFuero(fuero);
+      if (!Model) {
+        return res.status(400).json({
+          success: false,
+          message: `Fuero sin colección de causas: ${fuero}`,
+          data: null
+        });
+      }
+
+      const tope = Math.min(Number(maxRange) || TOPE_NUMERO, TOPE_NUMERO);
+      const anioDesde = Number(desde) || 2018;
+      const anioHasta = Number(hasta) || new Date().getFullYear();
+      const inicio = Date.now();
+
+      const bloques = await Model.aggregate([
+        { $match: { number: { $gte: 1, $lte: tope }, source: 'scraping' } },
+        {
+          $group: {
+            _id: { y: '$year', b: { $floor: { $divide: [{ $subtract: ['$number', 1] }, 1000] } } },
+            distintos: { $sum: 1 },
+            validas: { $sum: { $cond: ['$isValid', 1, 0] } },
+          },
+        },
+      ]).allowDiskUse(true);
+
+      // Un año puede venir como Number o String según la colección.
+      const porAnio = new Map();
+      for (const b of bloques) {
+        const y = Number(b._id.y);
+        if (!Number.isFinite(y) || y < anioDesde || y > anioHasta) continue;
+        if (!porAnio.has(y)) porAnio.set(y, { barridos: 0, validas: 0, frontera: 0, topeBloque: 0 });
+        const a = porAnio.get(y);
+        a.barridos += b.distintos;
+        a.validas += b.validas;
+        const finBloque = (b._id.b + 1) * 1000;
+        if (b.validas >= 5 && finBloque > a.frontera) a.frontera = finBloque;
+        if (finBloque > a.topeBloque) a.topeBloque = finBloque;
+      }
+
+      const workers = await ConfiguracionScraping.find(
+        { fuero, isTemporary: { $ne: true } },
+        { worker_id: 1, year: 1, range_start: 1, range_end: 1, number: 1, enabled: 1, completionEmailSent: 1 }
+      ).lean();
+
+      const anios = [];
+      for (let y = anioDesde; y <= anioHasta; y++) {
+        const a = porAnio.get(y) || { barridos: 0, validas: 0, frontera: 0, topeBloque: 0 };
+        const ws = workers.filter((x) => Number(x.year) === y).map((x) => ({
+          worker_id: x.worker_id,
+          range_start: x.range_start,
+          range_end: x.range_end,
+          current: x.number,
+          enabled: !!x.enabled,
+          estado: estadoDeWorker(x),
+          // Cuánto le queda a este worker dentro de su rango.
+          restante: Math.max(0, x.range_end - x.number + 1),
+        }));
+
+        // Objetivo: frontera más el margen de confirmación. Un año sin barrer
+        // arranca en 20.000 provisorios hasta saber de qué tamaño es.
+        const objetivo = a.frontera > 0 ? Math.min(tope, a.frontera + 15000) : Math.min(tope, 20000);
+        // Cobertura aproximada dentro del objetivo. El conteo exacto de huecos
+        // vive en /coverage-real; acá alcanza con la proporción.
+        const faltanAprox = Math.max(0, objetivo - a.barridos);
+
+        const activos = ws.filter((x) => x.enabled).length;
+        const detenidos = ws.filter((x) => x.estado === 'detenido').length;
+        let estado;
+        if (a.barridos === 0 && !ws.length) estado = 'sin_tocar';
+        else if (a.barridos === 0) estado = 'asignado_sin_datos';
+        else if (faltanAprox <= 0) estado = 'cerrado';
+        else if (activos > 0) estado = 'en_curso';
+        else if (detenidos > 0) estado = 'detenido';
+        else estado = 'sin_worker';
+
+        anios.push({
+          year: y,
+          barridos: a.barridos,
+          validas: a.validas,
+          densidad: a.barridos ? Number((a.validas / a.barridos * 100).toFixed(1)) : 0,
+          frontera: a.frontera,
+          objetivo,
+          faltanAprox,
+          avancePct: objetivo > 0 ? Math.min(100, Math.round((a.barridos / objetivo) * 100)) : 0,
+          estado,
+          workersActivos: activos,
+          workers: ws,
+        });
+      }
+
+      logger.info(`[coberturaMatriz] fuero=${fuero} anios=${anios.length} ms=${Date.now() - inicio}`);
+
+      res.json({
+        success: true,
+        message: 'Matriz de cobertura calculada exitosamente',
+        data: {
+          fuero,
+          maxRange: tope,
+          desde: anioDesde,
+          hasta: anioHasta,
+          calculoMs: Date.now() - inicio,
+          totales: {
+            barridos: anios.reduce((a, x) => a + x.barridos, 0),
+            validas: anios.reduce((a, x) => a + x.validas, 0),
+            faltanAprox: anios.reduce((a, x) => a + x.faltanAprox, 0),
+            workersActivos: anios.reduce((a, x) => a + x.workersActivos, 0),
+          },
+          anios,
+        }
+      });
+    } catch (error) {
+      logger.error(`Error calculando matriz de cobertura: ${error}`);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',

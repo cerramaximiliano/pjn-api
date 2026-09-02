@@ -26,6 +26,10 @@ router.get('/coverage/fuero/:fuero/year/:year', verifyToken, configuracionScrapi
 // cara que la anterior (~1-2 s por fuero/año) pero dice lo que realmente se barrió.
 router.get('/coverage-real/fuero/:fuero/year/:year', verifyToken, configuracionScrapingHistoryController.getRealCoverageByFueroAndYear);
 
+// Todos los años de un fuero en una sola pasada, para el panorama de la vista
+// de cobertura. Una llamada por fuero en vez de una por fuero/año.
+router.get('/coverage-matrix/fuero/:fuero', verifyToken, configuracionScrapingHistoryController.getCoverageMatrix);
+
 // Eliminar un registro del historial (solo admin)
 router.delete('/:id', verifyToken, verifyAdmin, configuracionScrapingHistoryController.deleteById);
 
