@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const ConfiguracionScrapingHistory = require('../models/configuracionScrapingHistory');
 const {
   ConfiguracionScraping,
@@ -36,6 +37,19 @@ const TOPE_NUMERO = 150000;
 // Un hueco menor a esto es ruido (números sueltos que fallaron y quedaron para
 // el retry-worker), no un tramo sin barrer.
 const HUECO_MINIMO = 50;
+
+// La matriz se sirve desde un snapshot, no se calcula en cada request. El
+// cálculo recorre cientos de miles de entradas de índice: 20 s para CIV en
+// worker01 y más de 200 s en el hub, que lee una réplica remota. Eso hacía que
+// la vista mostrara "Error al calcular" en los cuatro fueros grandes.
+//
+// La foto envejece lento —la flota avanza ~850 números por hora sobre millones
+// ya barridos— así que unos minutos de desfasaje no cambian ninguna decisión.
+const CACHE_COLECCION = 'cobertura-matriz-cache';
+const CACHE_FRESCO_MS = 15 * 60 * 1000;
+
+// Recálculos en curso, para no disparar dos del mismo fuero a la vez.
+const recalculando = new Set();
 
 // Helpers para análisis de cobertura
 function mergeRanges(ranges) {
@@ -204,6 +218,110 @@ async function coberturaReal(fuero, year, tope) {
   }
 
   return { barridos, validas, frontera, coveredRanges, gaps, sueltos, topeBarrido };
+}
+
+/**
+ * Calcula la matriz de un fuero. Cara: recorre el índice `cobertura_matriz`
+ * entero del fuero. La llaman el handler (cuando no hay snapshot) y el
+ * refresco en segundo plano, nunca el camino normal de la vista.
+ */
+async function calcularMatriz(fuero, { maxRange, desde, hasta } = {}) {
+  const Model = modeloDeFuero(fuero);
+  const tope = Math.min(Number(maxRange) || TOPE_NUMERO, TOPE_NUMERO);
+  const anioDesde = Number(desde) || 2018;
+  const anioHasta = Number(hasta) || new Date().getFullYear();
+  const inicio = Date.now();
+
+  const bloques = await Model.aggregate([
+    { $match: { number: { $gte: 1, $lte: tope }, source: 'scraping' } },
+    {
+      $group: {
+        _id: { y: '$year', b: { $floor: { $divide: [{ $subtract: ['$number', 1] }, 1000] } } },
+        distintos: { $sum: 1 },
+        validas: { $sum: { $cond: ['$isValid', 1, 0] } },
+      },
+    },
+  ]).allowDiskUse(true);
+
+  // Un año puede venir como Number o String según la colección.
+  const porAnio = new Map();
+  for (const b of bloques) {
+    const y = Number(b._id.y);
+    if (!Number.isFinite(y) || y < anioDesde || y > anioHasta) continue;
+    if (!porAnio.has(y)) porAnio.set(y, { barridos: 0, validas: 0, frontera: 0, topeBloque: 0 });
+    const a = porAnio.get(y);
+    a.barridos += b.distintos;
+    a.validas += b.validas;
+    const finBloque = (b._id.b + 1) * 1000;
+    if (b.validas >= 5 && finBloque > a.frontera) a.frontera = finBloque;
+    if (finBloque > a.topeBloque) a.topeBloque = finBloque;
+  }
+
+  const workers = await ConfiguracionScraping.find(
+    { fuero, isTemporary: { $ne: true } },
+    { worker_id: 1, year: 1, range_start: 1, range_end: 1, number: 1, enabled: 1, completionEmailSent: 1 }
+  ).lean();
+
+  const anios = [];
+  for (let y = anioDesde; y <= anioHasta; y++) {
+    const a = porAnio.get(y) || { barridos: 0, validas: 0, frontera: 0, topeBloque: 0 };
+    const ws = workers.filter((x) => Number(x.year) === y).map((x) => ({
+      worker_id: x.worker_id,
+      range_start: x.range_start,
+      range_end: x.range_end,
+      current: x.number,
+      enabled: !!x.enabled,
+      estado: estadoDeWorker(x),
+      // Cuánto le queda a este worker dentro de su rango.
+      restante: Math.max(0, x.range_end - x.number + 1),
+    }));
+
+    // Objetivo: frontera más el margen de confirmación. Un año sin barrer
+    // arranca en 20.000 provisorios hasta saber de qué tamaño es.
+    const objetivo = a.frontera > 0 ? Math.min(tope, a.frontera + 15000) : Math.min(tope, 20000);
+    // Cobertura aproximada dentro del objetivo. El conteo exacto de huecos
+    // vive en /coverage-real; acá alcanza con la proporción.
+    const faltanAprox = Math.max(0, objetivo - a.barridos);
+
+    const activos = ws.filter((x) => x.enabled).length;
+    const detenidos = ws.filter((x) => x.estado === 'detenido').length;
+    let estado;
+    if (a.barridos === 0 && !ws.length) estado = 'sin_tocar';
+    else if (a.barridos === 0) estado = 'asignado_sin_datos';
+    else if (faltanAprox <= 0) estado = 'cerrado';
+    else if (activos > 0) estado = 'en_curso';
+    else if (detenidos > 0) estado = 'detenido';
+    else estado = 'sin_worker';
+
+    anios.push({
+      year: y,
+      barridos: a.barridos,
+      validas: a.validas,
+      densidad: a.barridos ? Number((a.validas / a.barridos * 100).toFixed(1)) : 0,
+      frontera: a.frontera,
+      objetivo,
+      faltanAprox,
+      avancePct: objetivo > 0 ? Math.min(100, Math.round((a.barridos / objetivo) * 100)) : 0,
+      estado,
+      workersActivos: activos,
+      workers: ws,
+    });
+  }
+
+  return {
+    fuero,
+    maxRange: tope,
+    desde: anioDesde,
+    hasta: anioHasta,
+    calculoMs: Date.now() - inicio,
+    totales: {
+      barridos: anios.reduce((a, x) => a + x.barridos, 0),
+      validas: anios.reduce((a, x) => a + x.validas, 0),
+      faltanAprox: anios.reduce((a, x) => a + x.faltanAprox, 0),
+      workersActivos: anios.reduce((a, x) => a + x.workersActivos, 0),
+    },
+    anios,
+  };
 }
 
 const configuracionScrapingHistoryController = {
@@ -666,13 +784,21 @@ const configuracionScrapingHistoryController = {
    * sin él el filtro por `source` fuerza un scan completo (107 s para los seis
    * fueros grandes; con índice, ~12 s).
    */
+  /**
+   * Matriz de cobertura de un fuero. Se sirve SIEMPRE del snapshot: el cálculo
+   * es demasiado caro para una request (20 s para CIV en worker01, más de 200 s
+   * en el hub, que lee una réplica remota) y hacía fallar la vista.
+   *
+   * Si el snapshot está viejo se dispara un recálculo en segundo plano y se
+   * devuelve igual la foto anterior: una foto de hace unos minutos es infinitamente
+   * más útil que un timeout. `?refresh=1` fuerza el recálculo sincrónico.
+   */
   async getCoverageMatrix(req, res) {
     try {
       const { fuero } = req.params;
-      const { maxRange, desde, hasta } = req.query;
+      const { maxRange, desde, hasta, refresh } = req.query;
 
-      const Model = modeloDeFuero(fuero);
-      if (!Model) {
+      if (!modeloDeFuero(fuero)) {
         return res.status(400).json({
           success: false,
           message: `Fuero sin colección de causas: ${fuero}`,
@@ -680,109 +806,36 @@ const configuracionScrapingHistoryController = {
         });
       }
 
-      const tope = Math.min(Number(maxRange) || TOPE_NUMERO, TOPE_NUMERO);
-      const anioDesde = Number(desde) || 2018;
-      const anioHasta = Number(hasta) || new Date().getFullYear();
-      const inicio = Date.now();
+      const col = mongoose.connection.db.collection(CACHE_COLECCION);
+      const snap = await col.findOne({ _id: fuero });
+      const edadMs = snap ? Date.now() - new Date(snap.calculadoEn).getTime() : Infinity;
 
-      const bloques = await Model.aggregate([
-        { $match: { number: { $gte: 1, $lte: tope }, source: 'scraping' } },
-        {
-          $group: {
-            _id: { y: '$year', b: { $floor: { $divide: [{ $subtract: ['$number', 1] }, 1000] } } },
-            distintos: { $sum: 1 },
-            validas: { $sum: { $cond: ['$isValid', 1, 0] } },
-          },
-        },
-      ]).allowDiskUse(true);
-
-      // Un año puede venir como Number o String según la colección.
-      const porAnio = new Map();
-      for (const b of bloques) {
-        const y = Number(b._id.y);
-        if (!Number.isFinite(y) || y < anioDesde || y > anioHasta) continue;
-        if (!porAnio.has(y)) porAnio.set(y, { barridos: 0, validas: 0, frontera: 0, topeBloque: 0 });
-        const a = porAnio.get(y);
-        a.barridos += b.distintos;
-        a.validas += b.validas;
-        const finBloque = (b._id.b + 1) * 1000;
-        if (b.validas >= 5 && finBloque > a.frontera) a.frontera = finBloque;
-        if (finBloque > a.topeBloque) a.topeBloque = finBloque;
-      }
-
-      const workers = await ConfiguracionScraping.find(
-        { fuero, isTemporary: { $ne: true } },
-        { worker_id: 1, year: 1, range_start: 1, range_end: 1, number: 1, enabled: 1, completionEmailSent: 1 }
-      ).lean();
-
-      const anios = [];
-      for (let y = anioDesde; y <= anioHasta; y++) {
-        const a = porAnio.get(y) || { barridos: 0, validas: 0, frontera: 0, topeBloque: 0 };
-        const ws = workers.filter((x) => Number(x.year) === y).map((x) => ({
-          worker_id: x.worker_id,
-          range_start: x.range_start,
-          range_end: x.range_end,
-          current: x.number,
-          enabled: !!x.enabled,
-          estado: estadoDeWorker(x),
-          // Cuánto le queda a este worker dentro de su rango.
-          restante: Math.max(0, x.range_end - x.number + 1),
-        }));
-
-        // Objetivo: frontera más el margen de confirmación. Un año sin barrer
-        // arranca en 20.000 provisorios hasta saber de qué tamaño es.
-        const objetivo = a.frontera > 0 ? Math.min(tope, a.frontera + 15000) : Math.min(tope, 20000);
-        // Cobertura aproximada dentro del objetivo. El conteo exacto de huecos
-        // vive en /coverage-real; acá alcanza con la proporción.
-        const faltanAprox = Math.max(0, objetivo - a.barridos);
-
-        const activos = ws.filter((x) => x.enabled).length;
-        const detenidos = ws.filter((x) => x.estado === 'detenido').length;
-        let estado;
-        if (a.barridos === 0 && !ws.length) estado = 'sin_tocar';
-        else if (a.barridos === 0) estado = 'asignado_sin_datos';
-        else if (faltanAprox <= 0) estado = 'cerrado';
-        else if (activos > 0) estado = 'en_curso';
-        else if (detenidos > 0) estado = 'detenido';
-        else estado = 'sin_worker';
-
-        anios.push({
-          year: y,
-          barridos: a.barridos,
-          validas: a.validas,
-          densidad: a.barridos ? Number((a.validas / a.barridos * 100).toFixed(1)) : 0,
-          frontera: a.frontera,
-          objetivo,
-          faltanAprox,
-          avancePct: objetivo > 0 ? Math.min(100, Math.round((a.barridos / objetivo) * 100)) : 0,
-          estado,
-          workersActivos: activos,
-          workers: ws,
+      if (snap && refresh !== '1') {
+        // Fuera de fecha: se refresca por detrás y se contesta con lo que hay.
+        if (edadMs > CACHE_FRESCO_MS && !recalculando.has(fuero)) {
+          recalculando.add(fuero);
+          calcularMatriz(fuero, { maxRange, desde, hasta })
+            .then((d) => col.updateOne({ _id: fuero }, { $set: { calculadoEn: new Date(), data: d } }, { upsert: true }))
+            .catch((e) => logger.error(`[coberturaMatriz] recálculo de ${fuero} falló: ${e.message}`))
+            .finally(() => recalculando.delete(fuero));
+        }
+        return res.json({
+          success: true,
+          message: 'Matriz de cobertura (snapshot)',
+          data: { ...snap.data, calculadoEn: snap.calculadoEn, edadMinutos: Math.round(edadMs / 60000), recalculando: recalculando.has(fuero) }
         });
       }
 
-      logger.info(`[coberturaMatriz] fuero=${fuero} anios=${anios.length} ms=${Date.now() - inicio}`);
-
+      // Sin snapshot todavía, o refresh explícito: se calcula y se guarda.
+      const data = await calcularMatriz(fuero, { maxRange, desde, hasta });
+      await col.updateOne({ _id: fuero }, { $set: { calculadoEn: new Date(), data } }, { upsert: true });
       res.json({
         success: true,
-        message: 'Matriz de cobertura calculada exitosamente',
-        data: {
-          fuero,
-          maxRange: tope,
-          desde: anioDesde,
-          hasta: anioHasta,
-          calculoMs: Date.now() - inicio,
-          totales: {
-            barridos: anios.reduce((a, x) => a + x.barridos, 0),
-            validas: anios.reduce((a, x) => a + x.validas, 0),
-            faltanAprox: anios.reduce((a, x) => a + x.faltanAprox, 0),
-            workersActivos: anios.reduce((a, x) => a + x.workersActivos, 0),
-          },
-          anios,
-        }
+        message: 'Matriz de cobertura calculada',
+        data: { ...data, calculadoEn: new Date(), edadMinutos: 0, recalculando: false }
       });
     } catch (error) {
-      logger.error(`Error calculando matriz de cobertura: ${error}`);
+      logger.error(`Error sirviendo la matriz de cobertura: ${error}`);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
