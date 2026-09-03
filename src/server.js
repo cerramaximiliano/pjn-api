@@ -51,7 +51,11 @@ app.use((req, res) => {
 async function initializeServer() {
   try {
     const secretsString = await retrieveSecrets();
-    await fsPromises.writeFile(".env", secretsString);
+    await fsPromises.writeFile(".env", secretsString, { mode: 0o600 });
+    // `mode` solo aplica cuando writeFile CREA el archivo: si el .env ya existía
+    // conserva sus permisos previos (644) y los ~120 secretos del ecosistema
+    // quedan legibles por cualquier usuario del box. De ahí el chmod explícito.
+    await fsPromises.chmod(".env", 0o600);
     dotenv.config();
 
     const port = process.env.PORT || 8083;
