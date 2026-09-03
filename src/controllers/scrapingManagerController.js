@@ -7,6 +7,10 @@
 const mongoose = require('mongoose');
 const { logger } = require('../config/pino');
 
+// Cuánto puede tener el doc de estadísticas antes de considerarse no confiable.
+// Se escribe cada ~2 minutos, así que una hora ya es señal de que algo no anda.
+const MAX_EDAD_FUERO_STATS_MS = 60 * 60 * 1000;
+
 /**
  * Lee la configuración desde MongoDB
  */
@@ -259,7 +263,34 @@ const scrapingManagerController = {
       if (!doc) {
         return res.status(404).json({
           success: false,
-          message: 'Stats de fuero no disponibles aún (se generan cada ~10 min)'
+          message: 'Stats de fuero no disponibles aún (las genera el scraping-manager cada ~2 min en el rs0)'
+        });
+      }
+
+      // Guarda de frescura. El scraping-manager escribe este documento cada ~2
+      // minutos EN EL rs0; si lo que se encuentra tiene horas, esta instancia no
+      // está mirando la base donde se escribe.
+      //
+      // Pasó exactamente eso: pjn-api corre en dos instancias sobre el mismo
+      // código —una contra Atlas, otra contra el rs0— y en Atlas había quedado
+      // una copia del doc de cuando el manager todavía lo espejaba. El espejo se
+      // quitó, la copia no, y el endpoint la sirvió sin error durante 19 días: la
+      // UI mostraba 1.352.881 causas y 6 fueros mientras el rs0 tenía 1.448.237 y
+      // 28. Un dato viejo servido como actual es peor que un error.
+      const edadMs = doc.updatedAt ? Date.now() - new Date(doc.updatedAt).getTime() : Infinity;
+      if (edadMs > MAX_EDAD_FUERO_STATS_MS) {
+        const horas = Number.isFinite(edadMs) ? Math.round(edadMs / 3600000) : null;
+        logger.warn(
+          `getFueroStats: documento obsoleto (${horas ?? '?'} h). ` +
+          'Probable lectura contra la base equivocada: lo escribe el scraping-manager en el rs0.'
+        );
+        return res.status(503).json({
+          success: false,
+          message: horas === null
+            ? 'Stats de fuero sin fecha de actualización: no se sirven por no ser confiables'
+            : `Stats de fuero desactualizadas (${horas} h). Las escribe el scraping-manager en el rs0; ` +
+              'si esta instancia apunta a otra base, hay que consultarla por /cache.',
+          data: null
         });
       }
 
