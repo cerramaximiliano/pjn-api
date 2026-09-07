@@ -7,6 +7,7 @@ const router = express.Router();
 const workerStatsController = require('../controllers/workerStatsController');
 const workerStatsExtendedController = require('../controllers/workerStatsExtendedController');
 const stuckDocumentsController = require('../controllers/stuckDocumentsController');
+const tandasController = require('../controllers/tandasController');
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 
 // Todas las rutas requieren autenticación y rol admin
@@ -88,6 +89,20 @@ router.get('/summary/compare', workerStatsExtendedController.compareDays);
 // Regenerar resumen de un día (útil para correcciones)
 // POST /api/workers/summary/regenerate/:date?workerType=app-update
 router.post('/summary/regenerate/:date', workerStatsExtendedController.regenerateSummary);
+
+// ==================== TANDAS APP-UPDATE ====================
+
+// Tandas del día (ART) con resumen
+// GET /api/workers/tandas/today?date=2026-09-07
+router.get('/tandas/today', tandasController.getToday);
+
+// Últimas N tandas
+// GET /api/workers/tandas/last?n=20&fuero=civil&soloApertura=true
+router.get('/tandas/last', tandasController.getLast);
+
+// Capacidad real de la flota: config + pool + tandas + KPIs + alertas
+// GET /api/workers/tandas/capacity
+router.get('/tandas/capacity', tandasController.getCapacity);
 
 // ==================== STUCK DOCUMENTS WORKER ====================
 
