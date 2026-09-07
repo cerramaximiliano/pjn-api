@@ -15,10 +15,6 @@ router.get('/stats', verifyToken, causasController.getStats);
 // GET /api/causas/stats/eligibility?fuero=CIV&thresholdHours=2
 router.get('/stats/eligibility', verifyToken, causasController.getEligibilityStats);
 
-// Ruta para obtener estadísticas de capacidad de procesamiento
-// GET /api/causas/stats/capacity?thresholdHours=2&workersPerFuero=3&workHoursPerDay=14
-router.get('/stats/capacity', verifyToken, causasController.getCapacityStats);
-
 // Resumen agregado de causas marcadas privadas (widget admin)
 // GET /api/causas/stats/privacy
 router.get('/stats/privacy', verifyToken, causasController.getPrivacyStats);
