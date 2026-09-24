@@ -54,7 +54,7 @@ const DIMENSIONES = {
     funcion: ["impulso", "ordenacion", "decision", "terminacion", "suspension", "reanudacion", "otro"],
     modoTerminacion: [
         "sentencia_sobre_fondo", "allanamiento", "desistimiento_del_proceso", "desistimiento_del_derecho",
-        "transaccion", "conciliacion", "caducidad_de_instancia", "homologacion_de_acuerdo",
+        "transaccion", "conciliacion", "caducidad_de_instancia", "homologacion_de_acuerdo", "cumplimiento",
         "sustraccion_de_materia", "declaracion_de_abstraccion", "archivo", "incompetencia_con_remision", "incompetencia_sin_remision", "inhabilidad_de_instancia", "otro",
     ],
     estadoImpugnatorio: ["recurrible", "recurrida", "firme", "no_determinado"],
