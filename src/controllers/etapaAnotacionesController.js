@@ -61,7 +61,7 @@ const DIMENSIONES = {
     actoProcesal: [
         "ninguno", // el documento no es una resolución (tipo = no_es_resolucion, resto no aplica)
         "corre_traslado", "da_vista", "intima", "concede_prorroga", "difiere_proveimiento", "fija_audiencia", "celebra_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
-        "tiene_presente", "tiene_por_presentado", "tiene_por_contestada_demanda", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho", "declara_desistida_prueba", "efectiviza_apercibimiento",
+        "tiene_presente", "tiene_por_presentado", "tiene_por_contestada_demanda", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho", "declara_desistida_prueba", "declara_negligencia", "efectiviza_apercibimiento",
         "pone_autos_para_alegar", "pone_autos_agravios", "pasa_autos_sentencia", "pasa_autos_a_resolver", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "declara_incompetencia", "resuelve_excepcion", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "recibe_autos_alzada", "resuelve_recurso", "aclara_rectifica", "acepta_desistimiento", "resuelve_fondo", "homologa_acuerdo",
         "registra_pago", "ordena_giro", "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
@@ -121,6 +121,7 @@ const ACTO_TIPICO = {
     medida_mejor_proveer: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "ordenacion", resultado: "no_aplica" },
     declara_causa_puro_derecho: { tipoResolucion: "sentencia_interlocutoria", materia: "prueba", funcion: "decision" },
     declara_desistida_prueba: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "decision", resultado: "declara" },
+    declara_negligencia: { tipoResolucion: "sentencia_interlocutoria", materia: "prueba", funcion: "decision" },
     efectiviza_apercibimiento: { tipoResolucion: "providencia_simple", funcion: "decision", resultado: "declara" },
     pone_autos_para_alegar: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "impulso", resultado: "no_aplica" },
     pone_autos_agravios: { tipoResolucion: "providencia_simple", materia: "recurso", contexto: "recursiva", funcion: "impulso", resultado: "no_aplica" },
