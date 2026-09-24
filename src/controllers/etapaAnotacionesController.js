@@ -60,7 +60,7 @@ const DIMENSIONES = {
     estadoImpugnatorio: ["recurrible", "recurrida", "firme", "no_determinado"],
     actoProcesal: [
         "ninguno", // el documento no es una resolución (tipo = no_es_resolucion, resto no aplica)
-        "corre_traslado", "da_vista", "intima", "concede_prorroga", "difiere_proveimiento", "fija_audiencia", "celebra_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
+        "corre_traslado", "intima_pago_cita_remate", "da_vista", "intima", "concede_prorroga", "difiere_proveimiento", "fija_audiencia", "celebra_audiencia", "ordena_notificacion", "ordena_oficio", "ordena_cedula",
         "tiene_presente", "tiene_por_presentado", "tiene_por_contestada_demanda", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho", "declara_desistida_prueba", "declara_negligencia", "efectiviza_apercibimiento",
         "pone_autos_para_alegar", "pone_autos_agravios", "pasa_autos_sentencia", "pasa_autos_a_resolver", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "declara_incompetencia", "resuelve_excepcion", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "recibe_autos_alzada", "resuelve_recurso", "aclara_rectifica", "acepta_desistimiento", "resuelve_fondo", "homologa_acuerdo",
@@ -105,6 +105,7 @@ const DIMS_SIMPLES = ["tipoResolucion", "instancia", "materia", "contexto", "fun
 const ACTO_TIPICO = {
     corre_traslado: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
     da_vista: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
+    intima_pago_cita_remate: { tipoResolucion: "providencia_simple", materia: "fondo", funcion: "impulso", resultado: "no_aplica" },
     intima: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
     concede_prorroga: { tipoResolucion: "providencia_simple", funcion: "decision", resultado: "concede" },
     difiere_proveimiento: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
