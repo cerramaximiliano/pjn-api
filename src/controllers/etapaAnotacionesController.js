@@ -64,7 +64,7 @@ const DIMENSIONES = {
         "tiene_presente", "tiene_por_presentado", "tiene_por_contestada_demanda", "agrega_documentacion", "abre_a_prueba", "medida_mejor_proveer", "declara_causa_puro_derecho", "declara_desistida_prueba", "declara_negligencia", "efectiviza_apercibimiento",
         "pone_autos_para_alegar", "pone_autos_agravios", "pasa_autos_sentencia", "pasa_autos_a_resolver", "regula_honorarios", "aprueba_liquidacion", "designa_perito", "declara_rebeldia",
         "declara_caducidad", "declara_incompetencia", "resuelve_excepcion", "concede_recurso", "deniega_recurso", "eleva_autos", "recibe_autos_devueltos", "recibe_autos_alzada", "resuelve_recurso", "aclara_rectifica", "acepta_desistimiento", "resuelve_ejecucion_sentencia", "resuelve_fondo", "homologa_acuerdo",
-        "registra_pago", "ordena_giro", "ordena_embargo", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
+        "registra_pago", "ordena_giro", "ordena_embargo", "ordena_medida_cautelar", "levanta_embargo", "suspende_proceso", "reanuda_proceso", "archiva", "otro",
     ],
     resultado: [
         "hace_lugar", "hace_lugar_parcialmente", "rechaza", "confirma", "revoca", "modifica",
@@ -151,6 +151,7 @@ const ACTO_TIPICO = {
     registra_pago: { tipoResolucion: "providencia_simple", materia: "ejecucion", contexto: "ejecucion", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_giro: { tipoResolucion: "providencia_simple", materia: "ejecucion", contexto: "ejecucion", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_embargo: { tipoResolucion: "sentencia_interlocutoria", materia: "cautelar", funcion: "decision", resultado: "hace_lugar" },
+    ordena_medida_cautelar: { tipoResolucion: "providencia_simple", materia: "cautelar", funcion: "decision", resultado: "hace_lugar" },
     levanta_embargo: { tipoResolucion: "sentencia_interlocutoria", materia: "cautelar", funcion: "decision" },
     suspende_proceso: { funcion: "suspension" },
     reanuda_proceso: { funcion: "reanudacion" },
