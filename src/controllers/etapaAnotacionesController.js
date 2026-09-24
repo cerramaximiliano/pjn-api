@@ -47,7 +47,7 @@ const ESTADOS = ["pendiente", "en_progreso", "anotada", "verificada", "descartad
 // terminación ampliados, acto procesal como dimensión accionable, y
 // decisiones[] multivaluadas. Ver memoria del proyecto.
 const DIMENSIONES = {
-    tipoResolucion: ["providencia_simple", "sentencia_interlocutoria", "sentencia_definitiva", "sentencia_homologatoria", "otra_resolucion", "no_es_resolucion"],
+    tipoResolucion: ["providencia_simple", "sentencia_interlocutoria", "sentencia_definitiva", "sentencia_homologatoria", "acta", "otra_resolucion", "no_es_resolucion"],
     instancia: ["primera_instancia", "segunda_instancia", "superior_tribunal_provincial", "csjn", "instancia_unica", "otro", "indeterminada"],
     materia: ["fondo", "prueba", "competencia", "cautelar", "conciliacion", "honorarios", "costas", "liquidacion", "ejecucion", "recurso", "nulidad", "recusacion", "caducidad", "tramite", "otro"],
     contexto: ["principal", "incidental", "ejecucion", "recursiva", "cautelar", "otro"],
@@ -107,7 +107,7 @@ const ACTO_TIPICO = {
     da_vista: { tipoResolucion: "providencia_simple", funcion: "impulso", resultado: "no_aplica" },
     intima: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
     fija_audiencia: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
-    celebra_audiencia: { tipoResolucion: "otra_resolucion", funcion: "ordenacion", resultado: "no_aplica" },
+    celebra_audiencia: { tipoResolucion: "acta", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_notificacion: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_oficio: { tipoResolucion: "providencia_simple", funcion: "ordenacion", resultado: "no_aplica" },
     ordena_cedula: { tipoResolucion: "providencia_simple", materia: "tramite", funcion: "ordenacion", resultado: "no_aplica" },
