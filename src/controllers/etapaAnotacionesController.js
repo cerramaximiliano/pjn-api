@@ -49,7 +49,7 @@ const ESTADOS = ["pendiente", "en_progreso", "anotada", "verificada", "descartad
 const DIMENSIONES = {
     tipoResolucion: ["providencia_simple", "sentencia_interlocutoria", "sentencia_definitiva", "sentencia_homologatoria", "otra_resolucion", "no_es_resolucion"],
     instancia: ["primera_instancia", "segunda_instancia", "superior_tribunal_provincial", "csjn", "instancia_unica", "otro", "indeterminada"],
-    materia: ["fondo", "prueba", "competencia", "cautelar", "conciliacion", "honorarios", "costas", "liquidacion", "ejecucion", "recurso", "nulidad", "recusacion", "tramite", "otro"],
+    materia: ["fondo", "prueba", "competencia", "cautelar", "conciliacion", "honorarios", "costas", "liquidacion", "ejecucion", "recurso", "nulidad", "recusacion", "caducidad", "tramite", "otro"],
     contexto: ["principal", "incidental", "ejecucion", "recursiva", "cautelar", "otro"],
     funcion: ["impulso", "ordenacion", "decision", "terminacion", "suspension", "reanudacion", "otro"],
     modoTerminacion: [
@@ -128,7 +128,7 @@ const ACTO_TIPICO = {
     aprueba_liquidacion: { materia: "liquidacion", contexto: "ejecucion", funcion: "decision", resultado: "hace_lugar" },
     designa_perito: { tipoResolucion: "providencia_simple", materia: "prueba", funcion: "ordenacion", resultado: "no_aplica" },
     declara_rebeldia: { tipoResolucion: "sentencia_interlocutoria", funcion: "decision" },
-    declara_caducidad: { tipoResolucion: "sentencia_interlocutoria", funcion: "terminacion", modoTerminacion: "caducidad_de_instancia" },
+    declara_caducidad: { tipoResolucion: "sentencia_interlocutoria", materia: "caducidad", funcion: "terminacion", modoTerminacion: "caducidad_de_instancia" },
     declara_incompetencia: { tipoResolucion: "sentencia_interlocutoria", materia: "competencia", funcion: "terminacion", resultado: "declara" },
     resuelve_excepcion: { tipoResolucion: "sentencia_interlocutoria", contexto: "incidental", funcion: "decision" },
     concede_recurso: { tipoResolucion: "providencia_simple", materia: "recurso", funcion: "decision", resultado: "concede" },
