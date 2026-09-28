@@ -337,10 +337,16 @@ const causasController = {
         });
       }
 
-      // Verificar si ya existe una causa con el mismo número y año
+      // Verificar si ya existe una causa con el mismo número y año.
+      // Identidad = {number, year, incidente}: sin el filtro, un alta del principal
+      // matcheaba (y "reusaba") un incidente ya guardado con el mismo número/año.
+      // Normalizar una sola vez ("" / undefined → null) para que la búsqueda y el alta
+      // usen la misma identidad (el índice único distingue "" de null).
+      causeData.incidente = causeData.incidente || null;
       const existingCause = await Model.findOne({
         number: number.toString(),
-        year: year.toString()
+        year: year.toString(),
+        incidente: causeData.incidente
       });
 
       if (existingCause) {

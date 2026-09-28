@@ -3,6 +3,18 @@ const mongoose = require("mongoose");
 /**
  * Servicio para gestionar operaciones relacionadas con documentos de causas
  */
+// pjn-models registra el modelo Civil con el nombre histórico "Causas" (no "CausasCivil");
+// sin este alias associate/dissociate devolvían 500 para Civil y el hub caía al fallback local.
+function resolverModelo(causaType) {
+    const name = (causaType === 'CausasCivil' && !mongoose.models.CausasCivil && mongoose.models.Causas)
+        ? 'Causas'
+        : causaType;
+    if (!mongoose.models[name]) {
+        throw new Error(`Modelo ${causaType} no encontrado`);
+    }
+    return mongoose.model(name);
+}
+
 const causaService = {
     /**
      * Actualiza el estado de actualización para un usuario específico
@@ -29,12 +41,13 @@ const causaService = {
             
             for (const causaType of causaTypes) {
                 try {
-                    if (!mongoose.models[causaType]) {
-                        console.error(`Modelo ${causaType} no encontrado`);
+                    let CausaModel;
+                    try {
+                        CausaModel = resolverModelo(causaType);
+                    } catch (e) {
+                        console.error(e.message);
                         continue;
                     }
-                    
-                    const CausaModel = mongoose.model(causaType);
                     
                     // Obtener todas las causas del usuario
                     const causasDelUsuario = await CausaModel.find({ userCausaIds: userIdObj });
@@ -109,11 +122,7 @@ const causaService = {
      */
     async associateFolderToCausa(causaType, { number, year, userId, folderId, hasPaidSubscription = false }) {
         try {
-            if (!mongoose.models[causaType]) {
-                throw new Error(`Modelo ${causaType} no encontrado`);
-            }
-
-            const CausaModel = mongoose.model(causaType);
+            const CausaModel = resolverModelo(causaType);
             
             // Aseguramos que los IDs sean ObjectId
             const userIdObj = mongoose.Types.ObjectId.isValid(userId) 
@@ -124,10 +133,15 @@ const causaService = {
                 ? new mongoose.Types.ObjectId(folderId) 
                 : folderId;
 
-            // Buscar si existe un documento con el mismo número y año
+            // Buscar si existe un documento con el mismo número y año.
+            // Mismo criterio que findByNumberAndYear en causasController.js: identidad =
+            // {number, year, incidente}; null = principal (matchea null y ausente). Un alta por
+            // número/año solo puede apuntar al principal; los incidentes "42"/"42/2" solo se
+            // alcanzan desde Mis Causas.
             let causa = await CausaModel.findOne({
                 number: number,
-                year: year
+                year: year,
+                incidente: null
             });
 
             let created = false;
@@ -187,7 +201,9 @@ const causaService = {
                 const alMenosUnUsuarioRequiereActualizacion = causa.userUpdatesEnabled.some(entry => entry.enabled);
                 causa.update = alMenosUnUsuarioRequiereActualizacion;
 
-                causa.source = "app";
+                // No pisar 'pjn-login': pertenece al mundo privado (Mis Causas). Pasarla a 'app'
+                // la metía en los pools públicos de pjn-workers.
+                if (causa.source !== 'pjn-login') causa.source = "app";
 
                 // Actualizar fecha de última modificación
                 causa.lastUpdate = new Date();
@@ -284,11 +300,7 @@ const causaService = {
      */
     async dissociateFolderFromCausa(causaType, { causaId, folderId, userId }) {
         try {
-            if (!mongoose.models[causaType]) {
-                throw new Error(`Modelo ${causaType} no encontrado`);
-            }
-
-            const CausaModel = mongoose.model(causaType);
+            const CausaModel = resolverModelo(causaType);
             
             // Aseguramos que los IDs sean ObjectId
             const causaIdObj = mongoose.Types.ObjectId.isValid(causaId) 
