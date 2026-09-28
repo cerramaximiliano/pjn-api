@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const incidentesLinkService = require("./incidentesLinkService");
 
 /**
  * Servicio para gestionar operaciones relacionadas con documentos de causas
@@ -250,6 +251,10 @@ const causaService = {
                     date: new Date(),
                     lastUpdate: new Date()
                 });
+
+                // Incidentes de este número/año ya traídos por Mis Causas (otro usuario) quedan
+                // vinculados al principal nuevo (parentCausaId + incidentes[]). Nunca aborta.
+                await incidentesLinkService.vincularIncidentesDePrincipal(CausaModel, causa);
 
                 console.log(`Nueva causa ${causaType} creada con folderIds:`, causa.folderIds);
             }

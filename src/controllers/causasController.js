@@ -11,6 +11,20 @@ const {
 const { logger} = require('../config/pino');
 const axios = require('axios');
 
+// Misma regla que verifyAdmin (middleware/auth.js): API key ⇒ servicio; si no, rol ADMIN_ROLE.
+async function esServicioOAdmin(req) {
+  if (!req.userId) return false;
+  if (req.userId === 'service') return true;
+  try {
+    const UserModel = require('../models/user');
+    const user = await UserModel.findById(req.userId).select('role').lean();
+    return !!user && user.role === 'ADMIN_ROLE';
+  } catch (e) {
+    logger.warn(`esServicioOAdmin: ${e.message}`);
+    return false;
+  }
+}
+
 // Mapa completo FUERO → Modelo Mongoose (28 fueros).
 // Histórico: el sistema arrancó con solo 4 fueros (CIV/COM/CSS/CNT). Los
 // otros 24 se exponen ahora para soportar el flujo SAIJ que importa
@@ -77,6 +91,14 @@ const causasController = {
     try {
       const { fuero, number, year } = req.params;
       const { incidente, all } = req.query;
+      // Los incidentes (?incidente=X o ?all=true) pueden ser reservados y haber sido
+      // traídos por la credencial de OTRO usuario: solo servicio (API key) o admin.
+      if ((incidente || all === 'true') && !(await esServicioOAdmin(req))) {
+        return res.status(403).json({
+          success: false,
+          message: 'Consultar incidentes por número requiere rol de administrador'
+        });
+      }
       const Model = getModel(fuero);
 
       const query = { number, year };

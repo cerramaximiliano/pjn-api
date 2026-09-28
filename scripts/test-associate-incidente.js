@@ -29,6 +29,7 @@ if (process.env.URLDB && process.env.URLDB_TEST === process.env.URLDB) {
 const mongoose = require('mongoose');
 const { CausasSegSoc, CausasCivil } = require('pjn-models');
 const causaService = require('../src/service/causasService');
+const { compararIncidentes } = require('../src/service/incidentesLinkService');
 
 const NUMBER = 9935259;
 const YEAR = 2010;
@@ -121,6 +122,55 @@ caso('(5) CausasCivil: el modelo se resuelve (pjn-models lo registra como "Causa
     assert.ok(doc, 'el doc no quedó en causas-civil');
     assert.strictEqual(doc.incidente, null);
     assert.strictEqual(doc.fuero, 'CIV');
+});
+
+// ---- Vínculo bidireccional principal ↔ incidentes (2026-09-28) ----
+
+caso('(6) queja existente (parentCausaId null) → el principal nuevo queda vinculado en ambos sentidos', async () => {
+    const { insertedId: quejaId } = await ss().insertOne({ ...quejaDoc(), parentCausaId: null });
+
+    const r = await causaService.associateFolderToCausa('CausasSegSocial', { number: NUMBER, year: YEAR, userId, folderId });
+    assert.ok(r, 'associateFolderToCausa devolvió null');
+    assert.strictEqual(r.created, true);
+
+    const principal = await ss().findOne({ _id: r.causaId });
+    assert.strictEqual(principal.incidente, null);
+    assert.ok(Array.isArray(principal.incidentes) && principal.incidentes.length === 1, 'el principal no tiene incidentes[] (¿strict descartó el path?)');
+    assert.strictEqual(String(principal.incidentes[0].causaId), String(quejaId));
+    assert.strictEqual(principal.incidentes[0].incidente, '2');
+    assert.ok(principal.incidentes[0].linkedAt instanceof Date, 'linkedAt no es Date');
+
+    const queja = await ss().findOne({ _id: quejaId });
+    assert.strictEqual(String(queja.parentCausaId), String(r.causaId));
+    // La queja no se toca en nada más.
+    assert.deepStrictEqual(queja.folderIds, []);
+    assert.deepStrictEqual(queja.userCausaIds, []);
+    assert.strictEqual(queja.source, 'pjn-login');
+});
+
+caso('(7) incidentes "12" y "1" (insertados en ese orden) → incidentes[] en orden natural ["1","12"] y ambos con parentCausaId', async () => {
+    const { insertedId: id12 } = await ss().insertOne({ ...quejaDoc(), incidente: '12', parentCausaId: null });
+    const { insertedId: id1 } = await ss().insertOne({ ...quejaDoc(), incidente: '1' }); // sin el campo: también cuenta como null
+
+    const r = await causaService.associateFolderToCausa('CausasSegSocial', { number: NUMBER, year: YEAR, userId, folderId });
+    const principal = await ss().findOne({ _id: r.causaId });
+    assert.deepStrictEqual(principal.incidentes.map((i) => i.incidente), ['1', '12']);
+    assert.deepStrictEqual(principal.incidentes.map((i) => String(i.causaId)), [String(id1), String(id12)]);
+
+    const hijos = await ss().find({ number: NUMBER, year: YEAR, incidente: { $ne: null } }).toArray();
+    assert.strictEqual(hijos.length, 2);
+    for (const h of hijos) assert.strictEqual(String(h.parentCausaId), String(r.causaId));
+});
+
+caso('(8) sin incidentes → el principal nuevo no recibe incidentes[]', async () => {
+    const r = await causaService.associateFolderToCausa('CausasSegSocial', { number: NUMBER, year: YEAR, userId, folderId });
+    const principal = await ss().findOne({ _id: r.causaId });
+    assert.ok(principal.incidentes === undefined || principal.incidentes.length === 0, 'no debía escribirse incidentes[]');
+});
+
+caso('(9) compararIncidentes: orden natural por segmentos', async () => {
+    const entrada = ['42/10', '42/2', '12', '2', '1', '42', '12/2'];
+    assert.deepStrictEqual(entrada.slice().sort(compararIncidentes), ['1', '2', '12', '12/2', '42', '42/2', '42/10']);
 });
 
 (async () => {
