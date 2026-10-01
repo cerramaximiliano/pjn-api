@@ -465,7 +465,7 @@ exports.guardarAnotaciones = async (req, res) => {
                 }
                 // Cargas procesales (múltiples): [{destinatarios[], accion, plazo, apercibimiento}]
                 if (Array.isArray(a.cargas)) {
-                    limpia.cargas = a.cargas.slice(0, 8).map((c) => {
+                    limpia.cargas = a.cargas.slice(0, 20).map((c) => {  // hasta 20: una apertura a prueba puede imponer más de 8 cargas
                         const carga = {
                             destinatarios: Array.isArray(c && c.destinatarios)
                                 ? c.destinatarios.filter((x) => DIMENSIONES.destinatario.includes(x)).slice(0, 6)
@@ -473,6 +473,7 @@ exports.guardarAnotaciones = async (req, res) => {
                             accion: c && DIMENSIONES.accionRequerida.includes(c.accion) ? c.accion : null,
                             plazo: null,
                             apercibimiento: String(c && c.apercibimiento || "").slice(0, 200),
+                            relevancia: c && ["principal", "accesoria"].includes(c.relevancia) ? c.relevancia : undefined,
                         };
                         if (c && c.plazo && typeof c.plazo === "object") {
                             const cantidad = parseInt(c.plazo.cantidad, 10);
