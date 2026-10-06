@@ -37,10 +37,15 @@ const schema = new mongoose.Schema(
 		// Lo lee pjn-rag-api en caliente (cache 30s) y lo ENFUERZA server-side:
 		// el cliente puede acotar más, nunca ampliar. 'app' gobierna la vista
 		// in-app de law-analytics-front; 'mcp' el tool search_sentencias de
-		// la-mcp-server (Claude.ai / IA externas).
+		// la-mcp-server (Claude.ai / IA externas). 'public' gobierna la vista
+		// pública /jurisprudencia (sin login) y lo enfuerza law-analytics-server
+		// (controllers/publicSentenciasController.js): con 'all' suma solo las
+		// sentencias no-SAIJ con resumen IA aprobado y publicationStatus
+		// 'published' (curación editorial explícita).
 		searchCorpus: {
-			app: { type: String, enum: ['saij', 'all'], default: 'saij' },
-			mcp: { type: String, enum: ['saij', 'all'], default: 'saij' },
+			app:    { type: String, enum: ['saij', 'all'], default: 'saij' },
+			mcp:    { type: String, enum: ['saij', 'all'], default: 'saij' },
+			public: { type: String, enum: ['saij', 'all'], default: 'saij' },
 		},
 		currentState: {
 			isRunning:       { type: Boolean, default: false },

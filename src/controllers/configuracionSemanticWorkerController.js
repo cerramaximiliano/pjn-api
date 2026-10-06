@@ -2,6 +2,7 @@
 
 const ConfiguracionSemanticWorker = require('../models/ConfiguracionSemanticWorker');
 const { logger } = require('../config/pino');
+const { buildSearchCorpusSet, SearchCorpusError } = require('../utils/searchCorpus');
 
 const ALLOWED_FIELDS = [
 	'enabled',
@@ -36,7 +37,20 @@ const configuracionSemanticWorkerController = {
 		try {
 			const setData = {};
 			for (const field of ALLOWED_FIELDS) {
-				if (req.body[field] !== undefined) setData[field] = req.body[field];
+				if (req.body[field] === undefined) continue;
+				if (field === 'searchCorpus') {
+					// Por subcampo: guardar app/mcp no pisa `public` (ni viceversa).
+					try {
+						Object.assign(setData, buildSearchCorpusSet(req.body.searchCorpus));
+					} catch (err) {
+						if (err instanceof SearchCorpusError) {
+							return res.status(400).json({ success: false, message: err.message });
+						}
+						throw err;
+					}
+					continue;
+				}
+				setData[field] = req.body[field];
 			}
 
 			if (Object.keys(setData).length === 0) {
