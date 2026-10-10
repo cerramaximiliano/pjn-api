@@ -46,6 +46,7 @@ router.get("/revision-legal/stats", verifyToken, verifyAdmin, rev.stats);
 router.get("/revision-legal/item/:id", verifyToken, verifyAdmin, rev.obtener);
 router.patch("/revision-legal/item/:id", verifyToken, verifyAdmin, rev.guardarVeredicto);
 router.get("/revision-legal", verifyToken, verifyAdmin, rev.listar);
+router.get("/beta", verifyToken, verifyAdmin, rev.beta);
 
 router.get("/feriados", verifyToken, verifyAdmin, ctrl.listFeriados);
 router.post("/feriados", verifyToken, verifyAdmin, ctrl.createFeriados);

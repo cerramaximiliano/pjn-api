@@ -238,3 +238,58 @@ exports.stats = async (req, res) => {
 		return fail(res, "stats", error);
 	}
 };
+
+// GET /admin/plazos/beta — seguimiento de la beta de plazos automáticos (F5). Tiene datos en la
+// instancia de Atlas (usuarios, cédulas de usuarios, sugerencias y feedback); en la de caché da ceros.
+exports.beta = async (req, res) => {
+	try {
+		const db = mongoose.connection.db;
+		const n = (col, q) => db.collection(col).countDocuments(q, { maxTimeMS: 20000 });
+		const desde7 = new Date(Date.now() - 7 * 864e5);
+		const N = db.collection("plazos-notificaciones");
+		const [activos, conCuit, cedulas, cedulas7d, porStatus, eventos, eventosArchivados, porAccion, feedback, feedbackPorRegla, negativos] = await Promise.all([
+			n("usuarios", { "plazosAutomaticos.activo": true }),
+			n("usuarios", { "plazosAutomaticos.activo": true, "plazosAutomaticos.cuit": { $nin: [null, ""] } }),
+			n("plazos-notificaciones", { origen: "usuario" }),
+			n("plazos-notificaciones", { origen: "usuario", detectedAt: { $gte: desde7 } }),
+			N.aggregate([{ $match: { origen: "usuario" } }, { $group: { _id: "$processingStatus", n: { $sum: 1 } } }], { maxTimeMS: 20000 }).toArray(),
+			n("events", { origen: "plazos-automaticos" }),
+			n("events", { origen: "plazos-automaticos", archivedAt: { $ne: null } }),
+			db.collection("foldernotifications").aggregate([{ $match: { user: "plazos-automaticos" } }, { $group: { _id: "$code", n: { $sum: 1 } } }], { maxTimeMS: 20000 }).toArray(),
+			N.aggregate([{ $match: { origen: "usuario", "feedbackUsuarios.0": { $exists: true } } }, { $unwind: "$feedbackUsuarios" }, { $group: { _id: "$feedbackUsuarios.correcto", n: { $sum: 1 } } }], { maxTimeMS: 20000 }).toArray(),
+			N.aggregate(
+				[
+					{ $match: { origen: "usuario", "feedbackUsuarios.0": { $exists: true } } },
+					{ $unwind: "$feedbackUsuarios" },
+					{ $group: { _id: { $ifNull: ["$plazo.norma.label", { $concat: ["texto ", { $ifNull: ["$plazo.confianza", "?"] }] }] }, total: { $sum: 1 }, correctos: { $sum: { $cond: ["$feedbackUsuarios.correcto", 1, 0] } } } },
+					{ $sort: { total: -1 } },
+				],
+				{ maxTimeMS: 20000 }
+			).toArray(),
+			N.aggregate(
+				[
+					{ $match: { origen: "usuario", "feedbackUsuarios.correcto": false } },
+					{ $unwind: "$feedbackUsuarios" },
+					{ $match: { "feedbackUsuarios.correcto": false } },
+					{ $sort: { "feedbackUsuarios.at": -1 } },
+					{ $limit: 20 },
+					{ $project: { _id: 1, fuero: 1, regla: "$plazo.norma.label", fuente: "$plazo.fuente", vencimiento: "$plazo.vencimiento", comentario: "$feedbackUsuarios.comentario", at: "$feedbackUsuarios.at" } },
+				],
+				{ maxTimeMS: 20000 }
+			).toArray(),
+		]);
+		const fb = Object.fromEntries(feedback.map((f) => [String(f._id), f.n]));
+		const correctos = fb.true || 0, incorrectos = fb.false || 0;
+		return res.json({
+			success: true,
+			data: {
+				usuarios: { activos, conCuit },
+				cedulas: { total: cedulas, ultimos7d: cedulas7d, porStatus: Object.fromEntries(porStatus.map((s) => [s._id, s.n])) },
+				sugerencias: { eventos, eventosArchivados, porAccion: Object.fromEntries(porAccion.map((a) => [String(a._id).replace(/^plazo-/, ""), a.n])) },
+				feedback: { correctos, incorrectos, precision: correctos + incorrectos ? correctos / (correctos + incorrectos) : null, porRegla: feedbackPorRegla.map((r) => ({ clave: r._id, total: r.total, correctos: r.correctos })), negativos },
+			},
+		});
+	} catch (error) {
+		return fail(res, "beta", error);
+	}
+};
