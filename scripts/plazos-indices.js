@@ -8,7 +8,7 @@ const INDICES = {
 	"plazos-notificaciones": [
 		[{ processingStatus: 1, "plazo.vencimiento": 1 }, { name: "status_vencimiento" }],
 		[{ "plazo.fuente": 1 }, { name: "plazo_fuente" }],
-		[{ origen: 1, processingStatus: 1 }, { name: "origen_status" }],
+		// el índice por origen (cédulas de usuarios) lo crea plazos-worker-usuarios al arrancar (F2)
 	],
 	"plazos-dataset": [[{ sinPlazo: 1, "revision.estado": 1, plazoDias: 1 }, { name: "sinPlazo_revision_plazoDias" }]],
 };
