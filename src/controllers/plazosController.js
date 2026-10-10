@@ -43,8 +43,31 @@ const paginated = (res, data, total, page, limit) =>
 
 const fail = (res, scope, error) => {
 	logger.error(`[plazos] ${scope}: ${error.message}`);
+	// MaxTimeMSExpired: la consulta superó el tope — responder rápido en vez de colgar la admin
+	if (error.code === 50 || error.codeName === "MaxTimeMSExpired") {
+		return res.status(504).json({ success: false, message: "La consulta tardó demasiado (más de 20 s). Probá con un filtro más acotado." });
+	}
 	return res.status(500).json({ success: false, message: error.message });
 };
+
+// Tope de tiempo para toda consulta de la admin: sin él, una consulta sin índice sobre
+// plazos-notificaciones (2,5 GB) sigue corriendo en Mongo aunque la admin ya cortó a los 30 s,
+// y cada visita apila otro barrido en el secundario.
+const MAX_MS = 20000;
+const agg = (Model, pipeline) => Model.aggregate(pipeline).option({ maxTimeMS: MAX_MS, allowDiskUse: true });
+const cnt = (Model, filter = {}) =>
+	Object.keys(filter).length ? Model.countDocuments(filter).maxTimeMS(MAX_MS) : Model.estimatedDocumentCount();
+
+// Memo en proceso para estadísticas (agregaciones de decenas de segundos que cambian poco).
+const memoStore = new Map();
+const memo = async (key, ttlMs, fn) => {
+	const hit = memoStore.get(key);
+	if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+	const value = await fn();
+	memoStore.set(key, { at: Date.now(), value });
+	return value;
+};
+const STATS_TTL = 5 * 60 * 1000;
 
 // ── Notificaciones ────────────────────────────────────────────────────────────
 
@@ -72,8 +95,8 @@ exports.listNotificaciones = async (req, res) => {
 				.sort({ detectedAt: -1 })
 				.skip(skip)
 				.limit(limit)
-				.lean(),
-			PlazoNotificacion.countDocuments(filter),
+				.lean().maxTimeMS(MAX_MS),
+			cnt(PlazoNotificacion, filter),
 		]);
 		return paginated(res, data, total, page, limit);
 	} catch (error) {
@@ -85,15 +108,15 @@ exports.listNotificaciones = async (req, res) => {
 exports.statsNotificaciones = async (req, res) => {
 	try {
 		const hoy = new Date().toISOString().slice(0, 10);
-		const [porStatus, porFuente, vencimientosProximos, total] = await Promise.all([
-			PlazoNotificacion.aggregate([{ $group: { _id: "$processingStatus", count: { $sum: 1 } } }]),
-			PlazoNotificacion.aggregate([
+		const [porStatus, porFuente, vencimientosProximos, total] = await memo(`statsNotif:${mongoose.connection.name}:${hoy}`, STATS_TTL, () => Promise.all([
+			agg(PlazoNotificacion, [{ $group: { _id: "$processingStatus", count: { $sum: 1 } } }]),
+			agg(PlazoNotificacion, [
 				{ $match: { "plazo.fuente": { $ne: null } } },
 				{ $group: { _id: "$plazo.fuente", count: { $sum: 1 } } },
 			]),
-			PlazoNotificacion.countDocuments({ processingStatus: "computed", "plazo.vencimiento": { $gte: hoy } }),
-			PlazoNotificacion.countDocuments({}),
-		]);
+			cnt(PlazoNotificacion, { processingStatus: "computed", "plazo.vencimiento": { $gte: hoy } }),
+			cnt(PlazoNotificacion, {}),
+		]));
 		return res.json({
 			success: true,
 			data: {
@@ -126,8 +149,8 @@ exports.listVencimientos = async (req, res) => {
 				.sort({ "plazo.vencimiento": 1 })
 				.skip(skip)
 				.limit(limit)
-				.lean(),
-			PlazoNotificacion.countDocuments(filter),
+				.lean().maxTimeMS(MAX_MS),
+			cnt(PlazoNotificacion, filter),
 		]);
 		return paginated(res, data, total, page, limit);
 	} catch (error) {
@@ -141,7 +164,7 @@ exports.getNotificacion = async (req, res) => {
 		if (!mongoose.isValidObjectId(req.params.id)) {
 			return res.status(400).json({ success: false, message: "id inválido" });
 		}
-		const doc = await PlazoNotificacion.findById(req.params.id).lean();
+		const doc = await PlazoNotificacion.findById(req.params.id).lean().maxTimeMS(MAX_MS);
 		if (!doc) return res.status(404).json({ success: false, message: "No encontrada" });
 		// El espejo de Atlas guarda el excerpt comprimido — descomprimir para la
 		// UI, que sigue recibiendo extraccion.textExcerpt plano como siempre.
@@ -169,7 +192,7 @@ exports.reprocessNotificacion = async (req, res) => {
 				$unset: { processingLock: "" },
 			},
 			{ new: true }
-		).lean();
+		).lean().maxTimeMS(MAX_MS);
 		if (!doc) return res.status(404).json({ success: false, message: "No encontrada" });
 		logger.info(`[plazos] reprocess ${req.params.id} por user ${req.userId}`);
 		return res.json({ success: true, data: doc });
@@ -204,7 +227,7 @@ exports.listNormativa = async (req, res) => {
 		if (req.query.habilitado !== undefined) filter.habilitado = req.query.habilitado === "true";
 		if (req.query.verificado !== undefined) filter.verificado = req.query.verificado === "true";
 		if (req.query.fuero) filter.fuero = { $in: [req.query.fuero, "*"] };
-		const data = await PlazoNormativa.find(filter).sort({ prioridad: 1 }).lean();
+		const data = await PlazoNormativa.find(filter).sort({ prioridad: 1 }).lean().maxTimeMS(MAX_MS);
 		return res.json({ success: true, count: data.length, data });
 	} catch (error) {
 		return fail(res, "listNormativa", error);
@@ -261,7 +284,7 @@ exports.updateNormativa = async (req, res) => {
 		for (const k of NORMATIVA_EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
 		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
 
-		const doc = await PlazoNormativa.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean();
+		const doc = await PlazoNormativa.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean().maxTimeMS(MAX_MS);
 		if (!doc) return res.status(404).json({ success: false, message: "Regla no encontrada" });
 		PlazoNormativa.clearReglasCache();
 		logger.info(`[plazos] normativa ${req.params.id} editada por user ${req.userId}: ${Object.keys($set).join(",")}`);
@@ -281,7 +304,7 @@ exports.listFeriados = async (req, res) => {
 		if (req.query.tipo) filter.tipo = req.query.tipo;
 		if (req.query.verificado !== undefined) filter.verificado = req.query.verificado === "true";
 		if (req.query.habilitado !== undefined) filter.habilitado = req.query.habilitado === "true";
-		const data = await FeriadoJudicial.find(filter).sort({ fecha: 1 }).lean();
+		const data = await FeriadoJudicial.find(filter).sort({ fecha: 1 }).lean().maxTimeMS(MAX_MS);
 		return res.json({ success: true, count: data.length, data });
 	} catch (error) {
 		return fail(res, "listFeriados", error);
@@ -336,7 +359,7 @@ const PLAZO_SOSPECHOSO = 60;
 
 // Dominante por grupo (fuero, objeto, acto) entre los NO descartados.
 async function dominantesPorGrupo() {
-	const grupos = await PlazoDatasetEjemplo.aggregate([
+	const grupos = await memo(`dominantes:${mongoose.connection.name}`, STATS_TTL, () => agg(PlazoDatasetEjemplo, [
 		// Solo plazos procesales: los de pago/cumplimiento son vencimientos
 		// reales pero no definen reglas de contestación/apelación/traslado.
 		{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" }, naturaleza: { $nin: ["pago", "cumplimiento"] } } },
@@ -355,7 +378,7 @@ async function dominantesPorGrupo() {
 				dominanteN: { $first: "$n" },
 			},
 		},
-	]);
+	]));
 	const map = new Map();
 	for (const g of grupos) {
 		map.set(`${g._id.fuero}|${g._id.objeto || ""}|${g._id.acto}`, { dominante: g.dominante, total: g.total, dominanteN: g.dominanteN });
@@ -388,7 +411,7 @@ exports.listDataset = async (req, res) => {
 			filter.sinPlazo = false;
 			filter.plazoDias = { $ne: null };
 			const dominantes = await dominantesPorGrupo();
-			const todos = await PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).limit(2000).lean();
+			const todos = await PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).limit(2000).lean().maxTimeMS(MAX_MS);
 			const marcados = todos
 				.map((e) => {
 					const grupo = dominantes.get(`${e.fuero}|${e.objeto || ""}|${e.acto}`) || null;
@@ -403,8 +426,8 @@ exports.listDataset = async (req, res) => {
 			data = marcados.slice(skip, skip + limit);
 		} else {
 			[data, total] = await Promise.all([
-				PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).skip(skip).limit(limit).lean(),
-				PlazoDatasetEjemplo.countDocuments(filter),
+				PlazoDatasetEjemplo.find(filter).sort({ harvestedAt: -1 }).skip(skip).limit(limit).lean().maxTimeMS(MAX_MS),
+				cnt(PlazoDatasetEjemplo, filter),
 			]);
 		}
 		return paginated(res, data, total, page, limit);
@@ -442,7 +465,7 @@ exports.revisarDatasetEjemplo = async (req, res) => {
 		}
 		if (corregido) $set["revision.corregido"] = true;
 
-		const doc = await PlazoDatasetEjemplo.findByIdAndUpdate(req.params.id, { $set }, { new: true }).lean();
+		const doc = await PlazoDatasetEjemplo.findByIdAndUpdate(req.params.id, { $set }, { new: true }).lean().maxTimeMS(MAX_MS);
 		if (!doc) return res.status(404).json({ success: false, message: "Ejemplo no encontrado" });
 		logger.info(`[plazos] dataset ${req.params.id} → ${estado}${corregido ? " (labels corregidos)" : ""} por user ${req.userId}`);
 		return res.json({ success: true, data: doc });
@@ -455,20 +478,20 @@ exports.revisarDatasetEjemplo = async (req, res) => {
 exports.statsDataset = async (req, res) => {
 	try {
 		const noDescartado = { "revision.estado": { $ne: "descartado" } };
-		const [total, conPlazo, descartados, porFuero, porActo] = await Promise.all([
-			PlazoDatasetEjemplo.countDocuments(noDescartado),
-			PlazoDatasetEjemplo.countDocuments({ sinPlazo: false, ...noDescartado }),
-			PlazoDatasetEjemplo.countDocuments({ "revision.estado": "descartado" }),
-			PlazoDatasetEjemplo.aggregate([
+		const [total, conPlazo, descartados, porFuero, porActo] = await memo(`statsDataset:${mongoose.connection.name}`, STATS_TTL, () => Promise.all([
+			cnt(PlazoDatasetEjemplo, noDescartado),
+			cnt(PlazoDatasetEjemplo, { sinPlazo: false, ...noDescartado }),
+			cnt(PlazoDatasetEjemplo, { "revision.estado": "descartado" }),
+			agg(PlazoDatasetEjemplo, [
 				{ $match: noDescartado },
 				{ $group: { _id: "$fuero", n: { $sum: 1 }, conPlazo: { $sum: { $cond: ["$sinPlazo", 0, 1] } } } },
 			]),
-			PlazoDatasetEjemplo.aggregate([
+			agg(PlazoDatasetEjemplo, [
 				{ $match: { sinPlazo: false, ...noDescartado } },
 				{ $group: { _id: "$acto", n: { $sum: 1 } } },
 				{ $sort: { n: -1 } },
 			]),
-		]);
+		]));
 		return res.json({
 			success: true,
 			data: {
@@ -494,7 +517,7 @@ exports.candidatosDataset = async (req, res) => {
 		const minN = Math.max(parseInt(req.query.minN, 10) || 5, 2);
 		const minShare = Math.min(Math.max(parseFloat(req.query.minShare) || 0.8, 0.5), 1);
 
-		const grupos = await PlazoDatasetEjemplo.aggregate([
+		const grupos = await memo(`candidatos:${mongoose.connection.name}:${minN}:${minShare}`, STATS_TTL, () => agg(PlazoDatasetEjemplo, [
 			{ $match: { sinPlazo: false, plazoDias: { $ne: null }, "revision.estado": { $ne: "descartado" }, naturaleza: { $nin: ["pago", "cumplimiento"] } } },
 			{
 				$group: {
@@ -514,9 +537,9 @@ exports.candidatosDataset = async (req, res) => {
 			{ $match: { total: { $gte: minN } } },
 			{ $sort: { total: -1 } },
 			{ $limit: 200 },
-		]);
+		]));
 
-		const reglas = await PlazoNormativa.find({ habilitado: true }).sort({ prioridad: 1 }).lean();
+		const reglas = await PlazoNormativa.find({ habilitado: true }).sort({ prioridad: 1 }).lean().maxTimeMS(MAX_MS);
 		const norm = (s) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
 		const candidatos = [];
@@ -633,17 +656,18 @@ exports.monitor = async (req, res) => {
 		const hoy = new Date(new Date().toISOString().slice(0, 10));
 		const alive = (t, umbralMin) => !!t && now - new Date(t).getTime() < umbralMin * 60 * 1000;
 
-		const [wCfg, dsCfg, foCfg, cola, detectadasHoy, computadasHoy, revisionManual, updaters, dispersosAprox] = await Promise.all([
+		// La pestaña Monitoreo consulta cada 15 s: memo de 60 s para no repetir los conteos.
+		const [wCfg, dsCfg, foCfg, cola, detectadasHoy, computadasHoy, revisionManual, updaters, dispersosAprox] = await memo(`monitor:${mongoose.connection.name}`, 60 * 1000, () => Promise.all([
 			db.collection("plazos-worker-config").findOne({ _id: "global" }),
 			db.collection("plazos-dataset-config").findOne({ _id: "global" }),
 			db.collection("plazos-folders-config").findOne({ _id: "global" }),
-			PlazoNotificacion.aggregate([{ $group: { _id: "$processingStatus", n: { $sum: 1 } } }]),
-			PlazoNotificacion.countDocuments({ detectedAt: { $gte: hoy } }),
-			PlazoNotificacion.countDocuments({ processingStatus: "computed", processedAt: { $gte: hoy } }),
-			PlazoNotificacion.countDocuments({ processingStatus: "revision_manual" }),
+			agg(PlazoNotificacion, [{ $group: { _id: "$processingStatus", n: { $sum: 1 } } }]),
+			cnt(PlazoNotificacion, { detectedAt: { $gte: hoy } }),
+			cnt(PlazoNotificacion, { processingStatus: "computed", processedAt: { $gte: hoy } }),
+			cnt(PlazoNotificacion, { processingStatus: "revision_manual" }),
 			db.collection("configuracion-update-movimientos").find({}).project({ fuero: 1, enabled: 1, updateProgress: 1 }).toArray(),
-			PlazoDatasetEjemplo.countDocuments({ "revision.estado": { $in: [null, "sin_revisar"] }, sinPlazo: false, plazoDias: { $gte: 60 } }),
-		]);
+			cnt(PlazoDatasetEjemplo, { "revision.estado": { $in: [null, "sin_revisar"] }, sinPlazo: false, plazoDias: { $gte: 60 } }),
+		]));
 
 		const workers = {
 			plazosWorker: {
@@ -710,7 +734,7 @@ exports.updateFeriado = async (req, res) => {
 		for (const k of EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
 		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
 
-		const doc = await FeriadoJudicial.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean();
+		const doc = await FeriadoJudicial.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean().maxTimeMS(MAX_MS);
 		if (!doc) return res.status(404).json({ success: false, message: "Feriado no encontrado" });
 		FeriadoJudicial.clearSetCache();
 		logger.info(`[plazos] feriado ${req.params.id} editado por user ${req.userId}: ${Object.keys($set).join(",")}`);

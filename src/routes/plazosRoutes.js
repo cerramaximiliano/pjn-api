@@ -2,12 +2,14 @@
  * plazosRoutes.js — Rutas admin del subsistema de plazos procesales.
  * Montado en /api/admin/plazos (ver routes/index.js).
  *
- * ⚠️ Datos reales solo en la instancia LOCAL de pjn-api (worker_01) — las
- * colecciones viven en su Mongo local. La admin UI consume vía workersAxios.
+ * Dos bases (10/10/2026): la instancia de caché (pjn/cache-api, MONGO_TARGET=rs0) sirve el laboratorio de
+ * desarrollo; la instancia de Atlas (pjn/api) sirve las cédulas de usuarios. La admin elige con su selector
+ * (workersAxios = caché, pjnAxios = Atlas). Reglas y feriados: copia maestra en Atlas.
  */
 const express = require("express");
 const router = express.Router();
 const ctrl = require("../controllers/plazosController");
+const rev = require("../controllers/plazosRevisionLegalController");
 const { verifyToken, verifyAdmin } = require("../middleware/auth");
 
 // Notificaciones (cédulas detectadas + cómputo)
@@ -37,6 +39,14 @@ router.get("/dataset-config", verifyToken, verifyAdmin, ctrl.getDatasetConfig);
 router.patch("/dataset-config", verifyToken, verifyAdmin, ctrl.updateDatasetConfig);
 
 // Feriados (calendario de días inhábiles)
+// Revisión legal de plazos calculados (fase F0) — colección plazos-revision-legal
+router.get("/revision-legal/muestras", verifyToken, verifyAdmin, rev.listarMuestras);
+router.post("/revision-legal/muestras", verifyToken, verifyAdmin, rev.crearMuestra);
+router.get("/revision-legal/stats", verifyToken, verifyAdmin, rev.stats);
+router.get("/revision-legal/item/:id", verifyToken, verifyAdmin, rev.obtener);
+router.patch("/revision-legal/item/:id", verifyToken, verifyAdmin, rev.guardarVeredicto);
+router.get("/revision-legal", verifyToken, verifyAdmin, rev.listar);
+
 router.get("/feriados", verifyToken, verifyAdmin, ctrl.listFeriados);
 router.post("/feriados", verifyToken, verifyAdmin, ctrl.createFeriados);
 router.patch("/feriados/:id", verifyToken, verifyAdmin, ctrl.updateFeriado);
