@@ -26,6 +26,8 @@ router.get("/vencimientos", verifyToken, verifyAdmin, ctrl.listVencimientos);
 router.get("/monitor", verifyToken, verifyAdmin, ctrl.monitor);
 // Contadores por etapa del flujo de plazos automáticos (solo base de usuarios).
 router.get("/flujo", verifyToken, verifyAdmin, ctrl.flujo);
+// Detalle unificado de una cédula de usuario (?movementId= | ?plazoId=).
+router.get("/cedula", verifyToken, verifyAdmin, ctrl.cedula);
 
 // Normativa (reglas de plazo subsidiario — curación del admin)
 router.get("/normativa", verifyToken, verifyAdmin, ctrl.listNormativa);

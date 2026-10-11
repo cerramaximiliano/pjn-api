@@ -82,6 +82,12 @@ exports.listNotificaciones = async (req, res) => {
 			filter.causaId = new mongoose.Types.ObjectId(req.query.causaId);
 		}
 		if (req.query.fuente) filter["plazo.fuente"] = req.query.fuente;
+		// Por dónde entró la cédula (base de usuarios): app-update | mis-causas | bandeja.
+		if (req.query.via === "bandeja") filter.fuente = "bandeja";
+		else if (req.query.via) {
+			filter["source.worker"] = String(req.query.via);
+			filter.fuente = { $ne: "bandeja" };
+		}
 		if (req.query.objeto) filter.objeto = new RegExp(String(req.query.objeto).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 		if (req.query.desde || req.query.hasta) {
 			filter.detectedAt = {};
@@ -776,6 +782,92 @@ exports.flujo = async (req, res) => {
 		return res.json({ success: true, data });
 	} catch (error) {
 		return fail(res, "flujo", error);
+	}
+};
+
+// GET /cedula?movementId=<causaId:sourceId> | ?plazoId=<id> — Detalle unificado de una cédula
+// de usuario (solo Atlas): causa, movimiento espejado (con el bloque `cedula`: documento de
+// pjn-rag-cedulas, recepción de la bandeja, plazo), texto extraído, plazo calculado, cédulas
+// de la bandeja vinculadas, carpetas y usuarios de la causa, entrega del hub (eventos y avisos)
+// y el correo del movimiento (JudicialMovement por usuario). El PDF lo sirve pjn-rag-api
+// (/rag/admin/extraccion/documentos/:movementId/pdf).
+const COLECCION_POR_TIPO = {
+	CausasCivil: "causas-civil", CausasComercial: "causas-comercial", CausasTrabajo: "causas-trabajo",
+	CausasSegSoc: "causas-segsocial", CausasSegSocial: "causas-segsocial",
+};
+const MOVEMENT_ID_RE = /^[0-9a-f]{24}:[\w-]{3,80}$/;
+
+exports.cedula = async (req, res) => {
+	if (process.env.MONGO_TARGET === "rs0") {
+		return res.status(400).json({ success: false, message: "El detalle de cédula es de la base de usuarios (Atlas)" });
+	}
+	try {
+		const db = mongoose.connection.db;
+		let movementId = req.query.movementId ? String(req.query.movementId) : null;
+		const plazoId = req.query.plazoId && mongoose.isValidObjectId(req.query.plazoId) ? new mongoose.Types.ObjectId(req.query.plazoId) : null;
+		if (movementId && !MOVEMENT_ID_RE.test(movementId)) return res.status(400).json({ success: false, message: "movementId inválido" });
+		if (!movementId && !plazoId) return res.status(400).json({ success: false, message: "Falta movementId o plazoId" });
+
+		const SIN_TEXTO = { "extraccion.textExcerpt": 0, "extraccion.textExcerptGz": 0 };
+		let plazo = plazoId ? await PlazoNotificacion.findById(plazoId, SIN_TEXTO).lean() : null;
+		if (!movementId && plazo && plazo.sourceId && !plazo.sourceId.startsWith("bandeja-ced-")) movementId = `${plazo.causaId}:${plazo.sourceId}`;
+		const causaIdStr = movementId ? movementId.split(":")[0] : String(plazo.causaId);
+		const causaId = new mongoose.Types.ObjectId(causaIdStr);
+
+		const mov = movementId ? await db.collection("pjn-movements").findOne({ _id: movementId }) : null;
+		const numeroCedula = mov?.cedula?.recepcion?.numeroCedula || mov?.cedula?.documento?.numero ||
+			(/C[EÉ]DULA\s*N[°º.:]*\s*(\d{10,16})/i.exec(mov?.detalle || "") || [])[1] || plazo?.bandeja?.numeroCedula || null;
+		if (!plazo && movementId) {
+			const sourceId = movementId.slice(25);
+			plazo = await PlazoNotificacion.findOne({ causaId, sourceId }, SIN_TEXTO).lean() ||
+				(numeroCedula ? await PlazoNotificacion.findOne({ causaId, "bandeja.numeroCedula": String(numeroCedula) }, SIN_TEXTO).lean() : null);
+		}
+
+		const coleccion = COLECCION_POR_TIPO[mov?.causaType] || plazo?.collection || null;
+		const plazoOid = plazo?._id || null;
+		const filtroCorreo = mov?.url
+			? { "expediente.id": causaIdStr, "movimiento.url": mov.url }
+			: mov?.fecha
+				? { "expediente.id": causaIdStr, "movimiento.tipo": mov.tipo, "movimiento.fecha": { $gte: new Date(new Date(mov.fecha).getTime() - 12 * 3600e3), $lte: new Date(new Date(mov.fecha).getTime() + 36 * 3600e3) } }
+				: null;
+
+		const [causa, texto, folders, bandeja, eventos, avisos, correos] = await Promise.all([
+			coleccion ? db.collection(coleccion).findOne({ _id: causaId }, { projection: { number: 1, year: 1, fuero: 1, caratula: 1, objeto: 1, juzgado: 1, secretaria: 1, isPrivate: 1, source: 1, incidente: 1 } }) : null,
+			movementId ? db.collection("pjn-movement-texts").findOne({ _id: movementId }, { projection: { texto: 1 } }) : null,
+			db.collection("folders").find({ causaId }, { projection: { userId: 1, folderName: 1, archived: 1, source: 1, causaType: 1 } }).toArray(),
+			db.collection("pjn-notifications").find(
+				movementId ? { $or: [{ "vinculo.movementId": movementId }, ...(numeroCedula ? [{ numeroCedula: Number(numeroCedula) }] : [])] } : { numeroCedula: Number(numeroCedula) || -1 },
+				{ projection: { raw: 0 } },
+			).limit(20).toArray(),
+			plazoOid ? db.collection("events").find({ plazoNotificacionId: plazoOid }, { projection: { userId: 1, folderId: 1, title: 1, start: 1, allDay: 1, confirmadoPor: 1, archivedAt: 1, googleEventId: 1, createdAt: 1 } }).toArray() : [],
+			plazoOid ? db.collection("foldernotifications").find({ idCode: String(plazoOid), code: { $regex: /^plazo-/ } }, { projection: { userId: 1, folderId: 1, code: 1, notification: 1, read: 1, createdAt: 1 } }).toArray() : [],
+			filtroCorreo ? db.collection("judicialmovements").find(filtroCorreo, { projection: { userId: 1, notificationStatus: 1, "notificationSettings.notifyAt": 1, notifications: 1, createdAt: 1 } }).limit(50).toArray() : [],
+		]);
+
+		const userIds = [...new Set([...folders.map((f) => String(f.userId)), ...bandeja.map((b) => String(b.userId)), ...correos.map((c) => String(c.userId))])]
+			.filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
+		const usuarios = userIds.length
+			? await db.collection("usuarios").find({ _id: { $in: userIds } }, { projection: { email: 1, firstName: 1, lastName: 1, isTestAccount: 1, plazosAutomaticos: 1 } }).toArray()
+			: [];
+
+		return res.json({
+			success: true,
+			data: {
+				movementId,
+				coleccion,
+				causa,
+				movimiento: mov,
+				texto: texto?.texto ? { chars: texto.texto.length, texto: texto.texto.slice(0, 30000) } : null,
+				plazo,
+				bandeja,
+				folders,
+				usuarios,
+				entrega: { resultados: plazo?.validacion?.resultados || [], estado: plazo?.validacion?.estado || null, eventos, avisos },
+				correos,
+			},
+		});
+	} catch (error) {
+		return fail(res, "cedula", error);
 	}
 };
 
