@@ -649,6 +649,136 @@ exports.updateDatasetConfig = async (req, res) => {
 
 // GET /admin/plazos/monitor — salud de todos los workers del subsistema de
 // plazos + colas + throughput, en una sola llamada (vista admin Monitoreo).
+// GET /flujo — Contadores por etapa del flujo de plazos automáticos (solo base de usuarios).
+// Responde "dónde está parada cada cédula": detectada (por fuente) → esperando documento →
+// cola de cálculo (dentro / fuera del alcance) → calculada → pendiente de entrega → entregada.
+// El alcance del cálculo sale de plazos-worker-config.filtroUsuarios (null = solo cuentas de
+// prueba) y el de la entrega de plazos-folders-config.userFilter + plazosAutomaticos.activo.
+exports.flujo = async (req, res) => {
+	if (process.env.MONGO_TARGET === "rs0") {
+		return res.status(400).json({ success: false, message: "El flujo de plazos automáticos es de la base de usuarios (Atlas)" });
+	}
+	try {
+		const data = await memo("flujo:usuarios", 60 * 1000, async () => {
+			const db = mongoose.connection.db;
+			const now = Date.now();
+			const hoy = new Date(new Date().toISOString().slice(0, 10));
+			const hoyDia = new Date().toISOString().slice(0, 10);
+			const alive = (t, min) => !!t && now - new Date(t).getTime() < min * 60 * 1000;
+			const U = { origen: "usuario" };
+
+			const [wCfg, foCfg] = await Promise.all([
+				db.collection("plazos-worker-config").findOne({ _id: "global" }),
+				db.collection("plazos-folders-config").findOne({ _id: "global" }),
+			]);
+			const filtroCalculo = wCfg?.filtroUsuarios == null ? { isTestAccount: true } : wCfg.filtroUsuarios;
+			const calculoParaTodos = !Object.keys(filtroCalculo).length;
+			const causasDe = async (filtroUsuarios) => {
+				const ids = (await db.collection("usuarios").find(filtroUsuarios, { projection: { _id: 1 } }).toArray()).map((u) => u._id);
+				return ids.length ? db.collection("folders").distinct("causaId", { userId: { $in: ids }, causaId: { $ne: null } }) : [];
+			};
+			const [causasCalculo, causasEntrega] = await Promise.all([
+				calculoParaTodos ? null : causasDe(filtroCalculo),
+				causasDe({ ...(foCfg?.userFilter || { isTestAccount: true }), "plazosAutomaticos.activo": true }),
+			]);
+			const enAlcance = causasCalculo ? { causaId: { $in: causasCalculo } } : {};
+			const fueraAlcance = causasCalculo ? { causaId: { $nin: causasCalculo } } : { _id: null };
+			const confiable = { $or: [{ "plazo.fuente": "texto" }, { "plazo.fuente": "norma", "plazo.norma.verificado": true }] };
+			const COLA = { $in: ["pending", "no_url", "processing"] };
+
+			const [porStatus, porFuente, detectadasHoy, colaEnAlcance, colaFuera, confiables, paraEntregar, porValidacion, eventos, avisos] = await Promise.all([
+				agg(PlazoNotificacion, [{ $match: U }, { $group: { _id: "$processingStatus", n: { $sum: 1 } } }]),
+				agg(PlazoNotificacion, [{ $match: U }, { $group: { _id: { $cond: [{ $eq: ["$fuente", "bandeja"] }, "bandeja", { $ifNull: ["$source.worker", "otro"] }] }, n: { $sum: 1 } } }]),
+				cnt(PlazoNotificacion, { ...U, detectedAt: { $gte: hoy } }),
+				cnt(PlazoNotificacion, { ...U, processingStatus: COLA, ...enAlcance }),
+				cnt(PlazoNotificacion, { ...U, processingStatus: COLA, ...fueraAlcance }),
+				cnt(PlazoNotificacion, { ...U, processingStatus: "computed", ...confiable }),
+				cnt(PlazoNotificacion, {
+					...U,
+					processingStatus: "computed",
+					...confiable,
+					"plazo.vencimiento": { $gte: hoyDia },
+					"validacion.estado": { $in: [null, undefined] },
+					causaId: { $in: causasEntrega },
+				}),
+				agg(PlazoNotificacion, [{ $match: { ...U, "validacion.estado": { $ne: null } } }, { $group: { _id: "$validacion.estado", n: { $sum: 1 } } }]),
+				db.collection("events").countDocuments({ origen: "plazos-automaticos" }),
+				db.collection("foldernotifications").countDocuments({ user: "plazos-automaticos" }),
+			]);
+			const st = Object.fromEntries(porStatus.map((x) => [x._id, x.n]));
+			const val = Object.fromEntries(porValidacion.map((x) => [x._id, x.n]));
+			const total = Object.values(st).reduce((a, b) => a + b, 0);
+			const calculoVivo = alive(wCfg?.heartbeat?.lastCycleAt, 5);
+			const entregaViva = alive(foCfg?.heartbeat?.lastCycleAt, 15);
+			const dryRun = foCfg ? foCfg.dryRun !== false : true;
+
+			return {
+				alcance: { calculo: calculoParaTodos ? "todos" : "prueba", filtroCalculo, causasCalculo: causasCalculo ? causasCalculo.length : null, causasEntrega: causasEntrega.length, dryRun },
+				etapas: [
+					{
+						id: "detectadas",
+						label: "Detectadas",
+						total,
+						hoy: detectadasHoy,
+						desglose: Object.fromEntries(porFuente.map((x) => [x._id, x.n])),
+						nota: "Cédulas de causas de usuarios (app-update, Mis Causas, bandeja).",
+					},
+					{
+						id: "esperando",
+						label: "Esperando documento",
+						total: st.esperando_documento || 0,
+						enCola: st.esperando_documento || 0,
+						nota: "Llegaron por la bandeja antes que su movimiento; se reconcilian solas.",
+					},
+					{
+						id: "calculo",
+						label: "En cola de cálculo",
+						total: colaEnAlcance + colaFuera,
+						enCola: colaEnAlcance,
+						fueraDeAlcance: colaFuera,
+						errores: (st.failed || 0) + (st.not_pdf || 0),
+						pausada: wCfg?.enabled === false || !calculoVivo,
+						motivoPausa: wCfg?.enabled === false ? "plazos-worker-usuarios deshabilitado" : !calculoVivo ? "plazos-worker-usuarios sin heartbeat" : null,
+						nota: calculoParaTodos ? "Alcance: todas las causas de usuarios." : `Alcance: solo cuentas de prueba (${causasCalculo.length} causas). Las demás esperan.`,
+					},
+					{
+						id: "calculadas",
+						label: "Calculadas",
+						total: st.computed || 0,
+						confiables,
+						sinPlazo: (st.parsed || 0) + (st.extracted || 0),
+						revisionManual: st.revision_manual || 0,
+						nota: "Con vencimiento. Confiables = plazo del texto o regla verificada.",
+					},
+					{
+						id: "entrega",
+						label: "Para entregar",
+						total: paraEntregar,
+						enCola: paraEntregar,
+						errores: val.rechazada || 0,
+						pausada: dryRun || foCfg?.enabled === false || !entregaViva,
+						motivoPausa: foCfg?.enabled === false ? "plazos-folders-worker deshabilitado" : !entregaViva ? "plazos-folders-worker sin heartbeat" : dryRun ? "dry run: el hub simula" : null,
+						nota: `Confiables y vigentes de ${causasEntrega.length} causa(s) de usuarios con plazos automáticos activos.`,
+					},
+					{
+						id: "entregadas",
+						label: "Entregadas",
+						total: val.validada || 0,
+						sinCarpeta: val.sin_carpeta || 0,
+						eventos,
+						avisos,
+						nota: "Validadas por el hub: evento en el calendario y/o aviso en la carpeta; el correo del movimiento muestra el plazo.",
+					},
+				],
+				generatedAt: new Date(),
+			};
+		});
+		return res.json({ success: true, data });
+	} catch (error) {
+		return fail(res, "flujo", error);
+	}
+};
+
 exports.monitor = async (req, res) => {
 	try {
 		const db = mongoose.connection.db;

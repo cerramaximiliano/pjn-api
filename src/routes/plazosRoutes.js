@@ -24,6 +24,8 @@ router.get("/vencimientos", verifyToken, verifyAdmin, ctrl.listVencimientos);
 
 // Monitoreo consolidado del subsistema (workers + colas + alertas)
 router.get("/monitor", verifyToken, verifyAdmin, ctrl.monitor);
+// Contadores por etapa del flujo de plazos automáticos (solo base de usuarios).
+router.get("/flujo", verifyToken, verifyAdmin, ctrl.flujo);
 
 // Normativa (reglas de plazo subsidiario — curación del admin)
 router.get("/normativa", verifyToken, verifyAdmin, ctrl.listNormativa);
