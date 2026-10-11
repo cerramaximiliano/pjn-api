@@ -29,15 +29,28 @@ exports.getFull = async (req, res) => {
 
 const EDITABLE = [
 	"enabled", "cronPattern", "lockTimeoutMinutes", "maxRetries", "downloadTimeoutMs",
-	"scanCharsPerPageThreshold", "mirrorToAtlas", "batchPorCiclo", "delayEntreDocsMs",
+	"scanCharsPerPageThreshold", "filtroUsuarios", "batchPorCiclo", "delayEntreDocsMs",
 ];
 
 // PATCH /plazos-worker-config/settings
 exports.updateSettings = async (req, res) => {
 	try {
 		const $set = {};
+		const $unset = {};
 		for (const k of EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
-		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
+		// filtroUsuarios (solo base de usuarios): objeto simple de filtro sobre
+		// `usuarios` ({} = todas las causas; {isTestAccount: true} = prueba);
+		// null = volver al default (solo cuentas de prueba).
+		if ($set.filtroUsuarios !== undefined) {
+			const f = $set.filtroUsuarios;
+			if (f === null) {
+				delete $set.filtroUsuarios;
+				$unset.filtroUsuarios = "";
+			} else if (typeof f !== "object" || Array.isArray(f) || Object.keys(f).some((k) => k.startsWith("$"))) {
+				return res.status(400).json({ success: false, message: "filtroUsuarios inválido: objeto de filtro simple, {} o null" });
+			}
+		}
+		if (!Object.keys($set).length && !Object.keys($unset).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
 		// Validación liviana (5-6 tokens cron). La validación estricta la hace
 		// el worker con cron.validate antes de re-agendar — un patrón inválido
 		// no rompe nada: el worker mantiene el cron anterior.
@@ -48,13 +61,13 @@ exports.updateSettings = async (req, res) => {
 			}
 		}
 
-		const doc = await ConfiguracionPlazosWorker.findByIdAndUpdate("global", { $set }, {
+		const doc = await ConfiguracionPlazosWorker.findByIdAndUpdate("global", { ...(Object.keys($set).length ? { $set } : {}), ...(Object.keys($unset).length ? { $unset } : {}) }, {
 			new: true,
 			upsert: true,
 			runValidators: true,
 			setDefaultsOnInsert: true,
 		}).lean();
-		logger.info(`[plazos-worker-config] settings por user ${req.userId}: ${Object.keys($set).join(",")}`);
+		logger.info(`[plazos-worker-config] settings por user ${req.userId}: ${[...Object.keys($set), ...Object.keys($unset)].join(",")}`);
 		return res.json({ success: true, data: doc });
 	} catch (error) {
 		return fail(res, "updateSettings", error);

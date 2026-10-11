@@ -655,29 +655,38 @@ exports.monitor = async (req, res) => {
 		const now = Date.now();
 		const hoy = new Date(new Date().toISOString().slice(0, 10));
 		const alive = (t, umbralMin) => !!t && now - new Date(t).getTime() < umbralMin * 60 * 1000;
+		// Mismo código, dos bases: la instancia de caché (MONGO_TARGET=rs0) monitorea el
+		// laboratorio (plazos-worker, dataset, update-movimientos); la de Atlas, la base de
+		// usuarios (plazos-worker-usuarios y plazos-folders-worker, en worker_02).
+		const esCache = process.env.MONGO_TARGET === "rs0";
 
 		// La pestaña Monitoreo consulta cada 15 s: memo de 60 s para no repetir los conteos.
-		const [wCfg, dsCfg, foCfg, cola, detectadasHoy, computadasHoy, revisionManual, updaters, dispersosAprox] = await memo(`monitor:${mongoose.connection.name}`, 60 * 1000, () => Promise.all([
+		const [wCfg, dsCfg, foCfg, cola, detectadasHoy, computadasHoy, revisionManual, updaters, dispersosAprox, porFuente] = await memo(`monitor:${esCache ? "cache" : "usuarios"}`, 60 * 1000, () => Promise.all([
 			db.collection("plazos-worker-config").findOne({ _id: "global" }),
-			db.collection("plazos-dataset-config").findOne({ _id: "global" }),
-			db.collection("plazos-folders-config").findOne({ _id: "global" }),
-			agg(PlazoNotificacion, [{ $group: { _id: "$processingStatus", n: { $sum: 1 } } }]),
-			cnt(PlazoNotificacion, { detectedAt: { $gte: hoy } }),
-			cnt(PlazoNotificacion, { processingStatus: "computed", processedAt: { $gte: hoy } }),
-			cnt(PlazoNotificacion, { processingStatus: "revision_manual" }),
-			db.collection("configuracion-update-movimientos").find({}).project({ fuero: 1, enabled: 1, updateProgress: 1 }).toArray(),
-			cnt(PlazoDatasetEjemplo, { "revision.estado": { $in: [null, "sin_revisar"] }, sinPlazo: false, plazoDias: { $gte: 60 } }),
+			esCache ? db.collection("plazos-dataset-config").findOne({ _id: "global" }) : null,
+			esCache ? null : db.collection("plazos-folders-config").findOne({ _id: "global" }),
+			agg(PlazoNotificacion, [{ $match: esCache ? {} : { origen: "usuario" } }, { $group: { _id: "$processingStatus", n: { $sum: 1 } } }]),
+			cnt(PlazoNotificacion, { detectedAt: { $gte: hoy }, ...(esCache ? {} : { origen: "usuario" }) }),
+			cnt(PlazoNotificacion, { processingStatus: "computed", processedAt: { $gte: hoy }, ...(esCache ? {} : { origen: "usuario" }) }),
+			cnt(PlazoNotificacion, { processingStatus: "revision_manual", ...(esCache ? {} : { origen: "usuario" }) }),
+			esCache ? db.collection("configuracion-update-movimientos").find({}).project({ fuero: 1, enabled: 1, updateProgress: 1 }).toArray() : [],
+			esCache ? cnt(PlazoDatasetEjemplo, { "revision.estado": { $in: [null, "sin_revisar"] }, sinPlazo: false, plazoDias: { $gte: 60 } }) : 0,
+			esCache ? [] : agg(PlazoNotificacion, [{ $match: { origen: "usuario" } }, { $group: { _id: { $cond: [{ $eq: ["$fuente", "bandeja"] }, "bandeja", { $ifNull: ["$source.worker", "otro"] }] }, n: { $sum: 1 } } }]),
 		]));
 
 		const workers = {
 			plazosWorker: {
+				nombre: esCache ? "plazos-worker" : "plazos-worker-usuarios",
+				servidor: esCache ? "worker_01" : "worker_02",
 				enabled: wCfg?.enabled !== false,
 				alive: alive(wCfg?.heartbeat?.lastCycleAt, 5),
 				lastCycleAt: wCfg?.heartbeat?.lastCycleAt || null,
 				lastResult: wCfg?.heartbeat?.lastResult || null,
 				stats: wCfg?.stats || null,
+				// Alcance del cálculo (solo usuarios): null = default, solo cuentas de prueba.
+				filtroUsuarios: esCache ? undefined : (wCfg?.filtroUsuarios ?? null),
 			},
-			datasetWorker: {
+			datasetWorker: esCache ? {
 				enabled: dsCfg?.enabled !== false,
 				// barre fueros vacíos sin tocar heartbeat — umbral generoso
 				alive: alive(dsCfg?.heartbeat?.lastCycleAt, 60),
@@ -687,23 +696,23 @@ exports.monitor = async (req, res) => {
 				dailyLimit: dsCfg?.dailyLimit || null,
 				stats: dsCfg?.stats || null,
 				fuerosAgotados: Object.entries(dsCfg?.cursor || {}).filter(([, v]) => v === "DONE").map(([f]) => f),
-			},
-			foldersWorker: {
+			} : null,
+			foldersWorker: esCache ? null : {
+				servidor: "worker_02",
 				enabled: foCfg?.enabled !== false,
 				alive: alive(foCfg?.heartbeat?.lastCycleAt, 15),
 				lastCycleAt: foCfg?.heartbeat?.lastCycleAt || null,
 				lastRun: foCfg?.heartbeat?.lastRun || null,
-				source: foCfg?.source || "atlas",
-				dryRun: !!foCfg?.dryRun,
+				dryRun: foCfg ? foCfg.dryRun !== false : true,
 				userFilter: foCfg?.userFilter || null,
 				stats: foCfg?.stats || null,
 			},
 		};
 
 		const alertas = [];
-		if (!workers.plazosWorker.alive && workers.plazosWorker.enabled) alertas.push("plazos-worker sin heartbeat (>5 min)");
-		if (!workers.datasetWorker.alive && workers.datasetWorker.enabled) alertas.push("plazos-dataset-worker sin heartbeat (>60 min)");
-		if (!workers.foldersWorker.alive && workers.foldersWorker.enabled) alertas.push("plazos-folders-worker sin heartbeat (>15 min)");
+		if (!workers.plazosWorker.alive && workers.plazosWorker.enabled) alertas.push(`${workers.plazosWorker.nombre} sin heartbeat (>5 min)`);
+		if (workers.datasetWorker && !workers.datasetWorker.alive && workers.datasetWorker.enabled) alertas.push("plazos-dataset-worker sin heartbeat (>60 min)");
+		if (workers.foldersWorker && !workers.foldersWorker.alive && workers.foldersWorker.enabled) alertas.push("plazos-folders-worker sin heartbeat (>15 min)");
 		const colaMap = Object.fromEntries(cola.map((s) => [s._id, s.n]));
 		if ((colaMap.pending || 0) > 500) alertas.push(`cola pending alta: ${colaMap.pending}`);
 		if ((colaMap.failed || 0) > 20) alertas.push(`fallidas acumuladas: ${colaMap.failed}`);
@@ -711,12 +720,15 @@ exports.monitor = async (req, res) => {
 		return res.json({
 			success: true,
 			data: {
+				base: esCache ? "cache" : "usuarios",
 				workers,
 				cola: colaMap,
 				hoy: { detectadas: detectadasHoy, computadas: computadasHoy },
 				revisionManual,
 				dispersosSinRevisar: dispersosAprox,
 				updaters: updaters.map((u) => ({ fuero: u.fuero, enabled: u.enabled, processedToday: u.updateProgress?.processedToday ?? null })),
+				// Solo usuarios: por dónde entraron las cédulas (app-update, mis-causas, bandeja).
+				porFuente: Object.fromEntries(porFuente.map((f) => [f._id, f.n])),
 				alertas,
 				generatedAt: new Date(),
 			},
