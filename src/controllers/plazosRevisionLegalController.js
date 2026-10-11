@@ -278,12 +278,33 @@ exports.beta = async (req, res) => {
 				{ maxTimeMS: 20000 }
 			).toArray(),
 		]);
+		// Bandeja del PJN (pjn-mis-causas) como fuente de cédulas: cobertura y cuánto llega a plazos.
+		const hoyArt = new Date(new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10) + "T03:00:00Z");
+		const B = db.collection("pjn-notifications");
+		const [bTotal, bHoy, bCreds, credsElegibles, bEnPlazos, bPorStatus, evPorConfirmacion] = await Promise.all([
+			B.estimatedDocumentCount(),
+			n("pjn-notifications", { fecha: { $gte: hoyArt } }),
+			B.distinct("credentialsId").then((x) => x.length),
+			n("pjn-credentials", { enabled: true, verified: true, isValid: true }),
+			n("plazos-notificaciones", { origen: "usuario", "bandeja.notificationIds.0": { $exists: true } }),
+			N.aggregate([{ $match: { origen: "usuario", "bandeja.notificationIds.0": { $exists: true } } }, { $group: { _id: "$processingStatus", n: { $sum: 1 } } }], { maxTimeMS: 20000 }).toArray(),
+			db.collection("events").aggregate([{ $match: { origen: "plazos-automaticos" } }, { $group: { _id: { $ifNull: ["$confirmadoPor", "sin dato"] }, n: { $sum: 1 } } }], { maxTimeMS: 20000 }).toArray(),
+		]);
 		const fb = Object.fromEntries(feedback.map((f) => [String(f._id), f.n]));
 		const correctos = fb.true || 0, incorrectos = fb.false || 0;
 		return res.json({
 			success: true,
 			data: {
 				usuarios: { activos, conCuit },
+				bandeja: {
+					cedulas: bTotal,
+					hoy: bHoy,
+					credencialesConCedulas: bCreds,
+					credencialesElegibles: credsElegibles,
+					enPlazos: bEnPlazos,
+					porStatus: Object.fromEntries(bPorStatus.map((x) => [x._id, x.n])),
+					eventosPorConfirmacion: Object.fromEntries(evPorConfirmacion.map((x) => [x._id, x.n])),
+				},
 				cedulas: { total: cedulas, ultimos7d: cedulas7d, porStatus: Object.fromEntries(porStatus.map((s) => [s._id, s.n])) },
 				sugerencias: { eventos, eventosArchivados, porAccion: Object.fromEntries(porAccion.map((a) => [String(a._id).replace(/^plazo-/, ""), a.n])) },
 				feedback: { correctos, incorrectos, precision: correctos + incorrectos ? correctos / (correctos + incorrectos) : null, porRegla: feedbackPorRegla.map((r) => ({ clave: r._id, total: r.total, correctos: r.correctos })), negativos },
