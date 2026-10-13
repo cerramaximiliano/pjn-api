@@ -6,7 +6,10 @@
  * OCR quedan con `revision.requerida`; el revisor corrige o valida desde la admin y la corrección se guarda en
  * `previsional-hc-revisiones` (un documento por PRPA, que las pasadas no pisan). La próxima pasada la aplica.
  */
+const crypto = require('crypto');
 const mongoose = require('mongoose');
+const AWS = require('aws-sdk');
+const { CausasSegSoc } = require('pjn-models');
 const { logger } = require('../config/pino');
 
 const suelto = (nombre, coleccion) =>
@@ -15,6 +18,22 @@ const Evaluacion = suelto('HcEvaluacion', 'previsional-hc-evaluaciones');
 const Resumen = suelto('HcResumen', 'previsional-hc-resumen');
 const Prpa = suelto('PrevisionalPrpa', 'previsional-prpa');
 const Revision = mongoose.models.HcRevision || mongoose.model('HcRevision', new mongoose.Schema({ _id: mongoose.Schema.Types.ObjectId }, { strict: false, collection: 'previsional-hc-revisiones', _id: false }));
+
+const Carga = suelto('PrpaCarga', 'previsional-prpa-cargas');
+
+// PRPA original subido por un revisor: el archivo (con datos personales) va a un bucket privado y cifrado; el worker
+// (pjn-liquidacion-worker/scripts/procesar-cargas-prpa.js) lo procesa y genera un PRPA de origen 'carga_manual'.
+const TIPOS_CARGA = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
+const MAX_CARGA = 30 * 1024 * 1024;
+let _s3 = null;
+function s3() {
+  if (_s3) return _s3;
+  if (!process.env.PRPA_S3_ACCESS_KEY_ID || !process.env.PRPA_S3_SECRET_ACCESS_KEY) return null;
+  _s3 = new AWS.S3({ region: process.env.PRPA_S3_REGION || 'sa-east-1', accessKeyId: process.env.PRPA_S3_ACCESS_KEY_ID, secretAccessKey: process.env.PRPA_S3_SECRET_ACCESS_KEY });
+  return _s3;
+}
+const BUCKET = () => process.env.PRPA_S3_BUCKET || 'lawanalytics-prpa-originales';
+const PROY_CARGA = { s3: 0 };
 
 const ESTADOS_REVISION = ['corregida', 'validada', 'descartada'];
 const MOTIVOS = ['fad_no_leida', 'fecha_invalida', 'sin_tiempos', 'tiempos_inconsistentes', 'filas_ocr', 'moratoria_no_capturada', 'calidad_ocr'];
@@ -165,13 +184,16 @@ module.exports = {
         Prpa.findById(_id, {
           fuente: 1, fechas: 1, impresos: 1, tiempos: 1, prpa: 1, prpaMeses: 1, calidad: 1, categoriasAutonomo: 1, moratoria: 1,
           tipoPrestacion: 1, url: 1, causaId: 1, causaNumber: 1, causaYear: 1, fuero: 1, movFecha: 1, extraidoEn: 1, hojaIdx: 1,
+          movOrigen: 1, reemplazadoPor: 1, reemplazadoEn: 1, cargaId: 1,
           'ocr.paginas': 1, 'hoja.moratoria': 1, 'hoja.tipoPrestacion': 1
         }).lean(),
         Revision.findById(_id).lean()
       ]);
       if (!evaluacion && !prpa) return res.status(404).json({ success: false, message: 'caso no encontrado' });
+      const cargas = await Carga.find({ $or: [{ prpaId: _id }, { prpaIds: _id }] }, PROY_CARGA).sort({ subidoEn: -1 }).limit(20).lean();
       if (prpa && prpa.ocr && Array.isArray(prpa.ocr.paginas)) prpa.ocr = { paginas: prpa.ocr.paginas.length };
-      res.json({ success: true, data: { evaluacion, prpa, revision } });
+      const reemplazo = prpa && prpa.reemplazadoPor ? String(prpa.reemplazadoPor) : null;
+      res.json({ success: true, data: { evaluacion, prpa, revision, cargas, reemplazo } });
     } catch (err) {
       logger.error(`hc-relevamiento getCaso: ${err.message}`);
       res.status(500).json({ success: false, message: 'Error obteniendo el caso', error: err.message });
@@ -250,6 +272,91 @@ module.exports = {
     } catch (err) {
       logger.error(`hc-relevamiento getDesvios: ${err.message}`);
       res.status(500).json({ success: false, message: 'Error obteniendo desvíos', error: err.message });
+    }
+  },
+
+  /**
+   * POST /api/hc-relevamiento/cargas?prpaId=…  |  ?causaNumber=…&causaYear=…  [&nota=…]
+   * Cuerpo: el archivo crudo (Content-Type application/pdf, image/jpeg o image/png; máximo 30 MB).
+   * Sube el PRPA original al bucket privado y deja la carga pendiente para el worker. Con `prpaId` el resultado
+   * reemplaza a esa lectura; con número y año de causa (fuero CSS) crea un caso nuevo.
+   */
+  async crearCarga(req, res) {
+    try {
+      const cliente = s3();
+      if (!cliente) return res.status(503).json({ success: false, message: 'Almacenamiento de PRPA no configurado (PRPA_S3_*)' });
+      const tipo = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+      const ext = TIPOS_CARGA[tipo];
+      if (!ext) return res.status(415).json({ success: false, message: 'Formato no admitido: PDF, JPG o PNG' });
+      const buf = req.body;
+      if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ success: false, message: 'Archivo vacío' });
+      if (buf.length > MAX_CARGA) return res.status(413).json({ success: false, message: 'El archivo supera los 30 MB' });
+
+      const q = req.query || {};
+      let destino = {};
+      if (q.prpaId) {
+        if (!mongoose.isValidObjectId(q.prpaId)) return res.status(400).json({ success: false, message: 'prpaId inválido' });
+        const p = await Prpa.findById(q.prpaId, { causaId: 1, causaNumber: 1, causaYear: 1, fuero: 1, juzgado: 1, secretaria: 1 }).lean();
+        if (!p) return res.status(404).json({ success: false, message: 'PRPA no encontrado' });
+        destino = { prpaId: p._id, causaId: p.causaId || null, causaNumber: p.causaNumber ?? null, causaYear: p.causaYear ?? null, fuero: p.fuero || 'CSS', juzgado: p.juzgado ?? null, secretaria: p.secretaria ?? null };
+      } else {
+        const number = parseInt(q.causaNumber, 10); const year = parseInt(q.causaYear, 10);
+        if (!(number > 0) || !(year > 1900 && year < 2100)) return res.status(400).json({ success: false, message: 'Indicá el caso (prpaId) o el número y año de la causa' });
+        const causa = await CausasSegSoc.findOne({ number, year }, { number: 1, year: 1, fuero: 1, juzgado: 1, secretaria: 1 }).lean();
+        if (!causa) return res.status(404).json({ success: false, message: `No encontramos la causa ${number}/${year} del fuero de Seguridad Social` });
+        destino = { prpaId: null, causaId: causa._id, causaNumber: causa.number, causaYear: causa.year, fuero: causa.fuero || 'CSS', juzgado: causa.juzgado ?? null, secretaria: causa.secretaria ?? null };
+      }
+
+      const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+      const repetida = await Carga.findOne({ sha256, prpaId: destino.prpaId, causaId: destino.causaId, estado: { $in: ['pendiente', 'procesando', 'procesada'] } }, PROY_CARGA).lean();
+      if (repetida) return res.status(200).json({ success: true, data: repetida, duplicada: true });
+
+      const _id = new mongoose.Types.ObjectId();
+      const key = `cargas/${_id}.${ext}`;
+      await cliente.putObject({ Bucket: BUCKET(), Key: key, Body: buf, ContentType: tipo, ServerSideEncryption: 'AES256' }).promise();
+      const doc = {
+        _id, estado: 'pendiente', ...destino, tipo, bytes: buf.length, sha256,
+        s3: { bucket: BUCKET(), key }, nota: q.nota ? String(q.nota).slice(0, 500) : null,
+        subidoPor: req.userId || null, subidoEn: new Date(), intentos: 0
+      };
+      await Carga.collection.insertOne(doc);
+      const { s3: _omit, ...publica } = doc;
+      res.status(201).json({ success: true, data: publica });
+    } catch (err) {
+      logger.error(`hc-relevamiento crearCarga: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error subiendo el PRPA', error: err.message });
+    }
+  },
+
+  /** GET /api/hc-relevamiento/cargas?estado=&page=&limit= */
+  async listCargas(req, res) {
+    try {
+      const page = Math.max(1, parseInt(req.query.page || '1', 10));
+      const limit = Math.min(200, Math.max(1, parseInt(req.query.limit || '50', 10)));
+      const filter = {};
+      if (req.query.estado) filter.estado = String(req.query.estado);
+      const [docs, total] = await Promise.all([
+        Carga.find(filter, PROY_CARGA).sort({ subidoEn: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+        Carga.countDocuments(filter)
+      ]);
+      res.json({ success: true, data: { docs, total, page, limit, pages: Math.ceil(total / limit) } });
+    } catch (err) {
+      logger.error(`hc-relevamiento listCargas: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error listando cargas', error: err.message });
+    }
+  },
+
+  /** GET /api/hc-relevamiento/cargas/:id */
+  async getCarga(req, res) {
+    try {
+      const { id } = req.params;
+      if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: 'id inválido' });
+      const doc = await Carga.findById(id, PROY_CARGA).lean();
+      if (!doc) return res.status(404).json({ success: false, message: 'carga no encontrada' });
+      res.json({ success: true, data: doc });
+    } catch (err) {
+      logger.error(`hc-relevamiento getCarga: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error obteniendo la carga', error: err.message });
     }
   },
 
