@@ -36,7 +36,7 @@ const BUCKET = () => process.env.PRPA_S3_BUCKET || 'lawanalytics-prpa-originales
 const PROY_CARGA = { s3: 0 };
 
 const ESTADOS_REVISION = ['corregida', 'validada', 'descartada'];
-const MOTIVOS = ['fad_no_leida', 'fecha_invalida', 'sin_tiempos', 'tiempos_inconsistentes', 'filas_ocr', 'moratoria_no_capturada', 'calidad_ocr'];
+const MOTIVOS = ['fad_no_leida', 'fecha_invalida', 'sin_tiempos', 'tiempos_inconsistentes', 'filas_ocr', 'categorias_ocr', 'moratoria_no_capturada', 'calidad_ocr'];
 
 const PROY_LISTA = {
   fuente: 1, fadMes: 1, estado: 1, estadoReferencia: 1, pension: 1, moratoria: 1, calidadOk: 1, causaYear: 1,
