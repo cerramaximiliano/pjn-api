@@ -35,6 +35,7 @@ const monitoringRoutes = require('./monitoringRoutes');
 const causasElegiblesUpdateRoutes = require('./causasElegiblesUpdateRoutes');
 const captchaDatasetRoutes = require('./captchaDatasetRoutes');
 const configuracionLiquidacionWorkerRoutes = require('./configuracionLiquidacionWorkerRoutes');
+const hcRelevamientoRoutes = require('./hcRelevamientoRoutes');
 const configuracionNotifWorkerRoutes = require('./configuracionNotifWorkerRoutes');
 
 // Ruta para verificar el estado de la aplicación
@@ -141,6 +142,9 @@ router.use('/captcha-dataset', captchaDatasetRoutes);
 
 // Configuración + estado del sistema pjn-liquidacion-worker
 router.use('/liquidacion-worker-config', configuracionLiquidacionWorkerRoutes);
+
+// Relevamiento del haber de caja: resumen, casos, revisión manual y desvíos (pjn-liquidacion-worker/hc-relevamiento)
+router.use('/hc-relevamiento', hcRelevamientoRoutes);
 
 // Configuración + estado del sistema pjn-notificaciones-laborales-worker
 router.use('/notif-worker-config', configuracionNotifWorkerRoutes);
