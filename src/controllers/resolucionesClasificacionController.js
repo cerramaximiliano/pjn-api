@@ -30,6 +30,7 @@ const { logger } = require("../config/pino");
 const { getSentenciasDb } = require("../config/sentenciasConnection");
 const { segmentar } = require("../utils/segmentarResolucion");
 const { getSubdocText } = require("../utils/sentencia-text");
+const { limpiarTextoResolucion } = require("../utils/limpiarTextoResolucion");
 
 const FUERO_MODEL = {
     CIV: { model: () => pjn.CausasCivil, causaType: "CausasCivil" },
@@ -87,6 +88,10 @@ function presentarCuerpo(texto) {
         colaTexto: `[… se omiten ~${omitidos.toLocaleString("es-AR")} caracteres del medio del documento …]\n\n${t.slice(-6000)}` };
 }
 
+// Texto para mostrar: el limpio guardado (textoLimpio) o, si falta, el crudo limpiado al vuelo.
+// El crudo (`texto`) se conserva siempre tal como vino del extractor.
+const textoPresentable = (doc) => doc.textoLimpio || limpiarTextoResolucion(doc.texto || "");
+
 // ── Texto de un movimiento: corpus local → cache → sentencias-capturadas → descarga ──
 async function obtenerTexto(id, mov) {
     const hermano = await mongoose.connection.db.collection("pjn-movements")
@@ -139,7 +144,7 @@ const ORDENES = {
     reciente: { createdAt: -1 },
     anotacion: { anotadoAt: -1 },
 };
-const proyeccionLista = { texto: 0 };
+const proyeccionLista = { texto: 0, textoLimpio: 0 };
 
 // GET /api/admin/resoluciones-clasificacion
 exports.getCola = async (req, res) => {
@@ -168,7 +173,7 @@ exports.getSiguiente = async (req, res) => {
         if (req.query.excluir && mongoose.isValidObjectId(req.query.excluir)) filtro._id = { $ne: oid(req.query.excluir) };
         const doc = await col().find(filtro).sort(ORDENES[req.query.orden] || ORDENES.confianza).limit(1).next();
         if (!doc) return res.json({ success: true, item: null });
-        res.json({ success: true, item: { ...doc, cuerpo: presentarCuerpo(doc.texto), texto: undefined } });
+        res.json({ success: true, item: { ...doc, cuerpo: presentarCuerpo(textoPresentable(doc)), texto: undefined, textoLimpio: undefined } });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -233,10 +238,12 @@ exports.getUno = async (req, res) => {
         const doc = await col().findOne({ _id: oid(req.params.id) });
         if (!doc) return res.status(404).json({ success: false, message: "no encontrado" });
         const completo = req.query.completo === "1";
+        // ?crudo=1 → texto tal como vino del extractor (para comparar con el limpio)
+        const t = req.query.crudo === "1" ? (doc.texto || "") : textoPresentable(doc);
         const cuerpo = completo
-            ? { caracteres: (doc.texto || "").length, completo: (doc.texto || "").slice(0, 150000), encabezado: null, dispositiva: null, tieneDispositiva: false, colaTexto: null }
-            : presentarCuerpo(doc.texto);
-        res.json({ success: true, item: { ...doc, texto: undefined, cuerpo } });
+            ? { caracteres: t.length, completo: t.slice(0, 150000), encabezado: null, dispositiva: null, tieneDispositiva: false, colaTexto: null }
+            : presentarCuerpo(t);
+        res.json({ success: true, item: { ...doc, texto: undefined, textoLimpio: undefined, cuerpo } });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -305,7 +312,7 @@ exports.agregar = async (req, res) => {
             const doc = {
                 fuente: "manual", modeloVersion: null, fuero, causaType: cfg.causaType, causaId: oid(causaId), idx, url: m.url, movementId: t.movementId || null,
                 fecha, titulo: tituloDe(m), previo: vecino(idx, 1), siguiente: vecino(idx, -1), objeto, caratula: causa.caratula || null,
-                number: causa.number, year: causa.year, texto: t.texto.slice(0, TEXTO_MAX), chars: t.texto.length, textoFuente: t.fuente,
+                number: causa.number, year: causa.year, texto: t.texto.slice(0, TEXTO_MAX), textoLimpio: limpiarTextoResolucion(t.texto.slice(0, TEXTO_MAX)), chars: t.texto.length, textoFuente: t.fuente,
                 prediccion: null, gold: null, anotacion: null, estado: "pendiente", prioridad: Number(prioridad) || 2,
                 creadoPor: String(req.userId || ""), createdAt: new Date(), updatedAt: new Date(),
             };
