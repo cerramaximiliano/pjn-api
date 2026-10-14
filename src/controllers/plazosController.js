@@ -831,7 +831,13 @@ exports.cedula = async (req, res) => {
 				? { "expediente.id": causaIdStr, "movimiento.tipo": mov.tipo, "movimiento.fecha": { $gte: new Date(new Date(mov.fecha).getTime() - 12 * 3600e3), $lte: new Date(new Date(mov.fecha).getTime() + 36 * 3600e3) } }
 				: null;
 
-		const [causa, texto, folders, bandeja, eventos, avisos, correos] = await Promise.all([
+		// Resolución notificada y adjuntos remitidos: los vincula pjn-rag-cedulas en cedula.documento.
+		const docCedula = mov?.cedula?.documento || null;
+		const resId = docCedula?.resolucion?.movementId || null;
+		const adjIds = (docCedula?.adjuntosRemitidos || []).filter((id) => typeof id === "string" && MOVEMENT_ID_RE.test(id)).slice(0, 30);
+		const vinculadosIds = [...new Set([...(resId ? [resId] : []), ...adjIds])];
+
+		const [causa, texto, folders, bandeja, eventos, avisos, correos, vinculados, textoRes] = await Promise.all([
 			coleccion ? db.collection(coleccion).findOne({ _id: causaId }, { projection: { number: 1, year: 1, fuero: 1, caratula: 1, objeto: 1, juzgado: 1, secretaria: 1, isPrivate: 1, source: 1, incidente: 1 } }) : null,
 			movementId ? db.collection("pjn-movement-texts").findOne({ _id: movementId }, { projection: { texto: 1 } }) : null,
 			db.collection("folders").find({ causaId }, { projection: { userId: 1, folderName: 1, archived: 1, source: 1, causaType: 1 } }).toArray(),
@@ -842,7 +848,19 @@ exports.cedula = async (req, res) => {
 			plazoOid ? db.collection("events").find({ plazoNotificacionId: plazoOid }, { projection: { userId: 1, folderId: 1, title: 1, start: 1, allDay: 1, confirmadoPor: 1, archivedAt: 1, googleEventId: 1, createdAt: 1 } }).toArray() : [],
 			plazoOid ? db.collection("foldernotifications").find({ idCode: String(plazoOid), code: { $regex: /^plazo-/ } }, { projection: { userId: 1, folderId: 1, code: 1, notification: 1, read: 1, createdAt: 1 } }).toArray() : [],
 			filtroCorreo ? db.collection("judicialmovements").find(filtroCorreo, { projection: { userId: 1, notificationStatus: 1, "notificationSettings.notifyAt": 1, notifications: 1, createdAt: 1 } }).limit(50).toArray() : [],
+			vinculadosIds.length ? db.collection("pjn-movements").find({ _id: { $in: vinculadosIds } }, { projection: { tipo: 1, fecha: 1, detalle: 1, textoStatus: 1 } }).toArray() : [],
+			resId ? db.collection("pjn-movement-texts").findOne({ _id: resId }, { projection: { texto: 1 } }) : null,
 		]);
+		const porId = new Map(vinculados.map((m) => [m._id, m]));
+		const resumenMov = (id) => { const m = porId.get(id); return { movementId: id, tipo: m?.tipo || null, fecha: m?.fecha || null, detalle: m?.detalle || null }; };
+		const rn = docCedula?.resolucionNotificada || null;
+		const resolucion = resId ? {
+			...resumenMov(resId),
+			metodo: docCedula.resolucion.metodo || null,
+			cobertura: typeof docCedula.resolucion.cobertura === "number" ? docCedula.resolucion.cobertura : null,
+			fuente: rn?.fuente || null,
+			texto: textoRes?.texto ? { chars: textoRes.texto.length, texto: textoRes.texto.slice(0, 30000) } : null,
+		} : null;
 
 		const userIds = [...new Set([...folders.map((f) => String(f.userId)), ...bandeja.map((b) => String(b.userId)), ...correos.map((c) => String(c.userId))])]
 			.filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
@@ -864,6 +882,10 @@ exports.cedula = async (req, res) => {
 				usuarios,
 				entrega: { resultados: plazo?.validacion?.resultados || [], estado: plazo?.validacion?.estado || null, eventos, avisos },
 				correos,
+				// Campos nuevos (14/10/2026): resolución notificada con su texto y adjuntos remitidos.
+				resolucion,
+				resolucionNotificada: rn,
+				adjuntosRemitidos: adjIds.map(resumenMov),
 			},
 		});
 	} catch (error) {
