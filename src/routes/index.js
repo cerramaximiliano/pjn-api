@@ -164,6 +164,11 @@ router.use('/admin/etapa-stats', etapaStatsRoutes);
 const etapaAnotacionesRoutes = require('./etapaAnotacionesRoutes');
 router.use('/admin/etapa-anotaciones', etapaAnotacionesRoutes);
 
+// Cola de clasificación ligera de resoluciones para el clasificador de plazos
+// (vista admin /admin/causas/clasificacion-resoluciones; repo pjn-clasificador-resoluciones)
+const resolucionesClasificacionRoutes = require('./resolucionesClasificacionRoutes');
+router.use('/admin/resoluciones-clasificacion', resolucionesClasificacionRoutes);
+
 // Subsistema de plazos procesales: notificaciones/cédulas con vencimiento
 // computado, reglas de normativa subsidiaria y calendario de feriados.
 // ⚠️ Datos reales solo en la instancia LOCAL (colecciones en Mongo de
