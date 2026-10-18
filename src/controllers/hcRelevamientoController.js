@@ -21,6 +21,19 @@ const Revision = mongoose.models.HcRevision || mongoose.model('HcRevision', new 
 
 const Carga = suelto('PrpaCarga', 'previsional-prpa-cargas');
 
+// Evaluador BlueCorp (pjn-liquidacion-worker/scripts/hc-relevamiento-programa.js): un documento por anexo del haber de caja
+// en `previsional-hc-programa` y uno por pasada en `previsional-hc-programa-resumen`. BlueCorp no es la norma: sirve de
+// testigo y para validar el motor contra un cálculo con todas las filas a la vista.
+const ProgramaEval = suelto('HcProgramaEval', 'previsional-hc-programa');
+const ProgramaResumen = suelto('HcProgramaResumen', 'previsional-hc-programa-resumen');
+const VISTAS_PROGRAMA = {
+  sinFad: { causas: 'sin FAD leída' },
+  sinTope14: { 'filas.sinTope14': { $gt: 0 } },
+  abiertos: { estado: 'abierto' },
+  todos: {}
+};
+const PROY_PROGRAMA = { fadMes: 1, estado: 1, componentes: 1, desvios: 1, causas: 1, filas: 1, impresos: 1, causaYear: 1, res298: 1, evaluadoEn: 1 };
+
 // PRPA original subido por un revisor: el archivo (con datos personales) va a un bucket privado y cifrado; el worker
 // (pjn-liquidacion-worker/scripts/procesar-cargas-prpa.js) lo procesa y genera un PRPA de origen 'carga_manual'.
 const TIPOS_CARGA = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
@@ -357,6 +370,81 @@ module.exports = {
     } catch (err) {
       logger.error(`hc-relevamiento getCarga: ${err.message}`);
       res.status(500).json({ success: false, message: 'Error obteniendo la carga', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/hc-relevamiento/programa/resumen
+   * Última pasada del evaluador BlueCorp y cantidad de anexos por vista (sin FAD, filas sin topear, abiertos).
+   */
+  async getProgramaResumen(req, res) {
+    try {
+      const [ultima, porEstado, ...vistas] = await Promise.all([
+        ProgramaResumen.findOne({}).sort({ _id: -1 }).lean(),
+        ProgramaEval.aggregate([{ $group: { _id: '$estado', n: { $sum: 1 } } }]),
+        ...Object.values(VISTAS_PROGRAMA).map((f) => ProgramaEval.countDocuments(f))
+      ]);
+      const filasSinTope14 = await ProgramaEval.aggregate([{ $match: VISTAS_PROGRAMA.sinTope14 }, { $group: { _id: null, filas: { $sum: '$filas.sinTope14' } } }]);
+      res.json({
+        success: true,
+        data: {
+          ultima,
+          estados: Object.fromEntries(porEstado.map((g) => [g._id, g.n])),
+          vistas: Object.fromEntries(Object.keys(VISTAS_PROGRAMA).map((k, i) => [k, vistas[i]])),
+          filasSinTope14: (filasSinTope14[0] && filasSinTope14[0].filas) || 0
+        }
+      });
+    } catch (err) {
+      logger.error(`hc-relevamiento getProgramaResumen: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error obteniendo el resumen de BlueCorp', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/hc-relevamiento/programa/anexos
+   * Query: vista (sinFad|sinTope14|abiertos|todos), estado, componente (abierto), page, limit (max 200).
+   */
+  async listProgramaAnexos(req, res) {
+    try {
+      const page = Math.max(1, parseInt(req.query.page || '1', 10));
+      const limit = Math.min(200, Math.max(1, parseInt(req.query.limit || '50', 10)));
+      const vista = VISTAS_PROGRAMA[req.query.vista] ? req.query.vista : 'todos';
+      const filter = { ...VISTAS_PROGRAMA[vista] };
+      if (req.query.estado) filter.estado = String(req.query.estado);
+      if (req.query.componente && /^(W|sumatoria|PBU|PC|PAP)$/.test(req.query.componente)) filter[`componentes.${req.query.componente}.estado`] = 'abierto';
+      const orden = vista === 'sinTope14' ? { 'filas.sinTope14': -1, _id: -1 } : { fadMes: -1, _id: -1 };
+      const [docs, total] = await Promise.all([
+        ProgramaEval.find(filter, PROY_PROGRAMA).sort(orden).skip((page - 1) * limit).limit(limit).lean(),
+        ProgramaEval.countDocuments(filter)
+      ]);
+      res.json({ success: true, data: { docs, total, page, limit, pages: Math.ceil(total / limit) } });
+    } catch (err) {
+      logger.error(`hc-relevamiento listProgramaAnexos: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error listando anexos de BlueCorp', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/hc-relevamiento/programa/anexos/:id
+   * Evaluación (con el detalle de las filas que el motor y BlueCorp topean distinto) + lo leído del anexo.
+   */
+  async getProgramaAnexo(req, res) {
+    try {
+      const { id } = req.params;
+      if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: 'id inválido' });
+      const _id = new mongoose.Types.ObjectId(id);
+      const [evaluacion, prpa] = await Promise.all([
+        ProgramaEval.findById(_id).lean(),
+        Prpa.findById(_id, {
+          fuente: 1, programa: 1, version: 1, fechas: 1, impresos: 1, tiempos: 1, prpa: 1, prpaMeses: 1, calidad: 1, anexo: 1,
+          url: 1, causaNumber: 1, causaYear: 1, fuero: 1, movFecha: 1, extraidoEn: 1, hojaIdx: 1
+        }).lean()
+      ]);
+      if (!evaluacion && !prpa) return res.status(404).json({ success: false, message: 'anexo no encontrado' });
+      res.json({ success: true, data: { evaluacion, prpa } });
+    } catch (err) {
+      logger.error(`hc-relevamiento getProgramaAnexo: ${err.message}`);
+      res.status(500).json({ success: false, message: 'Error obteniendo el anexo', error: err.message });
     }
   },
 

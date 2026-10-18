@@ -17,6 +17,11 @@ router.get('/casos/:id', controller.getCaso);
 router.put('/casos/:id/revision', controller.putRevision);
 router.get('/desvios', controller.getDesvios);
 
+// Evaluador BlueCorp (anexos del haber de caja de las liquidaciones de programa)
+router.get('/programa/resumen', controller.getProgramaResumen);
+router.get('/programa/anexos', controller.listProgramaAnexos);
+router.get('/programa/anexos/:id', controller.getProgramaAnexo);
+
 // PRPA original: el cuerpo es el archivo crudo (PDF/JPG/PNG, hasta 30 MB; nginx tiene su propio límite para esta ruta)
 router.post('/cargas', express.raw({ type: ['application/pdf', 'image/jpeg', 'image/png'], limit: '30mb' }), controller.crearCarga);
 router.get('/cargas', controller.listCargas);
