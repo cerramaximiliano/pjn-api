@@ -7,7 +7,6 @@
  * y credenciales de la bandeja con errores. Doc: la-ads/docs/producto/plazos-automaticos.md §14.
  */
 const mongoose = require("mongoose");
-const axios = require("axios");
 const pjn = require("pjn-models");
 const { logger } = require("../config/pino");
 
@@ -27,18 +26,15 @@ const ACCIONES_FEEDBACK = /^(evento|aviso_|sugerencia_)/;
 
 let cache = null;
 
-// El calendario de referencia (feriados) vive en la base de referencias (rs0, la que leen los workers) y esta
-// instancia mide en Atlas: se le pregunta por HTTP interno a cache-api (misma API_KEY de servicio).
+// El calendario de referencia (feriados) vive en la misma base que mide esta instancia (Atlas desde P8).
 async function calendarioDeReferencias() {
 	try {
-		const base = process.env.CACHE_API_URL || "http://127.0.0.1:8084";
-		const { data } = await axios.get(`${base}/api/admin/plazos/feriados/cobertura`, {
-			headers: { "x-api-key": process.env.API_KEY || "" },
-			timeout: 8000,
-		});
-		return data.data;
+		const fc = pjn.feriadosCalendario;
+		const col = FeriadoJudicial.collection;
+		const [cobertura, sinVerificar] = await Promise.all([fc.cobertura(col), fc.sinVerificarProximos(col, { dias: 90 })]);
+		return { cobertura, sinVerificar };
 	} catch (error) {
-		logger.warn(`[plazos] pendientes: no se pudo leer el calendario de cache-api: ${error.message}`);
+		logger.warn(`[plazos] pendientes: no se pudo leer el calendario: ${error.message}`);
 		return null;
 	}
 }
@@ -191,17 +187,14 @@ async function armar() {
 	}));
 
 	// ── decisiones ──────────────────────────────────────────────────────────
-	const [eventos, avisosEntregados, respuestas, muestrasRevision, feriadosSinVerificar, feriadosTotal] = await Promise.all([
+	const [eventos, avisosEntregados, respuestas, muestrasRevision] = await Promise.all([
 		db.collection("events").countDocuments({ origen: "plazos-automaticos" }),
 		db.collection("foldernotifications").countDocuments({ user: "plazos-automaticos" }),
 		db.collection("plazos-notificaciones").countDocuments({ ...U, "feedbackUsuarios.0": { $exists: true } }),
 		db.collection("plazos-revision-legal").estimatedDocumentCount().catch(() => 0),
-		FeriadoJudicial.countDocuments({ verificado: { $ne: true }, habilitado: { $ne: false }, fecha: { $gte: hoyDia } }).maxTimeMS(MAX_MS),
-		FeriadoJudicial.countDocuments({ fecha: { $gte: hoyDia } }).maxTimeMS(MAX_MS),
 	]);
 	const retenidosTotal = reglasSinVerificar.reduce((a, r) => a + r.retenidos, 0);
 	const reglasOk = reglasSinVerificar.length === 0;
-	const feriadosOk = feriadosTotal > 0 && feriadosSinVerificar === 0;
 	const conEvento = eventos >= 1;
 	const conRespuesta = respuestas >= 1;
 	const estadoDe = (ok, requisitos) => (ok ? "hecho" : requisitos.every((r) => r.ok) ? "listo_para_decidir" : "bloqueado");
@@ -254,18 +247,16 @@ async function armar() {
 			accion: { texto: "Quitar dryRun y el filtro de prueba de plazos-folders-config", link: "/admin/workers/plazos?base=usuarios" },
 		});
 	}
-	{
-		const requisitos = [
-			{ texto: "Reglas revisadas", ok: reglasOk },
-			{ texto: "Feriados revisados (ninguno vigente sin verificar)", ok: feriadosOk },
-		];
-		decisiones.push({
-			id: "P8", titulo: "Pasar reglas y feriados a Atlas",
-			estado: estadoDe(false, requisitos), requisitos,
-			impacto: { texto: "Feriados vigentes sin verificar", n: feriadosSinVerificar },
-			accion: { texto: "La base maestra hoy es rs0 (la que usan los workers); Atlas es la copia del 10/10. Re-sincronizar rs0 → Atlas y PLAZOS_REFS=atlas (deploy)" },
-		});
-	}
+	decisiones.push({
+		id: "P8", titulo: "Reglas y feriados en Atlas",
+		estado: "hecho",
+		requisitos: [
+			{ texto: "Reglas (plazos-normativa) y feriados (feriados-judiciales) copiados a Atlas", ok: true },
+			{ texto: "plazos-worker leen las referencias de Atlas (PLAZOS_REFS=atlas)", ok: true },
+		],
+		impacto: { texto: "Una sola base maestra: Atlas. La admin edita ahí y los workers leen de ahí" },
+		accion: { texto: "Hecho" },
+	});
 
 	// ── calendario ──────────────────────────────────────────────────────────
 	const [cal, fueraDeCobertura] = await Promise.all([
