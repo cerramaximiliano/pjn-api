@@ -10,6 +10,7 @@ const express = require("express");
 const router = express.Router();
 const ctrl = require("../controllers/plazosController");
 const rev = require("../controllers/plazosRevisionLegalController");
+const pend = require("../controllers/plazosPendientesController");
 const { verifyToken, verifyAdmin } = require("../middleware/auth");
 
 // Notificaciones (cédulas detectadas + cómputo)
@@ -28,6 +29,9 @@ router.get("/monitor", verifyToken, verifyAdmin, ctrl.monitor);
 router.get("/flujo", verifyToken, verifyAdmin, ctrl.flujo);
 // Detalle unificado de una cédula de usuario (?movementId= | ?plazoId=).
 router.get("/cedula", verifyToken, verifyAdmin, ctrl.cedula);
+
+// Pendientes del usuario (decisiones, reglas que retienen, carpetas sin parte, entregas sin feedback, bandeja)
+router.get("/pendientes", verifyToken, verifyAdmin, pend.pendientes);
 
 // Normativa (reglas de plazo subsidiario — curación del admin)
 router.get("/normativa", verifyToken, verifyAdmin, ctrl.listNormativa);
