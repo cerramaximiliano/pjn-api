@@ -58,6 +58,8 @@ router.get("/beta", verifyToken, verifyAdmin, rev.beta);
 
 router.get("/feriados", verifyToken, verifyAdmin, ctrl.listFeriados);
 router.post("/feriados", verifyToken, verifyAdmin, ctrl.createFeriados);
+router.put("/feriados/bloque", verifyToken, verifyAdmin, ctrl.reemplazarBloque);
 router.patch("/feriados/:id", verifyToken, verifyAdmin, ctrl.updateFeriado);
+router.delete("/feriados/:id", verifyToken, verifyAdmin, ctrl.deleteFeriado);
 
 module.exports = router;

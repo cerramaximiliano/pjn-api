@@ -1070,12 +1070,33 @@ exports.monitor = async (req, res) => {
 	}
 };
 
-// PATCH /admin/plazos/feriados/:id — editar (verificar/deshabilitar/notas).
+// PATCH /admin/plazos/feriados/:id — editar (verificar/deshabilitar/notas) o MOVER de fecha.
+// El _id es `${fecha}|${ambito}` (determinístico, con índice único): cambiar la fecha es otro documento.
+// Mover = insertar el nuevo con los mismos datos y borrar el viejo; si el destino ya existe, 409.
 exports.updateFeriado = async (req, res) => {
 	try {
 		const EDITABLE = ["tipo", "descripcion", "fuente", "verificado", "habilitado", "notas"];
 		const $set = {};
 		for (const k of EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
+
+		const nuevaFecha = req.body.fecha;
+		if (nuevaFecha !== undefined) {
+			if (!RE_DAY.test(nuevaFecha)) return res.status(400).json({ success: false, message: "fecha debe ser YYYY-MM-DD" });
+			const viejo = await FeriadoJudicial.findById(req.params.id).lean().maxTimeMS(MAX_MS);
+			if (!viejo) return res.status(404).json({ success: false, message: "Feriado no encontrado" });
+			if (nuevaFecha !== viejo.fecha) {
+				const nuevoId = FeriadoJudicial.makeId(nuevaFecha, viejo.ambito);
+				if (await FeriadoJudicial.exists({ _id: nuevoId })) {
+					return res.status(409).json({ success: false, message: `Ya existe un día inhábil el ${nuevaFecha}. Editalo o borralo antes de mover este.` });
+				}
+				const { _id, createdAt, updatedAt, __v, ...resto } = viejo;
+				await FeriadoJudicial.create({ ...resto, ...$set, _id: nuevoId, fecha: nuevaFecha });
+				await FeriadoJudicial.deleteOne({ _id: req.params.id });
+				FeriadoJudicial.clearSetCache();
+				logger.info(`[plazos] feriado ${req.params.id} movido a ${nuevaFecha} por ${await quienEs(req)} (${new Date().toISOString()})`);
+				return res.json({ success: true, data: await FeriadoJudicial.findById(nuevoId).lean() });
+			}
+		}
 		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
 
 		const doc = await FeriadoJudicial.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean().maxTimeMS(MAX_MS);
@@ -1085,5 +1106,69 @@ exports.updateFeriado = async (req, res) => {
 		return res.json({ success: true, data: doc });
 	} catch (error) {
 		return fail(res, "updateFeriado", error);
+	}
+};
+
+// DELETE /admin/plazos/feriados/:id — borrar un día inhábil (queda en el log quién y cuándo).
+exports.deleteFeriado = async (req, res) => {
+	try {
+		const doc = await FeriadoJudicial.findByIdAndDelete(req.params.id).lean().maxTimeMS(MAX_MS);
+		if (!doc) return res.status(404).json({ success: false, message: "Feriado no encontrado" });
+		FeriadoJudicial.clearSetCache();
+		logger.info(`[plazos] feriado ${doc.fecha} (${doc.tipo}, ${doc.ambito}) BORRADO por ${await quienEs(req)} (${new Date().toISOString()})`);
+		return res.json({ success: true, data: { _id: doc._id, fecha: doc.fecha } });
+	} catch (error) {
+		return fail(res, "deleteFeriado", error);
+	}
+};
+
+// PUT /admin/plazos/feriados/bloque — reemplaza el bloque de una feria (tipo feria_*) por otro rango.
+// body: { tipo, bloqueDesde, bloqueHasta (el bloque actual), desde, hasta (el nuevo), ambito?, aplicar? }
+// Sin `aplicar` devuelve solo el diff (agregan / quitan / conflictos); con `aplicar: true` lo ejecuta.
+// Los días del bloque nuevo que ya existen con OTRO tipo son conflictos y bloquean la operación.
+exports.reemplazarBloque = async (req, res) => {
+	try {
+		const { tipo, bloqueDesde, bloqueHasta, desde, hasta, ambito = "nacional", aplicar = false } = req.body || {};
+		if (!tipo || !String(tipo).startsWith("feria_")) return res.status(400).json({ success: false, message: "Solo se editan bloques de tipo feria_*" });
+		for (const f of [bloqueDesde, bloqueHasta, desde, hasta]) {
+			if (!RE_DAY.test(f || "")) return res.status(400).json({ success: false, message: "Las fechas deben ser YYYY-MM-DD" });
+		}
+		if (bloqueDesde > bloqueHasta || desde > hasta) return res.status(400).json({ success: false, message: "Rango inválido (desde > hasta)" });
+		const rango = (a, b) => { const out = []; for (let d = a; d <= b; d = pjn.diasHabiles.addDays(d, 1)) out.push(d); return out; };
+		const nuevos = rango(desde, hasta);
+		if (nuevos.length > 62) return res.status(400).json({ success: false, message: "Rango demasiado largo (máx 62 días)" });
+
+		const viejosDocs = await FeriadoJudicial.find({ tipo, ambito, fecha: { $gte: bloqueDesde, $lte: bloqueHasta } }).sort({ fecha: 1 }).lean().maxTimeMS(MAX_MS);
+		if (!viejosDocs.length) return res.status(404).json({ success: false, message: "No hay días de esa feria en el bloque indicado" });
+		const viejos = new Set(viejosDocs.map((d) => d.fecha));
+		const setNuevos = new Set(nuevos);
+		const quitan = [...viejos].filter((f) => !setNuevos.has(f));
+		const faltan = nuevos.filter((f) => !viejos.has(f));
+		// ¿Los que faltan ya existen con otro tipo (u otro bloque de la misma feria)? Se informan y bloquean.
+		const existentes = faltan.length ? await FeriadoJudicial.find({ ambito, fecha: { $in: faltan } }, { fecha: 1, tipo: 1 }).lean().maxTimeMS(MAX_MS) : [];
+		const existe = new Map(existentes.map((d) => [d.fecha, d.tipo]));
+		const conflictos = faltan.filter((f) => existe.has(f) && existe.get(f) !== tipo).map((f) => ({ fecha: f, tipo: existe.get(f) }));
+		const agregan = faltan.filter((f) => !existe.has(f));
+		const diff = { agregan, quitan, conflictos, quedan: nuevos.length - agregan.length };
+
+		if (!aplicar) return res.json({ success: true, data: { aplicado: false, ...diff } });
+		if (conflictos.length) {
+			return res.status(409).json({ success: false, message: `Hay ${conflictos.length} día(s) del bloque nuevo que ya son otro tipo de día inhábil: ${conflictos.map((c) => `${c.fecha} (${c.tipo})`).join(", ")}`, data: diff });
+		}
+		const base = viejosDocs[0];
+		// Primero se agregan los que faltan y recién después se borran los que sobran (si algo falla no se pierde la feria).
+		for (const f of agregan) {
+			await FeriadoJudicial.updateOne(
+				{ _id: FeriadoJudicial.makeId(f, ambito) },
+				{ $set: { fecha: f, ambito, tipo, descripcion: base.descripcion || "", fuente: base.fuente || "", verificado: !!base.verificado }, $setOnInsert: { habilitado: true, notas: base.notas || "" } },
+				{ upsert: true },
+			);
+		}
+		if (quitan.length) await FeriadoJudicial.deleteMany({ tipo, ambito, fecha: { $in: quitan } });
+		FeriadoJudicial.clearSetCache();
+		logger.info(`[plazos] feria ${tipo} ${bloqueDesde}..${bloqueHasta} → ${desde}..${hasta} (+${agregan.length} −${quitan.length}) por ${await quienEs(req)} (${new Date().toISOString()})`);
+		return res.json({ success: true, data: { aplicado: true, ...diff } });
+	} catch (error) {
+		return fail(res, "reemplazarBloque", error);
 	}
 };
