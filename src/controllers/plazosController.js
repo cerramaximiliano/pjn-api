@@ -1172,3 +1172,36 @@ exports.reemplazarBloque = async (req, res) => {
 		return fail(res, "reemplazarBloque", error);
 	}
 };
+
+// ── Calendario judicial: cobertura y generación de un año ─────────────────────
+// La lógica vive en pjn-models (feriadosCalendario). Escriben/leen la base de referencias de ESTA instancia
+// (rs0 por cache-api): los workers leen de ahí. Pendientes (Atlas) las consulta por HTTP interno.
+
+// GET /admin/plazos/feriados/cobertura → { cobertura, sinVerificar (próximos 90 días) }
+exports.coberturaFeriados = async (req, res) => {
+	try {
+		const fc = pjn.feriadosCalendario;
+		const col = FeriadoJudicial.collection;
+		const [cobertura, sinVerificar] = await Promise.all([fc.cobertura(col), fc.sinVerificarProximos(col, { dias: 90 })]);
+		return res.json({ success: true, data: { cobertura, sinVerificar } });
+	} catch (error) {
+		return fail(res, "coberturaFeriados", error);
+	}
+};
+
+// POST /admin/plazos/feriados/generar { anio, aplicar? } — sin aplicar devuelve el diff; con aplicar SOLO inserta lo que falta.
+exports.generarFeriados = async (req, res) => {
+	try {
+		const anio = parseInt(req.body?.anio, 10);
+		if (!(anio >= 2020 && anio <= 2100)) return res.status(400).json({ success: false, message: "anio inválido" });
+		const aplicar = req.body?.aplicar === true;
+		const r = await pjn.feriadosCalendario.generarAnio(FeriadoJudicial.collection, anio, { aplicar });
+		if (aplicar) {
+			FeriadoJudicial.clearSetCache();
+			logger.info(`[plazos] calendario ${anio} generado por ${await quienEs(req)} (${new Date().toISOString()}): +${r.agregan.length} día(s), ${r.sinVerificar} sin verificar`);
+		}
+		return res.json({ success: true, data: r });
+	} catch (error) {
+		return fail(res, "generarFeriados", error);
+	}
+};

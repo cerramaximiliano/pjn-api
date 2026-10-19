@@ -7,6 +7,7 @@
  * y credenciales de la bandeja con errores. Doc: la-ads/docs/producto/plazos-automaticos.md §14.
  */
 const mongoose = require("mongoose");
+const axios = require("axios");
 const pjn = require("pjn-models");
 const { logger } = require("../config/pino");
 
@@ -26,6 +27,24 @@ const ACCIONES_FEEDBACK = /^(evento|aviso_|sugerencia_)/;
 
 let cache = null;
 
+// El calendario de referencia (feriados) vive en la base de referencias (rs0, la que leen los workers) y esta
+// instancia mide en Atlas: se le pregunta por HTTP interno a cache-api (misma API_KEY de servicio).
+async function calendarioDeReferencias() {
+	try {
+		const base = process.env.CACHE_API_URL || "http://127.0.0.1:8084";
+		const { data } = await axios.get(`${base}/api/admin/plazos/feriados/cobertura`, {
+			headers: { "x-api-key": process.env.API_KEY || "" },
+			timeout: 8000,
+		});
+		return data.data;
+	} catch (error) {
+		logger.warn(`[plazos] pendientes: no se pudo leer el calendario de cache-api: ${error.message}`);
+		return null;
+	}
+}
+
+// Filtro de los plazos que retiene el soloConfiables (computados, sin validar) — base del conteo por calendario.
+const sinVerificar0 = () => ({ origen: "usuario", processingStatus: "computed", "validacion.estado": null });
 const agg = (col, pipeline) => col.aggregate(pipeline, { maxTimeMS: MAX_MS, allowDiskUse: true }).toArray();
 
 async function armar() {
@@ -248,10 +267,23 @@ async function armar() {
 		});
 	}
 
+	// ── calendario ──────────────────────────────────────────────────────────
+	const [cal, fueraDeCobertura] = await Promise.all([
+		calendarioDeReferencias(),
+		db.collection("plazos-notificaciones").countDocuments(
+			{ ...sinVerificar0(), "plazo.calendario.estado": "fuera_de_cobertura", ...(causasEntrega.length ? { causaId: { $in: causasEntrega } } : { _id: null }) },
+			{ maxTimeMS: MAX_MS },
+		),
+	]);
+	const calendario = cal
+		? { ...cal, plazosFueraDeCobertura: fueraDeCobertura, alerta: cal.cobertura?.diasRestantes == null || cal.cobertura.diasRestantes < 120 }
+		: { cobertura: null, sinVerificar: [], plazosFueraDeCobertura: fueraDeCobertura, alerta: false, error: "No se pudo leer el calendario de la base de referencias" };
+
 	return {
 		generadoAt: new Date(),
 		resumen: {
 			total: decisiones.filter((d) => d.estado === "listo_para_decidir").length +
+				(calendario.alerta ? 1 : 0) + calendario.sinVerificar.length +
 				reglasSinVerificar.length + carpetasSinParteTotal + entregasSinFeedback.length + credencialesBandeja.length,
 			decisionesListas: decisiones.filter((d) => d.estado === "listo_para_decidir").length,
 			reglasSinVerificar: reglasSinVerificar.length,
@@ -260,9 +292,11 @@ async function armar() {
 			entregasSinFeedback: entregasSinFeedback.length,
 			credencialesBandeja: credencialesBandeja.length,
 			cuentasActivas: idsActivos.length,
+			calendarioAlerta: calendario.alerta ? 1 : 0,
+			diasSinVerificar: calendario.sinVerificar.length,
 			eventos, avisos: avisosEntregados, respuestas, entregas: totalEntregas,
 		},
-		decisiones, reglasSinVerificar, carpetasSinParte, entregasSinFeedback, credencialesBandeja,
+		decisiones, calendario, reglasSinVerificar, carpetasSinParte, entregasSinFeedback, credencialesBandeja,
 	};
 }
 
