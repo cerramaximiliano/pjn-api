@@ -121,6 +121,9 @@ exports.listNotificaciones = async (req, res) => {
 			filter.causaId = new mongoose.Types.ObjectId(req.query.causaId);
 		}
 		if (req.query.fuente) filter["plazo.fuente"] = req.query.fuente;
+		// Regla (plazo.norma.clave) y verificación de la regla aplicada: enlaces desde Normativa y Pendientes.
+		if (req.query.norma) filter["plazo.norma.clave"] = String(req.query.norma);
+		if (req.query.normaVerificada !== undefined) filter["plazo.norma.verificado"] = req.query.normaVerificada === "true" ? true : { $ne: true };
 		// Por dónde entró la cédula (base de usuarios): app-update | mis-causas | bandeja.
 		if (req.query.via === "bandeja") filter.fuente = "bandeja";
 		else if (req.query.via) {
@@ -319,6 +322,17 @@ const validarMatchers = (body) => {
 	return null;
 };
 
+// Correo del admin que hace la acción (cae al id si esta instancia no tiene la colección de usuarios).
+async function quienEs(req) {
+	try {
+		if (mongoose.isValidObjectId(req.userId)) {
+			const u = await mongoose.connection.db.collection("usuarios").findOne({ _id: new mongoose.Types.ObjectId(req.userId) }, { projection: { email: 1 } });
+			if (u?.email) return u.email;
+		}
+	} catch (_) { /* sin usuarios en esta base */ }
+	return String(req.userId || "desconocido");
+}
+
 // POST /admin/plazos/normativa — crear regla.
 exports.createNormativa = async (req, res) => {
 	try {
@@ -349,6 +363,19 @@ exports.updateNormativa = async (req, res) => {
 
 		const $set = {};
 		for (const k of NORMATIVA_EDITABLE) if (req.body[k] !== undefined) $set[k] = req.body[k];
+		// Verificar / quitar la verificación deja constancia: quién, cuándo y por qué (nota obligatoria al verificar).
+		// Solo cuando cambia: el formulario de edición manda `verificado` en cada guardado.
+		const actual = req.body.verificado !== undefined ? await PlazoNormativa.findById(req.params.id).select("verificado").lean().maxTimeMS(MAX_MS) : null;
+		if (actual && !!actual.verificado === !!req.body.verificado) delete $set.verificado;
+		else if (actual) {
+			const nota = String(req.body.nota || "").trim();
+			if (req.body.verificado === true && nota.length < 5) {
+				return res.status(400).json({ success: false, message: "Para verificar una regla hace falta una nota (qué se revisó y con qué criterio)" });
+			}
+			$set.verificadoPor = await quienEs(req);
+			$set.verificadoAt = new Date();
+			$set.verificadoNota = nota || null;
+		}
 		if (!Object.keys($set).length) return res.status(400).json({ success: false, message: "Nada para actualizar" });
 
 		const doc = await PlazoNormativa.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean().maxTimeMS(MAX_MS);
