@@ -124,7 +124,7 @@ async function armar() {
 	// ── entregasSinFeedback ─────────────────────────────────────────────────
 	const entregados = idsActivos.length
 		? await db.collection("plazos-notificaciones").find(
-			{ ...U, "validacion.estado": "validada", "validacion.resultados.userId": { $in: idsActivos } },
+			{ ...U, "validacion.estado": "validada", "validacion.resultados.userId": { $in: [...idsActivos, ...idsActivos.map(String)] } },
 			{ projection: { causaId: 1, sourceId: 1, validacion: 1, feedbackUsuarios: 1, "plazo.vencimiento": 1 } },
 		).sort({ "validacion.syncedAt": -1 }).limit(500).maxTimeMS(MAX_MS).toArray()
 		: [];
@@ -133,7 +133,7 @@ async function armar() {
 	for (const p of entregados) {
 		const fb = Array.isArray(p.feedbackUsuarios) ? p.feedbackUsuarios : [];
 		for (const r of p.validacion?.resultados || []) {
-			if (r.dryRun || !ACCIONES_FEEDBACK.test(r.accion || "")) continue;
+			if (r.dryRun || !emailDe.has(String(r.userId)) || !ACCIONES_FEEDBACK.test(r.accion || "")) continue;
 			totalEntregas++;
 			if (fb.some((x) => String(x.userId) === String(r.userId))) continue;
 			if (entregasSinFeedback.length >= LIMITE) continue;
