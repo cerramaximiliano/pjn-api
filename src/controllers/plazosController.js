@@ -69,6 +69,45 @@ const memo = async (key, ttlMs, fn) => {
 };
 const STATS_TTL = 5 * 60 * 1000;
 
+
+// ── Usuarios de cada cédula (solo base de usuarios) ───────────────────────────
+// Los usuarios salen de las carpetas de la causa (folders.causaId → userId → usuarios.email); una cédula
+// puede tener varios. En la caché (rs0) no hay carpetas: no se agrega nada.
+const esAtlas = () => process.env.MONGO_TARGET !== "rs0";
+
+async function causasDeUsuario(req) {
+	const db = mongoose.connection.db;
+	let userIds = [];
+	if (req.query.userId && mongoose.isValidObjectId(req.query.userId)) userIds = [new mongoose.Types.ObjectId(req.query.userId)];
+	else if (req.query.email) {
+		const q = String(req.query.email).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		userIds = (await db.collection("usuarios").find({ email: new RegExp(q, "i") }, { projection: { _id: 1 } }).limit(50).maxTimeMS(MAX_MS).toArray()).map((u) => u._id);
+	} else return null;
+	if (!userIds.length) return [];
+	return db.collection("folders").distinct("causaId", { userId: { $in: userIds }, causaId: { $ne: null } });
+}
+
+async function conUsuarios(rows) {
+	if (!esAtlas() || !rows.length) return rows;
+	const db = mongoose.connection.db;
+	const causaIds = [...new Set(rows.map((r) => String(r.causaId)))].map((id) => new mongoose.Types.ObjectId(id));
+	const folders = await db.collection("folders")
+		.find({ causaId: { $in: causaIds } }, { projection: { causaId: 1, userId: 1 } }).maxTimeMS(MAX_MS).toArray();
+	const userIds = [...new Set(folders.map((f) => String(f.userId)))].filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
+	const us = userIds.length
+		? await db.collection("usuarios").find({ _id: { $in: userIds } }, { projection: { email: 1 } }).toArray()
+		: [];
+	const emailDe = new Map(us.map((u) => [String(u._id), u.email || null]));
+	const porCausa = new Map();
+	for (const f of folders) {
+		const k = String(f.causaId);
+		const lista = porCausa.get(k) || [];
+		if (!lista.some((u) => u.userId === String(f.userId))) lista.push({ userId: String(f.userId), email: emailDe.get(String(f.userId)) || null });
+		porCausa.set(k, lista);
+	}
+	return rows.map((r) => ({ ...r, usuarios: porCausa.get(String(r.causaId)) || [] }));
+}
+
 // ── Notificaciones ────────────────────────────────────────────────────────────
 
 // GET /admin/plazos/notificaciones?status=&fuero=&causaId=&desde=&hasta=
@@ -88,6 +127,13 @@ exports.listNotificaciones = async (req, res) => {
 			filter["source.worker"] = String(req.query.via);
 			filter.fuente = { $ne: "bandeja" };
 		}
+		// Cómo se extrajo: resolucion | cuerpo_cedula | cedula (base de usuarios).
+		if (req.query.textoFuente) filter["extraccion.textoFuente"] = String(req.query.textoFuente);
+		// Usuario: ?userId= o ?email= (parcial) → causas de sus carpetas.
+		if (esAtlas()) {
+			const causas = await causasDeUsuario(req);
+			if (causas) filter.causaId = filter.causaId ? { $in: causas.filter((c) => String(c) === String(filter.causaId)) } : { $in: causas };
+		}
 		if (req.query.objeto) filter.objeto = new RegExp(String(req.query.objeto).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 		if (req.query.desde || req.query.hasta) {
 			filter.detectedAt = {};
@@ -104,7 +150,7 @@ exports.listNotificaciones = async (req, res) => {
 				.lean().maxTimeMS(MAX_MS),
 			cnt(PlazoNotificacion, filter),
 		]);
-		return paginated(res, data, total, page, limit);
+		return paginated(res, await conUsuarios(data), total, page, limit);
 	} catch (error) {
 		return fail(res, "listNotificaciones", error);
 	}
@@ -145,12 +191,20 @@ exports.listVencimientos = async (req, res) => {
 		const filter = { processingStatus: "computed", "plazo.vencimiento": { $gte: desde } };
 		if (req.query.hasta) filter["plazo.vencimiento"].$lte = req.query.hasta;
 		if (req.query.fuero) filter.fuero = req.query.fuero;
+		if (req.query.via === "bandeja") filter.fuente = "bandeja";
+		else if (req.query.via) { filter["source.worker"] = String(req.query.via); filter.fuente = { $ne: "bandeja" }; }
+		if (req.query.textoFuente) filter["extraccion.textoFuente"] = String(req.query.textoFuente);
+		if (esAtlas()) {
+			const causas = await causasDeUsuario(req);
+			if (causas) filter.causaId = { $in: causas };
+		}
 
-		const [data, total] = await Promise.all([
+		const [rows, total] = await Promise.all([
 			PlazoNotificacion.find(filter)
 				.select({
-					causaId: 1, number: 1, year: 1, fuero: 1, objeto: 1, caratula: 1, tipoNotificacion: 1,
-					"movimiento.fecha": 1, "movimiento.detalle": 1, plazo: 1, detectedAt: 1,
+					causaId: 1, sourceId: 1, number: 1, year: 1, fuero: 1, objeto: 1, caratula: 1, tipoNotificacion: 1,
+					"movimiento.fecha": 1, "movimiento.detalle": 1, plazo: 1, detectedAt: 1, fuente: 1, "source.worker": 1,
+					"extraccion.textoFuente": 1, "extraccion.apercibimiento": 1, "extraccion.menciones": 1,
 				})
 				.sort({ "plazo.vencimiento": 1 })
 				.skip(skip)
@@ -158,7 +212,14 @@ exports.listVencimientos = async (req, res) => {
 				.lean().maxTimeMS(MAX_MS),
 			cnt(PlazoNotificacion, filter),
 		]);
-		return paginated(res, data, total, page, limit);
+		// Fragmento del que salió el plazo: el snippet de la regla (norma) o la mención de mayor score (texto).
+		const data = rows.map((r) => {
+			const m = (r.extraccion?.menciones || []).reduce((a, b) => (a && a.score >= b.score ? a : b), null);
+			const fragmento = r.plazo?.fuente === "norma" ? r.plazo?.norma?.snippet || null : m?.snippet || r.extraccion?.apercibimiento || null;
+			if (r.extraccion) delete r.extraccion.menciones;
+			return { ...r, fragmento };
+		});
+		return paginated(res, await conUsuarios(data), total, page, limit);
 	} catch (error) {
 		return fail(res, "listVencimientos", error);
 	}

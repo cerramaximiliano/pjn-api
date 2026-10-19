@@ -244,7 +244,7 @@ async function armar() {
 			id: "P8", titulo: "Pasar reglas y feriados a Atlas",
 			estado: estadoDe(false, requisitos), requisitos,
 			impacto: { texto: "Feriados vigentes sin verificar", n: feriadosSinVerificar },
-			accion: { texto: "Re-sincronizar rs0 → Atlas y PLAZOS_REFS=atlas (deploy)" },
+			accion: { texto: "La base maestra hoy es rs0 (la que usan los workers); Atlas es la copia del 10/10. Re-sincronizar rs0 → Atlas y PLAZOS_REFS=atlas (deploy)" },
 		});
 	}
 
