@@ -306,7 +306,7 @@ exports.listNormativa = async (req, res) => {
 
 const NORMATIVA_EDITABLE = [
 	"label", "acto", "fuero", "matchers", "matchersDetalle", "plazoDias",
-	"tipoPlazo", "norma", "descripcion", "prioridad", "habilitado", "verificado", "notas",
+	"tipoPlazo", "norma", "descripcion", "prioridad", "habilitado", "verificado", "notas", "tipoProceso",
 ];
 
 const validarMatchers = (body) => {
@@ -925,7 +925,7 @@ exports.cedula = async (req, res) => {
 		const adjIds = (docCedula?.adjuntosRemitidos || []).filter((id) => typeof id === "string" && MOVEMENT_ID_RE.test(id)).slice(0, 30);
 		const vinculadosIds = [...new Set([...(resId ? [resId] : []), ...adjIds])];
 
-		const [causa, texto, folders, bandeja, eventos, avisos, correos, vinculados, textoRes] = await Promise.all([
+		const [causa, texto, folders, bandeja, eventos, avisos, correos, vinculados, textoRes, tipoProceso] = await Promise.all([
 			coleccion ? db.collection(coleccion).findOne({ _id: causaId }, { projection: { number: 1, year: 1, fuero: 1, caratula: 1, objeto: 1, juzgado: 1, secretaria: 1, isPrivate: 1, source: 1, incidente: 1 } }) : null,
 			movementId ? db.collection("pjn-movement-texts").findOne({ _id: movementId }, { projection: { texto: 1 } }) : null,
 			db.collection("folders").find({ causaId }, { projection: { userId: 1, folderName: 1, archived: 1, source: 1, causaType: 1 } }).toArray(),
@@ -938,6 +938,8 @@ exports.cedula = async (req, res) => {
 			filtroCorreo ? db.collection("judicialmovements").find(filtroCorreo, { projection: { userId: 1, notificationStatus: 1, "notificationSettings.notifyAt": 1, notifications: 1, createdAt: 1 } }).limit(50).toArray() : [],
 			vinculadosIds.length ? db.collection("pjn-movements").find({ _id: { $in: vinculadosIds } }, { projection: { tipo: 1, fecha: 1, detalle: 1, textoStatus: 1 } }).toArray() : [],
 			resId ? db.collection("pjn-movement-texts").findOne({ _id: resId }, { projection: { texto: 1 } }) : null,
+			// Tipo de proceso de la causa (P21): ordinario | sumario, con la evidencia de la que salió.
+			db.collection("causas-tipo-proceso").findOne({ _id: causaId }),
 		]);
 		const porId = new Map(vinculados.map((m) => [m._id, m]));
 		const resumenMov = (id) => { const m = porId.get(id); return { movementId: id, tipo: m?.tipo || null, fecha: m?.fecha || null, detalle: m?.detalle || null }; };
@@ -973,6 +975,7 @@ exports.cedula = async (req, res) => {
 				// Campos nuevos (14/10/2026): resolución notificada con su texto y adjuntos remitidos.
 				resolucion,
 				resolucionNotificada: rn,
+				tipoProceso: tipoProceso || null,
 				adjuntosRemitidos: adjIds.map(resumenMov),
 			},
 		});

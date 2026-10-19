@@ -11,6 +11,7 @@ const router = express.Router();
 const ctrl = require("../controllers/plazosController");
 const rev = require("../controllers/plazosRevisionLegalController");
 const pend = require("../controllers/plazosPendientesController");
+const tp = require("../controllers/plazosTipoProcesoController");
 const { verifyToken, verifyAdmin } = require("../middleware/auth");
 
 // Notificaciones (cédulas detectadas + cómputo)
@@ -32,6 +33,11 @@ router.get("/cedula", verifyToken, verifyAdmin, ctrl.cedula);
 
 // Pendientes del usuario (decisiones, reglas que retienen, carpetas sin parte, entregas sin feedback, bandeja)
 router.get("/pendientes", verifyToken, verifyAdmin, pend.pendientes);
+
+// Tipo de proceso de la causa (ordinario | sumario): cédulas que lo esperan, y fijarlo como operador.
+router.get("/tipo-proceso/pendientes", verifyToken, verifyAdmin, tp.pendientes);
+router.get("/tipo-proceso/:causaId", verifyToken, verifyAdmin, tp.obtener);
+router.put("/tipo-proceso/:causaId", verifyToken, verifyAdmin, tp.fijar);
 
 // Normativa (reglas de plazo subsidiario — curación del admin)
 router.get("/normativa", verifyToken, verifyAdmin, ctrl.listNormativa);

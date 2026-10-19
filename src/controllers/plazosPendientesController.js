@@ -258,6 +258,13 @@ async function armar() {
 		accion: { texto: "Hecho" },
 	});
 
+	// ── tipo de proceso: causas con cédulas sin vencimiento porque falta el tipo (P21) ──
+	const sinTipoProceso = (await agg(db.collection("plazos-notificaciones"), [
+		{ $match: { ...U, processingStatus: "requiere_tipo_proceso" } },
+		{ $group: { _id: "$causaId" } },
+		{ $count: "n" },
+	]))[0]?.n || 0;
+
 	// ── calendario ──────────────────────────────────────────────────────────
 	const [cal, fueraDeCobertura] = await Promise.all([
 		calendarioDeReferencias(),
@@ -274,7 +281,7 @@ async function armar() {
 		generadoAt: new Date(),
 		resumen: {
 			total: decisiones.filter((d) => d.estado === "listo_para_decidir").length +
-				(calendario.alerta ? 1 : 0) + calendario.sinVerificar.length +
+				(calendario.alerta ? 1 : 0) + calendario.sinVerificar.length + sinTipoProceso +
 				reglasSinVerificar.length + carpetasSinParteTotal + entregasSinFeedback.length + credencialesBandeja.length,
 			decisionesListas: decisiones.filter((d) => d.estado === "listo_para_decidir").length,
 			reglasSinVerificar: reglasSinVerificar.length,
@@ -283,6 +290,7 @@ async function armar() {
 			entregasSinFeedback: entregasSinFeedback.length,
 			credencialesBandeja: credencialesBandeja.length,
 			cuentasActivas: idsActivos.length,
+			sinTipoProceso,
 			calendarioAlerta: calendario.alerta ? 1 : 0,
 			diasSinVerificar: calendario.sinVerificar.length,
 			eventos, avisos: avisosEntregados, respuestas, entregas: totalEntregas,
