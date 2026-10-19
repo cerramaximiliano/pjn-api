@@ -81,14 +81,24 @@ exports.crearMuestra = async (req, res) => {
 		const b = req.body || {};
 		const n = (k, d) => Math.min(Math.max(parseInt(b[k], 10) || d, 0), 100);
 		const desde = new Date(b.desde || Date.now() - 120 * 864e5);
-		const muestra = String(b.nombre || `muestra-${new Date().toISOString().slice(0, 16).replace("T", "-")}`).slice(0, 60);
+		const muestra = String(b.nombre || `${b.regla ? `regla-${String(b.regla).slice(0, 30)}` : "muestra"}-${new Date().toISOString().slice(0, 16).replace("T", "-")}`).slice(0, 60);
 		if (await col().findOne({ muestra })) return res.status(409).json({ success: false, message: `Ya existe una muestra "${muestra}"` });
 
 		const sample = (match, size) =>
 			size > 0 ? notifs().aggregate([{ $match: { detectedAt: { $gte: desde }, ...match } }, { $sample: { size } }, { $project: PROY }], { allowDiskUse: true, maxTimeMS: MAX_MS }).toArray() : [];
 		const items = [];
 		const add = (estrato, docs) => docs.forEach((d) => items.push({ d, estrato }));
+		const soloUsuarios = process.env.MONGO_TARGET !== "rs0" ? { origen: "usuario" } : {};
 
+		// Muestra de UNA regla (plazo.norma.clave): N cédulas calculadas con esa regla, para revisarla antes de verificarla.
+		if (b.regla) {
+			const clave = String(b.regla).slice(0, 80);
+			const cantidad = Math.min(Math.max(parseInt(b.cantidad, 10) || 15, 1), 100);
+			const docsRegla = await sample({ ...soloUsuarios, processingStatus: "computed", "plazo.fuente": "norma", "plazo.norma.clave": clave }, cantidad);
+			if (!docsRegla.length) return res.status(404).json({ success: false, message: `No hay cédulas calculadas con la regla "${clave}" en el período elegido` });
+			const ver = docsRegla[0].plazo?.norma?.verificado ? "verificada" : "NO verificada";
+			add(`regla ${ver} · ${docsRegla[0].plazo?.norma?.label || clave}`, docsRegla);
+		} else {
 		add("texto · confianza alta", await sample({ processingStatus: "computed", "plazo.fuente": "texto", "plazo.confianza": "alta" }, n("textoAlta", 22)));
 		add("texto · confianza media", await sample({ processingStatus: "computed", "plazo.fuente": "texto", "plazo.confianza": "media" }, n("textoMedia", 8)));
 		const reglas = await notifs()
@@ -99,6 +109,7 @@ exports.crearMuestra = async (req, res) => {
 			add(`regla ${r._id.v ? "verificada" : "NO verificada"} · ${r._id.l}`, await sample({ processingStatus: "computed", "plazo.fuente": "norma", "plazo.norma.label": r._id.l }, size));
 		}
 		add("sin plazo (parsed)", await sample({ processingStatus: "parsed" }, n("sinPlazo", 12)));
+		}
 
 		if (!items.length) return res.status(404).json({ success: false, message: "No hay cédulas en el período elegido" });
 		const ahora = new Date();
