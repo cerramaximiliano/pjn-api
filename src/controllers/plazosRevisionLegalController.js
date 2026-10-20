@@ -178,6 +178,8 @@ exports.obtener = async (req, res) => {
 		const n = await notifs().findOne({ _id: item.notificacionId }, { projection: { "extraccion.textExcerpt": 1, "extraccion.textExcerptGz": 1 }, maxTimeMS: 20000 });
 		let texto = n?.extraccion?.textExcerpt ?? null;
 		if (texto == null && n?.extraccion?.textExcerptGz != null) texto = gunzipText(n.extraccion.textExcerptGz);
+		// Muestras simuladas sobre cédulas reales (P4, 20/10): no tienen plazos-notificaciones; el texto viaja en el ítem.
+		if (texto == null) texto = item.textoCedula ?? null;
 		return res.json({ success: true, data: { ...item, textoCedula: texto } });
 	} catch (error) {
 		return fail(res, "obtener", error);
