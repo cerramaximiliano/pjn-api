@@ -309,6 +309,8 @@ const NORMATIVA_EDITABLE = [
 	"tipoPlazo", "norma", "descripcion", "prioridad", "habilitado", "verificado", "notas", "tipoProceso",
 	// P22: contextos excluidos y reglas que reconocen el acto sin proponer vencimiento.
 	"excluye", "proponeVencimiento",
+	// P22: instancias a las que aplica ('primera' | 'camara' | 'corte'; vacío = todas).
+	"instancias",
 ];
 
 const validarMatchers = (body) => {
