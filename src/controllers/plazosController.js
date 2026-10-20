@@ -311,11 +311,14 @@ const NORMATIVA_EDITABLE = [
 	"excluye", "proponeVencimiento",
 	// P22: instancias a las que aplica ('primera' | 'camara' | 'corte'; vacío = todas).
 	"instancias",
+	// Objetos del juicio a los que aplica (regex sobre el objeto normalizado; "*" = todos).
+	"objetos",
 ];
 
 const validarMatchers = (body) => {
-	for (const key of ["matchers", "matchersDetalle", "excluye"]) {
+	for (const key of ["matchers", "matchersDetalle", "excluye", "objetos"]) {
 		for (const p of body[key] || []) {
+			if (key === "objetos" && p === "*") continue;
 			try {
 				new RegExp(p);
 			} catch (_) {
@@ -606,6 +609,21 @@ exports.statsDataset = async (req, res) => {
 	}
 };
 
+// Las reglas vigentes viven en Atlas (P8). La instancia "cache" (MONGO_TARGET=rs0) tiene el dataset
+// en el rs0 pero las reglas las lee de Atlas, no de la copia vieja que quedó en el rs0.
+let _refsConn = null;
+async function normativaVigente() {
+	if (process.env.MONGO_TARGET !== "rs0" || !process.env.URLDB) return PlazoNormativa;
+	try {
+		if (!_refsConn) _refsConn = mongoose.createConnection(process.env.URLDB, { serverSelectionTimeoutMS: 20000 });
+		await _refsConn.asPromise();
+	} catch (err) {
+		_refsConn = null;
+		throw err;
+	}
+	return _refsConn.models[PlazoNormativa.modelName] || _refsConn.model(PlazoNormativa.modelName, PlazoNormativa.schema);
+}
+
 // GET /admin/plazos/dataset/candidatos?minN=5&minShare=0.8
 // Agrupa por (fuero, objeto, acto): donde el plazo dominante supera los
 // umbrales, es un candidato a regla empírica. Se anota si ya existe una
@@ -637,7 +655,7 @@ exports.candidatosDataset = async (req, res) => {
 			{ $limit: 200 },
 		]));
 
-		const reglas = await PlazoNormativa.find({ habilitado: true }).sort({ prioridad: 1 }).lean().maxTimeMS(MAX_MS);
+		const reglas = await (await normativaVigente()).find({ habilitado: true }).sort({ prioridad: 1 }).lean().maxTimeMS(MAX_MS);
 		const norm = (s) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
 		const candidatos = [];
