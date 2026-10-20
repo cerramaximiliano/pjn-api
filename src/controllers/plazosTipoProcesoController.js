@@ -82,6 +82,7 @@ exports.pendientes = async (req, res) => {
 				tipo: t?.tipo || null,
 				fuente: t?.fuente || null,
 				conflicto: !!t?.conflicto,
+				sugerencia: !t?.tipo && t?.sugerencia?.tipo ? { tipo: t.sugerencia.tipo, motivo: t.sugerencia.motivo || null } : null,
 				evidencias: (t?.evidencias || []).map((e) => ({ tipo: e.tipo, fuente: e.fuente, movementId: e.movementId || null, fecha: e.fecha || null, frase: e.frase || null, operador: e.operador || null })),
 			};
 		});
@@ -105,7 +106,7 @@ exports.obtener = async (req, res) => {
 	}
 };
 
-// PUT /admin/plazos/tipo-proceso/:causaId { tipo: 'ordinario'|'sumario'|null }
+// PUT /admin/plazos/tipo-proceso/:causaId { tipo: 'ordinario'|'sumario'|'especial'|null }
 // Fija la evidencia del operador (gana siempre) y re-encola las cédulas de la causa. tipo null = quita la del operador.
 exports.fijar = async (req, res) => {
 	if (!soloAtlas(req, res)) return;
@@ -113,7 +114,7 @@ exports.fijar = async (req, res) => {
 		const { causaId: causaIdStr } = req.params;
 		if (!mongoose.isValidObjectId(causaIdStr)) return res.status(400).json({ success: false, message: "causaId inválido" });
 		const tipo = req.body?.tipo ?? null;
-		if (![null, "ordinario", "sumario"].includes(tipo)) return res.status(400).json({ success: false, message: "tipo debe ser ordinario, sumario o null" });
+		if (![null, "ordinario", "sumario", "especial"].includes(tipo)) return res.status(400).json({ success: false, message: "tipo debe ser ordinario, sumario, especial o null" });
 		const causaId = new mongoose.Types.ObjectId(causaIdStr);
 		const to = pjn.tipoProceso;
 		const colTipo = db().collection(COL_TIPO);
@@ -121,7 +122,7 @@ exports.fijar = async (req, res) => {
 
 		const previo = await colTipo.findOne({ _id: causaId });
 		const ref = await plazos.findOne({ causaId }, { projection: { fuero: 1 } });
-		const fuero = ref?.fuero || previo?.fuero || null;
+		const fuero = ref?.fuero || previo?.fuero || null; // sin cédula, el fuero sale de causas-tipo-proceso
 		if (!fuero || !to.FUEROS_TIPO_PROCESO.includes(fuero)) {
 			return res.status(400).json({ success: false, message: `El tipo de proceso solo aplica a ${to.FUEROS_TIPO_PROCESO.join(", ")} (esta causa: ${fuero || "sin fuero"})` });
 		}
@@ -131,20 +132,50 @@ exports.fijar = async (req, res) => {
 			resultado = await to.registrarEvidencia(colTipo, { causaId, fuero, evidencia: { tipo, fuente: "operador", operador: quien, fecha: new Date() } });
 		} else {
 			// Quitar la evidencia del operador y recalcular con las detectadas.
-			if (!previo) return res.json({ success: true, data: { tipo: null, reencoladas: 0 } });
-			const evidencias = (previo.evidencias || []).filter((e) => e.fuente !== "operador");
-			const vigente = to.resolverTipo(evidencias);
-			await colTipo.updateOne({ _id: causaId }, { $set: {
-				tipo: vigente?.tipo || null, fuente: vigente?.fuente || null, movementId: vigente?.movementId || null, fecha: vigente?.fecha || null,
-				frase: vigente?.frase || null, evidencias, conflicto: new Set(evidencias.map((e) => e.tipo)).size > 1, updatedAt: new Date(),
-			} });
-			resultado = { tipo: vigente?.tipo || null };
+			resultado = await to.quitarOperador(colTipo, causaId);
+			if (!resultado) return res.json({ success: true, data: { tipo: null, reencoladas: 0 } });
 		}
+		// Copia el tipo vigente a la causa y a sus carpetas (causa.tipoProceso, folders.judFolder.tipoProceso).
+		await to.propagarTipo(db(), { causaId, fuero, tipo: resultado.tipo, fuente: resultado.fuente, fecha: resultado.fecha });
 		const reencoladas = await to.reencolarCausa(plazos, causaId);
 		logger.info(`[plazos] tipo de proceso de ${causaIdStr} → ${tipo === null ? "sin dato del operador" : tipo} por ${quien} (${new Date().toISOString()}); ${reencoladas} cédula(s) re-encolada(s)`);
 		return res.json({ success: true, data: { tipo: resultado.tipo ?? null, reencoladas } });
 	} catch (error) {
 		logger.error(`[plazos] tipo-proceso fijar: ${error.message}`);
 		return res.status(500).json({ success: false, message: error.message });
+	}
+};
+
+// GET /admin/plazos/tipo-proceso/cobertura — causas con tipo por fuero y fuente, y las sin tipo con sugerencia.
+exports.cobertura = async (req, res) => {
+	if (!soloAtlas(req, res)) return;
+	try {
+		const col = db().collection(COL_TIPO);
+		const [porTipo, sinTipo, sugeridas] = await Promise.all([
+			col.aggregate([{ $group: { _id: { fuero: "$fuero", tipo: "$tipo", fuente: "$fuente" }, n: { $sum: 1 } } }], { maxTimeMS: MAX_MS }).toArray(),
+			col.countDocuments({ tipo: null }, { maxTimeMS: MAX_MS }),
+			col.find({ tipo: null, "sugerencia.tipo": { $ne: null } }, { projection: { fuero: 1, sugerencia: 1, evidencias: 1 } }).sort({ updatedAt: -1 }).limit(LIMITE).maxTimeMS(MAX_MS).toArray(),
+		]);
+		const cols = pjn.tipoProceso.COLECCION_CAUSAS || {};
+		const causas = new Map();
+		await Promise.all(Object.entries(cols).map(async ([fuero, nombre]) => {
+			const ids = sugeridas.filter((d) => d.fuero === fuero).map((d) => d._id);
+			if (!ids.length) return;
+			for (const c of await db().collection(nombre).find({ _id: { $in: ids } }, { projection: { number: 1, year: 1, caratula: 1, objeto: 1 } }).toArray()) causas.set(String(c._id), c);
+		}));
+		return res.json({
+			success: true,
+			data: {
+				porTipo: porTipo.map((x) => ({ fuero: x._id.fuero, tipo: x._id.tipo, fuente: x._id.fuente, causas: x.n })),
+				sinTipo,
+				sugeridas: sugeridas.map((d) => {
+					const c = causas.get(String(d._id));
+					return { causaId: String(d._id), fuero: d.fuero, expediente: c?.number ? `${c.number}/${c.year}` : null, caratula: c?.caratula || null, objeto: c?.objeto || null, sugerencia: { tipo: d.sugerencia.tipo, motivo: d.sugerencia.motivo || null } };
+				}),
+			},
+		});
+	} catch (error) {
+		logger.error(`[plazos] tipo-proceso cobertura: ${error.message}`);
+		return res.status(error.code === 50 ? 504 : 500).json({ success: false, message: error.message });
 	}
 };

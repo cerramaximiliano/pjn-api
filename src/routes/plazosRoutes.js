@@ -36,6 +36,7 @@ router.get("/pendientes", verifyToken, verifyAdmin, pend.pendientes);
 
 // Tipo de proceso de la causa (ordinario | sumario): cédulas que lo esperan, y fijarlo como operador.
 router.get("/tipo-proceso/pendientes", verifyToken, verifyAdmin, tp.pendientes);
+router.get("/tipo-proceso/cobertura", verifyToken, verifyAdmin, tp.cobertura);
 router.get("/tipo-proceso/:causaId", verifyToken, verifyAdmin, tp.obtener);
 router.put("/tipo-proceso/:causaId", verifyToken, verifyAdmin, tp.fijar);
 
