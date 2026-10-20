@@ -307,10 +307,12 @@ exports.listNormativa = async (req, res) => {
 const NORMATIVA_EDITABLE = [
 	"label", "acto", "fuero", "matchers", "matchersDetalle", "plazoDias",
 	"tipoPlazo", "norma", "descripcion", "prioridad", "habilitado", "verificado", "notas", "tipoProceso",
+	// P22: contextos excluidos y reglas que reconocen el acto sin proponer vencimiento.
+	"excluye", "proponeVencimiento",
 ];
 
 const validarMatchers = (body) => {
-	for (const key of ["matchers", "matchersDetalle"]) {
+	for (const key of ["matchers", "matchersDetalle", "excluye"]) {
 		for (const p of body[key] || []) {
 			try {
 				new RegExp(p);
