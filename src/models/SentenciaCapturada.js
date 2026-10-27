@@ -74,7 +74,7 @@ const schema = new Schema(
 			error: { type: String },
 		},
 
-		// Estado de indexación en Pinecone (embeddings)
+		// Estado de indexación vectorial en Qdrant (embeddings, colección 'sentencias')
 		embeddingStatus: {
 			type: String,
 			enum: ['pending', 'processing', 'completed', 'error', 'skipped'],
@@ -94,7 +94,7 @@ const schema = new Schema(
 
 		// Verificación de novedad (doble capa)
 		// Layer 1 (estructural): category='novelty' + embedding completado → status='single'
-		// Layer 2 (semántica, futuro): búsqueda cosine en Pinecone → status='double' | 'rejected'
+		// Layer 2 (semántica): búsqueda cosine en Qdrant → status='double' | 'rejected'
 		noveltyCheck: {
 			status: {
 				type: String,

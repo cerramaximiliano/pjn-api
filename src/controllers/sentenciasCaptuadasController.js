@@ -124,7 +124,7 @@ const sentenciasCapturadasController = {
 					{ $sort: { _id: 1 } },
 				]),
 
-				// Últimas 8 indexadas en Pinecone
+				// Últimas 8 indexadas en Qdrant
 				SentenciaCapturada
 					.find({ embeddingStatus: 'completed' })
 					.sort({ embeddedAt: -1 })

@@ -3,18 +3,21 @@
  *
  * pjn-api no depende de pjn-rag-shared, así que replica acá la parte mínima
  * necesaria: query contra la colección 'sentencias' de Qdrant, con traducción
- * de filtros estilo Pinecone y devolución en la misma forma ({ matches: [...] }).
+ * de filtros en sintaxis $eq/$in/$ne/$gte/$lte (estilo Mongo, heredada del
+ * índice anterior) y devolución en la forma ({ matches: [{ id, score, metadata }] })
+ * que espera sentenciasSearchService.
  *
  * Los ids string originales viven en payload._origId y se devuelven como `id`,
  * de modo que groupMatchesBySentencia/enrichGroup siguen funcionando igual.
  *
- * Activación: VECTOR_BACKEND=qdrant. Requiere QDRANT_URL + QDRANT_API_KEY.
+ * Es el único store vectorial del servicio (sin gate por env). Requiere
+ * QDRANT_URL + QDRANT_API_KEY.
  */
 // La config se lee en tiempo de EJECUCIÓN (no al cargar el módulo): server.js
 // requiere las rutas —y por ende este módulo— ANTES de correr dotenv.config()
 // (los secrets se bajan de AWS async en initializeServer). Si se leyera acá al
 // tope, QDRANT_URL/API_KEY quedarían en sus defaults y la búsqueda pegaría al
-// Qdrant equivocado (o Pinecone).
+// Qdrant equivocado.
 function qdrantConfig() {
   return {
     // Fallback al nodo qdrant-01, no a localhost: la instancia local de worker_01
@@ -56,7 +59,7 @@ function translateFilter(f) {
 
 /**
  * Query semántica a Qdrant. Devuelve { matches: [{ id, score, metadata }] }
- * con la misma forma que Pinecone.
+ * (metadata = payload del punto).
  */
 async function queryQdrant(vector, { topK = 20, filter } = {}) {
   const cfg = qdrantConfig();

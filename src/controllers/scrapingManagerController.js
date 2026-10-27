@@ -296,7 +296,7 @@ const scrapingManagerController = {
 
       const { _id, ...data } = doc;
 
-      // `sentenciasActivas` (sentencias indexadas en Pinecone por fuero) viene precomputado
+      // `sentenciasActivas` (sentencias indexadas en Qdrant por fuero) viene precomputado
       // en el doc por el scraping-manager worker. Antes se calculaba acá en vivo con un
       // aggregate sobre `sentencias-capturadas` (~160k docs) que tardaba >30s y excedía el
       // timeout del cliente, rompiendo el panel "Distribución por fuero".

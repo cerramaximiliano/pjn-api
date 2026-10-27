@@ -1,8 +1,6 @@
 const OpenAI = require('openai').default;
-const { Pinecone } = require('@pinecone-database/pinecone');
 const AWS = require('aws-sdk');
 const { logger } = require('../config/pino');
-const { getHydeEmbedding } = require('./hydeCache');
 const { queryQdrant } = require('./qdrantSentencias');
 const { planQuery } = require('./queryPlanner');
 const { normalizeTerms } = require('./citations');
@@ -15,24 +13,18 @@ const { normalizeTerms } = require('./citations');
 // coincide (hub) en vez de abrir un pool duplicado como hacía este servicio.
 const { getSentenciasDb } = require('../config/sentenciasConnection');
 
-// Cutover Pinecone → Qdrant (gated por VECTOR_BACKEND=qdrant).
-// La colección Qdrant 'sentencias' es text-embedding-3-large @ 3072 (igual que pjn-sentencias-v1).
-// Evaluado en tiempo de EJECUCIÓN: server.js requiere este módulo antes de
-// correr dotenv.config() (secrets async de AWS), por lo que leer VECTOR_BACKEND
-// al cargar el módulo lo dejaría siempre en '' → caería a Pinecone por error.
-function useQdrant() {
-	return (process.env.VECTOR_BACKEND || '').toLowerCase() === 'qdrant';
-}
+// Store vectorial único: Qdrant, colección 'sentencias' (ver qdrantSentencias.js).
+// El corpus está indexado con text-embedding-3-large @ 3072 (igual que pjn-sentencias-v1),
+// así que la query se embebe siempre con ese modelo/dimensión. Pinecone fue retirado
+// (2026-10): no se lee PINECONE_* ni VECTOR_BACKEND; el camino Qdrant es incondicional.
 
-const EMBEDDING_MODEL_SMALL = 'text-embedding-3-small';
-const EMBEDDING_MODEL_LARGE = 'text-embedding-3-large';
-const EMBEDDING_DIMENSIONS = 1024;
-const EMBEDDING_DIMENSIONS_LARGE = 3072;
+const EMBEDDING_MODEL = 'text-embedding-3-large';
+const EMBEDDING_DIMENSIONS = 3072;
 const MAX_INPUT_CHARS = 20000;
 const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 20;
 const DEFAULT_MIN_SCORE = 0.55;
-const PINECONE_MULTIPLIER = 4; // pedir topK*4 a Pinecone para asegurar diversidad antes de deduplicar
+const VECTOR_TOPK_MULTIPLIER = 4; // pedir topK*4 al store vectorial para asegurar diversidad antes de deduplicar
 
 // ── Hybrid scoring weights ────────────────────────────────────────────────────
 // α × vector_score + (1-α) × bm25_normalized
@@ -45,33 +37,17 @@ const BM25_B  = 0.75;
 const BM25_AVG_DOC_LEN = 280; // tokens aprox por chunk de sentencia (calibrado al corpus)
 
 let _openai = null;
-let _pinecone = null;
 
 function getOpenAI() {
 	if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 	return _openai;
 }
 
-function getPineconeClient() {
-	if (!_pinecone) {
-		// PINECONE_API_KEY es el nombre canónico (igual al que usa pjn-rag-shared).
-		// PINECONE_KEY se mantiene como fallback por compatibilidad con envs viejos.
-		const apiKey = process.env.PINECONE_API_KEY || process.env.PINECONE_KEY;
-		if (!apiKey) throw new Error('PINECONE_API_KEY no configurada');
-		_pinecone = new Pinecone({ apiKey });
-	}
-	return _pinecone;
-}
-
-const NAMESPACE_SMALL = process.env.PINECONE_SENTENCIAS_NAMESPACE || 'sentencias-corpus';
-const NAMESPACE_LARGE = 'sentencias-large-test';
-
-function getSentenciasIndex(namespaceOverride) {
-	const client = getPineconeClient();
-	const indexName = process.env.PINECONE_SENTENCIAS_INDEX || 'pjn-style-corpus-v2';
-	const namespace = namespaceOverride || NAMESPACE_SMALL;
-	return client.index(indexName).namespace(namespace);
-}
+// Nombre histórico del namespace del índice vectorial. Se conserva únicamente
+// como valor del campo `namespace` de la respuesta de searchByQuery (contrato
+// que lee la UI admin); en Qdrant no existe el concepto, siempre se consulta
+// la colección 'sentencias'.
+const NAMESPACE_SMALL = 'sentencias-corpus';
 
 function getS3() {
 	return new AWS.S3({
@@ -158,7 +134,7 @@ function bm25Score(queryTerms, docText) {
 }
 
 /**
- * Combina el vector score de Pinecone con un score BM25 calculado sobre
+ * Combina el vector score de Qdrant con un score BM25 calculado sobre
  * los chunks ya recuperados. Reordena los resultados por score híbrido.
  *
  * Flujo:
@@ -275,13 +251,13 @@ function augmentQueryWithSynonyms(query) {
 	return [...new Set(allTerms)].join(' | ');
 }
 
-async function embedQuery(text, model, dimensions) {
+async function embedQuery(text) {
 	const start = Date.now();
 	const openai = getOpenAI();
 	const response = await openai.embeddings.create({
-		model: model || EMBEDDING_MODEL_SMALL,
+		model: EMBEDDING_MODEL,
 		input: text.slice(0, MAX_INPUT_CHARS),
-		dimensions: dimensions || EMBEDDING_DIMENSIONS,
+		dimensions: EMBEDDING_DIMENSIONS,
 	});
 	return {
 		embedding: response.data[0].embedding,
@@ -289,6 +265,12 @@ async function embedQuery(text, model, dimensions) {
 	};
 }
 
+/**
+ * Construye el filtro de metadata en sintaxis $eq/$in/$ne/$gte/$lte (estilo
+ * Mongo/Pinecone). El nombre es histórico: hoy el filtro lo traduce
+ * qdrantSentencias.translateFilter a must/must_not de Qdrant. Se conserva
+ * para no romper referencias externas (tests/scripts).
+ */
 function buildPineconeFilter(filters = {}) {
 	const filter = {};
 
@@ -320,26 +302,14 @@ function buildPineconeFilter(filters = {}) {
 	return Object.keys(filter).length > 0 ? filter : undefined;
 }
 
-async function queryPinecone(embedding, { topK, filter, namespace }) {
+/**
+ * Consulta la colección Qdrant 'sentencias' y mide la latencia.
+ * Devuelve { matches: [{ id, score, metadata }], latencyMs }.
+ */
+async function queryVectorStore(embedding, { topK, filter }) {
 	const start = Date.now();
-
-	// Cutover: cuando VECTOR_BACKEND=qdrant, consultar la colección Qdrant 'sentencias'.
-	if (useQdrant()) {
-		const { matches } = await queryQdrant(embedding, { topK, filter });
-		return { matches, latencyMs: Date.now() - start };
-	}
-
-	const index = getSentenciasIndex(namespace);
-
-	const queryParams = { vector: embedding, topK, includeMetadata: true };
-	if (filter) queryParams.filter = filter;
-
-	const result = await index.query(queryParams);
-	const matches = result.matches || [];
-	return {
-		matches,
-		latencyMs: Date.now() - start,
-	};
+	const { matches } = await queryQdrant(embedding, { topK, filter });
+	return { matches, latencyMs: Date.now() - start };
 }
 
 function groupMatchesBySentencia(matches, topK, minScore) {
@@ -355,7 +325,7 @@ function groupMatchesBySentencia(matches, topK, minScore) {
 				sentenciaId,
 				score: match.score,
 				matchedChunksByIndex: new Map(),
-				pineconeMetadata: meta,
+				pineconeMetadata: meta, // nombre histórico: payload del punto en Qdrant
 			});
 		}
 
@@ -406,7 +376,7 @@ async function enrichGroup(group, includeFullText) {
 		logger.warn({ err: err.message, sentenciaId }, '[SentenciasSearch] Error descargando chunks de S3');
 	}
 
-	// Reconstruir matchedChunks con el texto real de S3 y el score de Pinecone
+	// Reconstruir matchedChunks con el texto real de S3 y el score vectorial de Qdrant
 	const matchedChunks = [];
 	if (allChunks) {
 		for (const chunk of allChunks) {
@@ -472,37 +442,23 @@ async function enrichGroup(group, includeFullText) {
  * @param {number} opts.topK - Cantidad máxima de resultados (default 5, max 20)
  * @param {number} opts.minScore - Score mínimo de relevancia (default 0.70)
  * @param {boolean} opts.includeFullText - Incluir todos los chunks del fallo con flags matched (default false)
- * @param {string} opts.namespace - Namespace de Pinecone ('sentencias-corpus' | 'sentencias-large-test')
  */
-async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minScore = DEFAULT_MIN_SCORE, includeFullText = false, namespace } = {}) {
+async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minScore = DEFAULT_MIN_SCORE, includeFullText = false } = {}) {
 	topK = Math.min(topK, MAX_TOP_K);
-	const pineconeTopK = topK * PINECONE_MULTIPLIER;
+	const vectorTopK = topK * VECTOR_TOPK_MULTIPLIER;
 
-	// Determinar modelo de embedding según namespace.
-	// Con Qdrant el corpus es text-embedding-3-large @ 3072; HyDE (cacheado a 1024)
-	// no aplica → embedding directo a 3072.
-	const isLargeNamespace = namespace === NAMESPACE_LARGE;
-	const useLarge = useQdrant() || isLargeNamespace;
-	const embeddingModel = useLarge ? EMBEDDING_MODEL_LARGE : EMBEDDING_MODEL_SMALL;
-	const embeddingDims = useQdrant() ? EMBEDDING_DIMENSIONS_LARGE : EMBEDDING_DIMENSIONS;
-
-	// 1. Intentar embedding HyDE desde caché Redis (0ms si hit, null si miss)
-	//    HyDE solo aplica al namespace estándar (small) en Pinecone — el large y Qdrant
-	//    usan embedding directo (corpus indexado sin HyDE / dims distintas).
-	const hydeEmbedding = (!isLargeNamespace && !useQdrant()) ? await getHydeEmbedding(query, filters) : null;
-
-	// 2. Si no hay HyDE cacheado: embedding directo del query (sin augmentQueryWithSynonyms).
-	//    La augmentación de sinónimos perjudica la recuperación en búsquedas de jurisprudencia
-	//    porque desplaza el embedding lejos del texto exacto indexado.
-	const { embedding, latencyMs: embeddingLatencyMs } = hydeEmbedding
-		? { embedding: hydeEmbedding, latencyMs: 0 }
-		: await embedQuery(query, embeddingModel, embeddingDims);
+	// Embedding directo del query (sin augmentQueryWithSynonyms ni HyDE): el corpus
+	// Qdrant está indexado a 3072 dims sin HyDE, y la augmentación de sinónimos
+	// perjudica la recuperación en jurisprudencia porque desplaza el embedding
+	// lejos del texto exacto indexado.
+	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(query);
 
 	const filter = buildPineconeFilter(filters);
-	const { matches, latencyMs: pineconeLatencyMs } = await queryPinecone(embedding, {
-		topK: pineconeTopK,
+	// `pineconeLatencyMs` / `latencyMs.pinecone`: nombres históricos que lee la UI
+	// admin; hoy miden la consulta a Qdrant.
+	const { matches, latencyMs: pineconeLatencyMs } = await queryVectorStore(embedding, {
+		topK: vectorTopK,
 		filter,
-		namespace,
 	});
 
 	const groups = groupMatchesBySentencia(matches, topK, minScore);
@@ -517,7 +473,7 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 	return {
 		results,
 		total: results.length,
-		namespace: namespace || NAMESPACE_SMALL,
+		namespace: NAMESPACE_SMALL, // histórico (contrato de respuesta), ver constante
 		latencyMs: {
 			embedding: embeddingLatencyMs,
 			pinecone: pineconeLatencyMs,
@@ -528,8 +484,8 @@ async function searchByQuery(query, { filters = {}, topK = DEFAULT_TOP_K, minSco
 }
 
 /**
- * Elimina resultados duplicados (misma sentencia indexada dos veces en Pinecone
- * con distinto _id). La clave de dedup es caratula+fuero+year; gana el de mayor score.
+ * Elimina resultados duplicados (misma sentencia indexada dos veces en el store
+ * vectorial con distinto _id). La clave de dedup es caratula+fuero+year; gana el de mayor score.
  */
 function deduplicateResults(results) {
 	const seen = new Map();
@@ -578,17 +534,14 @@ async function searchBySimilarity(sentenciaId, { topK = DEFAULT_TOP_K, minScore 
 		.map(c => c.text)
 		.join('\n\n');
 
-	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(
-		queryText,
-		useQdrant() ? EMBEDDING_MODEL_LARGE : undefined,
-		useQdrant() ? EMBEDDING_DIMENSIONS_LARGE : undefined,
-	);
+	const { embedding, latencyMs: embeddingLatencyMs } = await embedQuery(queryText);
 
 	const filter = buildPineconeFilter({ excludeSentenciaId: sentenciaId });
-	const pineconeTopK = topK * PINECONE_MULTIPLIER;
+	const vectorTopK = topK * VECTOR_TOPK_MULTIPLIER;
 
-	const { matches, latencyMs: pineconeLatencyMs } = await queryPinecone(embedding, {
-		topK: pineconeTopK,
+	// `pineconeLatencyMs` / `latencyMs.pinecone`: nombres históricos (contrato UI admin).
+	const { matches, latencyMs: pineconeLatencyMs } = await queryVectorStore(embedding, {
+		topK: vectorTopK,
 		filter,
 	});
 

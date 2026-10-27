@@ -15,8 +15,8 @@ const { compararCaratulas, esPlaceholder, esAnonimizado } = require('../utils/ca
  *   - `saij-workers/src/tasks/desvincular-causas-cruzadas.js` sacaba el
  *     movimiento de la causa y el id de `saij.saijSentenciaIds`, pero sobre la
  *     SentenciaCapturada sólo ponía `causaId: null` — la carátula heredada de
- *     la causa equivocada quedaba viva en el corpus y en la metadata de
- *     Pinecone.
+ *     la causa equivocada quedaba viva en el corpus y en el payload del
+ *     índice vectorial (Qdrant).
  *   - `saijSentenciasController.vincularCausa` hacía todavía menos: al
  *     desvincular dejaba el movimiento 'SENTENCIA SAIJ' dentro de la causa
  *     para siempre, y al re-vincular no lo movía a la causa nueva.
@@ -110,7 +110,7 @@ function evaluarPar(causa, fallo, movimientosSaij = []) {
  * es despegarle la identidad heredada de la causa equivocada — carátula,
  * número, año y fuero vuelven a salir del propio fallo — y re-encolar el
  * embedding para que el vector se reindexe con la metadata correcta. Sin ese
- * último paso la carátula equivocada sobrevive en Pinecone aunque Mongo ya
+ * último paso la carátula equivocada sobrevive en Qdrant aunque Mongo ya
  * esté limpio.
  *
  * @param {object} opts
