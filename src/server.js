@@ -77,10 +77,6 @@ async function initializeServer() {
     await mongoose.connect(URLDB);
     logger.info(`Conexión a MongoDB establecida en ambiente ${process.env.NODE_ENV}${process.env.MONGO_TARGET ? ` (target ${process.env.MONGO_TARGET})` : ''}`);
 
-    // Inicializar caché HyDE (Redis, lazy-connect, solo si HYDE_ENABLED=true)
-    const { initHydeCache } = require('./services/hydeCache');
-    initHydeCache();
-
     // Collector de monitoreo de infraestructura: solo recolecta en la instancia local
     // (NODE_ENV=local, worker_01) que ve Qdrant + Mongo local; escribe snapshots a Atlas.
     const { startCollector } = require('./services/monitoringService');
