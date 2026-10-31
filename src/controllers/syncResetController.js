@@ -72,7 +72,7 @@ async function analyzeSyncData(db, userId, credId) {
   }
 
   const syncsCount = await db.collection("mis-causas-syncs").countDocuments({ userId });
-  const storageDelta = -(pjnFolders.length * FOLDER_LINKED_SIZE);
+  const storageDelta = -(archivedFolders * FOLDER_LINKED_SIZE); // Solo lo archivado ocupa almacenamiento
   const totalToDelete = Object.values(toDelete).reduce((sum, arr) => sum + arr.length, 0);
   const totalToUnlink = Object.values(toUnlink).reduce((sum, arr) => sum + arr.length, 0);
 
