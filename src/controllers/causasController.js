@@ -7,6 +7,7 @@ const {
   CausasFBB, CausasFCR, CausasFCB, CausasFCT, CausasFGR,
   CausasFLP, CausasFMP, CausasFMZ, CausasFPO, CausasFPA,
   CausasFRE, CausasFSA, CausasFRO, CausasFTU,
+  ConfiguracionAppUpdate, prioridadCola,
 } = require("pjn-models");
 const { logger} = require('../config/pino');
 const axios = require('axios');
@@ -39,6 +40,9 @@ const FUERO_MODELS = {
   FMP: CausasFMP,      FMZ: CausasFMZ,       FPO: CausasFPO,     FPA: CausasFPA,
   FRE: CausasFRE,      FSA: CausasFSA,       FRO: CausasFRO,     FTU: CausasFTU,
 };
+
+// Fuero del endpoint → update_mode de configuracion-app-update
+const APP_UPDATE_MODE = { CIV: 'civil', COM: 'comercial', CSS: 'ss', CNT: 'trabajo' };
 
 const getModel = (fuero) => {
   const M = FUERO_MODELS[fuero];
@@ -1846,16 +1850,43 @@ const causasController = {
           lastUpdate: { $gte: updateThreshold }
         });
 
-        // Pendientes: elegibles que necesitan actualización Y no están en cooldown
+        // Vencimiento con el mismo criterio que el worker: umbral según prioridad.nivel
+        // (alta 6 h, archivo 24 h, resto = last_update_threshold_hours del fuero).
+        // Config del fuero; si no hay, la de modo 'all'; si tampoco, defaults de pjn-models.
+        const modo = APP_UPDATE_MODE[name];
+        const config = (modo && await ConfiguracionAppUpdate.findOne({ update_mode: modo }).lean())
+          || (await ConfiguracionAppUpdate.findOne({ update_mode: 'all' }).lean())
+          || {};
+        const umbrales = prioridadCola.umbralesPorNivel(config);
+        const vencido = prioridadCola.filtroLastUpdateVencido(config, now);
+        const sinCooldown = {
+          $or: [
+            { 'scrapingProgress.skipUntil': { $exists: false } },
+            { 'scrapingProgress.skipUntil': null },
+            { 'scrapingProgress.skipUntil': { $lte: now } }
+          ]
+        };
+        const noActualizadaHoy = {
+          $nor: [{ 'updateStats.today.date': todayStr, 'updateStats.today.count': { $gt: 0 } }]
+        };
+
+        // En espera de su ciclo: no se actualizaron hoy pero todavía no vencieron
+        // (típicamente nivel 'archivo': carpetas todas archivadas o sin carpeta, cada 24 h).
+        const waitingCycle = await model.countDocuments({
+          ...workerBaseFilter,
+          $and: [noActualizadaHoy, sinCooldown, { $nor: [vencido] }]
+        });
+        const waitingArchivo = await model.countDocuments({
+          ...workerBaseFilter,
+          'prioridad.nivel': 'archivo',
+          $and: [noActualizadaHoy, sinCooldown, { $nor: [vencido] }]
+        });
+
+        // Pendientes: elegibles vencidas según el worker, sin cooldown ni lock activo
         const eligiblePending = await model.countDocuments({
           ...workerBaseFilter,
           $and: [
-            {
-              $or: [
-                { lastUpdate: { $exists: false } },
-                { lastUpdate: { $lt: updateThreshold } }
-              ]
-            },
+            vencido,
             {
               $or: [
                 { 'scrapingProgress.skipUntil': { $exists: false } },
@@ -1908,7 +1939,10 @@ const causasController = {
           eligiblePending,
           eligibleWithErrors,
           notEligible,
-          updatedToday
+          updatedToday,
+          waitingCycle,
+          waitingArchivo,
+          archivoThresholdHours: umbrales.archivo
         };
       });
 
@@ -1922,10 +1956,13 @@ const causasController = {
         eligiblePending: acc.eligiblePending + curr.eligiblePending,
         eligibleWithErrors: acc.eligibleWithErrors + curr.eligibleWithErrors,
         notEligible: acc.notEligible + curr.notEligible,
-        updatedToday: acc.updatedToday + curr.updatedToday
+        updatedToday: acc.updatedToday + curr.updatedToday,
+        waitingCycle: acc.waitingCycle + curr.waitingCycle,
+        waitingArchivo: acc.waitingArchivo + curr.waitingArchivo
       }), {
         total: 0, eligible: 0, eligibleUpdated: 0, eligiblePending: 0,
-        eligibleWithErrors: 0, notEligible: 0, updatedToday: 0
+        eligibleWithErrors: 0, notEligible: 0, updatedToday: 0,
+        waitingCycle: 0, waitingArchivo: 0
       });
 
       // Calcular porcentaje de cobertura basado en "actualizados hoy"
@@ -1934,8 +1971,10 @@ const causasController = {
         ? ((totals.updatedToday / totals.eligible) * 100).toFixed(1)
         : 0;
 
-      // Pendientes hoy = elegibles que NO fueron actualizados hoy y NO están en cooldown
-      const pendingToday = totals.eligible - totals.updatedToday - totals.eligibleWithErrors;
+      // Pendientes hoy = elegibles que NO fueron actualizadas hoy, NO están en cooldown
+      // y YA vencieron según el worker. Las que esperan su ciclo (archivo, 24 h) van aparte
+      // en waitingCycle / waitingArchivo: antes se contaban acá y parecían atrasadas.
+      const pendingToday = totals.eligible - totals.updatedToday - totals.eligibleWithErrors - totals.waitingCycle;
 
       res.json({
         success: true,
@@ -1947,6 +1986,7 @@ const causasController = {
           totals: {
             ...totals,
             pendingToday: Math.max(0, pendingToday),
+            archivoThresholdHours: statsByFuero[0] ? statsByFuero[0].archivoThresholdHours : null,
             coveragePercent: parseFloat(coveragePercent)
           },
           byFuero: statsByFuero.reduce((acc, curr) => {
