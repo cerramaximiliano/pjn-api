@@ -44,6 +44,15 @@ const FUERO_MODELS = {
 // Fuero del endpoint → update_mode de configuracion-app-update
 const APP_UPDATE_MODE = { CIV: 'civil', COM: 'comercial', CSS: 'ss', CNT: 'trabajo' };
 
+// Config de app-update con la que el worker vence las causas del fuero: la del
+// fuero; si no hay, la de modo 'all'; si tampoco, {} (defaults de pjn-models).
+const configAppUpdate = async (fuero) => {
+  const modo = APP_UPDATE_MODE[fuero];
+  return (modo && await ConfiguracionAppUpdate.findOne({ update_mode: modo }).lean())
+    || (await ConfiguracionAppUpdate.findOne({ update_mode: 'all' }).lean())
+    || {};
+};
+
 const getModel = (fuero) => {
   const M = FUERO_MODELS[fuero];
   if (!M) throw new Error(`Fuero no válido: ${fuero}`);
@@ -532,9 +541,12 @@ const causasController = {
       }
 
       // Filtro por estadoActualizacion (actualizados/pendientes/errores)
+      // 'vencido' | 'no_vencido': se resuelve por fuero (cada uno tiene su umbral) al consultar
+      let filtroVencimiento = null;
       if (req.query.estadoActualizacion && req.query.estadoActualizacion !== 'todos') {
         const now = new Date();
-        const todayStr = now.toISOString().split('T')[0]; // "2026-02-01"
+        // Fecha de Argentina, igual que updateStats.today.date del worker
+        const todayStr = getArgentinaDate();
 
         switch (req.query.estadoActualizacion) {
           case 'actualizados':
@@ -544,7 +556,11 @@ const causasController = {
             logger.info(`Filtro estadoActualizacion: actualizados hoy (${todayStr})`);
             break;
           case 'pendientes':
-            // Pendientes: NO actualizados hoy Y sin cooldown activo
+          case 'en_espera':
+            // NO actualizados hoy Y sin cooldown activo. Además, con el vencimiento por
+            // prioridad del worker: 'pendientes' = ya vencidas (las tomará el worker);
+            // 'en_espera' = todavía no vencen (p. ej. nivel archivo, cada 24 h).
+            filtroVencimiento = req.query.estadoActualizacion === 'pendientes' ? 'vencido' : 'no_vencido';
             searchFilters.$and = searchFilters.$and || [];
             searchFilters.$and.push({
               $or: [
@@ -561,7 +577,7 @@ const causasController = {
                 { 'scrapingProgress.skipUntil': { $lte: now } }
               ]
             });
-            logger.info(`Filtro estadoActualizacion: pendientes (no actualizados hoy y sin cooldown)`);
+            logger.info(`Filtro estadoActualizacion: ${req.query.estadoActualizacion} (no actualizados hoy, sin cooldown, ${filtroVencimiento})`);
             break;
           case 'errores':
             // Con errores/cooldown: scrapingProgress.skipUntil > now
@@ -606,9 +622,20 @@ const causasController = {
       // con modelo), o todos los de scraping cuando se pide "todos"
       const fuerosAConsultar = fuero ? (FUERO_MODELS[fuero] ? [fuero] : []) : SCRAPING_FUEROS;
 
+      // Filtros por fuero: iguales salvo el vencimiento, que depende del umbral de cada fuero
+      const ahora = new Date();
+      const filtrosPorFuero = await Promise.all(fuerosAConsultar.map(async (f) => {
+        if (!filtroVencimiento) return searchFilters;
+        const vencido = prioridadCola.filtroLastUpdateVencido(await configAppUpdate(f), ahora);
+        return {
+          ...searchFilters,
+          $and: [...(searchFilters.$and || []), filtroVencimiento === 'vencido' ? vencido : { $nor: [vencido] }]
+        };
+      }));
+
       // Obtener conteos totales en paralelo: con filtros aplicados y total de la base de datos
       const [countsFiltrados, countsDB] = await Promise.all([
-        Promise.all(fuerosAConsultar.map(f => FUERO_MODELS[f].countDocuments(searchFilters))),
+        Promise.all(fuerosAConsultar.map((f, i) => FUERO_MODELS[f].countDocuments(filtrosPorFuero[i]))),
         Promise.all(fuerosAConsultar.map(f => FUERO_MODELS[f].countDocuments(baseFilters)))
       ]);
 
@@ -632,7 +659,7 @@ const causasController = {
       // de movimientos, traerlo eran MBs por página que viajaban y se descartaban
       // (y el sort en memoria copiaba cada doc entero con el spread de abajo).
       const resultadosPorFuero = await Promise.all(
-        fuerosAConsultar.map(f => FUERO_MODELS[f].find(searchFilters)
+        fuerosAConsultar.map((f, i) => FUERO_MODELS[f].find(filtrosPorFuero[i])
           .select('-movimiento')
           .sort(sortOptions)
           .limit(maxDocsToFetch)
@@ -1852,11 +1879,7 @@ const causasController = {
 
         // Vencimiento con el mismo criterio que el worker: umbral según prioridad.nivel
         // (alta 6 h, archivo 24 h, resto = last_update_threshold_hours del fuero).
-        // Config del fuero; si no hay, la de modo 'all'; si tampoco, defaults de pjn-models.
-        const modo = APP_UPDATE_MODE[name];
-        const config = (modo && await ConfiguracionAppUpdate.findOne({ update_mode: modo }).lean())
-          || (await ConfiguracionAppUpdate.findOne({ update_mode: 'all' }).lean())
-          || {};
+        const config = await configAppUpdate(name);
         const umbrales = prioridadCola.umbralesPorNivel(config);
         const vencido = prioridadCola.filtroLastUpdateVencido(config, now);
         const sinCooldown = {
