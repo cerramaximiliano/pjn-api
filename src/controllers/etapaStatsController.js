@@ -7,7 +7,7 @@
  *    de pjn-workers-scraping computa en la Mongo local de worker_01 y replica a
  *    Atlas tras cada corrida): duración por fuero/objeto/juzgado/sala/etapa,
  *    matriz de transiciones y distribución de resultados. Sin modelo mongoose
- *    (raw collection, mismo patrón que failoverController).
+ *    (raw collection, sin modelo).
  *  - Subdoc `etapaProcesal` embebido en cada causa (timeline con desde/hasta/
  *    días) para la vista por causa.
  */

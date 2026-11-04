@@ -20,7 +20,6 @@ const scrapingManagerRoutes = require('./scrapingManagerRoutes');
 const scrapingWorkerManagerRoutes = require('./scrapingWorkerManagerRoutes');
 const causasUpdateRoutes = require('./causasUpdateRoutes');
 const syncResetRoutes = require('./syncResetRoutes');
-const failoverRoutes = require('./failoverRoutes');
 const configuracionUpdateMovimientosRoutes = require('./configuracionUpdateMovimientosRoutes');
 const sentenciasCapturadasRoutes = require('./sentenciasCapturadasRoutes');
 const configuracionSentenciasCollectorRoutes = require('./configuracionSentenciasCollectorRoutes');
@@ -103,9 +102,6 @@ router.use('/causas-update', causasUpdateRoutes);
 
 // Montar las rutas de reset de sincronización PJN
 router.use('/sync-reset', syncResetRoutes);
-
-// Montar las rutas de failover cloud
-router.use('/failover', failoverRoutes);
 
 // Montar las rutas de configuración del worker update-movimientos
 router.use('/configuracion-update-movimientos', configuracionUpdateMovimientosRoutes);
