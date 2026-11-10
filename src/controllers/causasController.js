@@ -1988,11 +1988,14 @@ const causasController = {
         waitingCycle: 0, waitingArchivo: 0
       });
 
-      // Calcular porcentaje de cobertura basado en "actualizados hoy"
-      // Esto evita falsos positivos cuando el threshold es bajo (ej: 2h)
-      const coveragePercent = totals.eligible > 0
-        ? ((totals.updatedToday / totals.eligible) * 100).toFixed(1)
-        : 0;
+      // Cobertura = actualizadas hoy sobre las que TOCA actualizar hoy. Las que esperan su
+      // ciclo (waitingCycle: no vencieron, típicamente 'archivo' cada 24 h) no entran en el
+      // denominador: no son pendientes, y contarlas dejaba la tarjeta trabada (~51 %) con
+      // 0 pendientes. Sin nada que toque hoy, la cobertura es 100.
+      const dueToday = Math.max(0, totals.eligible - totals.waitingCycle);
+      const coveragePercent = dueToday > 0
+        ? Math.min(100, (totals.updatedToday / dueToday) * 100).toFixed(1)
+        : (totals.eligible > 0 ? 100 : 0);
 
       // Pendientes hoy = elegibles que NO fueron actualizadas hoy, NO están en cooldown
       // y YA vencieron según el worker. Las que esperan su ciclo (archivo, 24 h) van aparte
@@ -2009,6 +2012,7 @@ const causasController = {
           totals: {
             ...totals,
             pendingToday: Math.max(0, pendingToday),
+            dueToday,
             archivoThresholdHours: statsByFuero[0] ? statsByFuero[0].archivoThresholdHours : null,
             coveragePercent: parseFloat(coveragePercent)
           },
